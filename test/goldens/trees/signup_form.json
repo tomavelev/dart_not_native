@@ -1,0 +1,140 @@
+{
+  "type": "Scaffold",
+  "props": {},
+  "children": [
+    {
+      "type": "AppBar",
+      "props": {
+        "title": "Sign up"
+      },
+      "children": null
+    },
+    {
+      "type": "Column",
+      "props": {
+        "crossAxisAlignment": "stretch"
+      },
+      "children": [
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 16.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "stretch"
+              },
+              "children": [
+                {
+                  "type": "TextField",
+                  "props": {
+                    "hint": "Ada Lovelace",
+                    "eventId": "cb:field_name",
+                    "id": "field_name",
+                    "label": "Full name",
+                    "obscureText": false,
+                    "enabled": true,
+                    "initialValue": "",
+                    "valueVersion": 0,
+                    "maxLines": 1,
+                    "textInputAction": "done"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 12.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "TextField",
+                  "props": {
+                    "hint": "you@example.com",
+                    "eventId": "cb:field_email",
+                    "id": "field_email",
+                    "label": "Email",
+                    "obscureText": false,
+                    "enabled": true,
+                    "initialValue": "",
+                    "valueVersion": 0,
+                    "maxLines": 1,
+                    "textInputAction": "done"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 12.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "TextField",
+                  "props": {
+                    "hint": "At least 8 characters, one capital and one number",
+                    "eventId": "cb:field_password",
+                    "id": "field_password",
+                    "label": "Password",
+                    "obscureText": true,
+                    "enabled": true,
+                    "initialValue": "",
+                    "valueVersion": 0,
+                    "maxLines": 1,
+                    "textInputAction": "done"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 12.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "TextField",
+                  "props": {
+                    "hint": "Type it again",
+                    "eventId": "cb:field_confirm",
+                    "id": "field_confirm",
+                    "label": "Confirm password",
+                    "obscureText": true,
+                    "enabled": true,
+                    "initialValue": "",
+                    "valueVersion": 0,
+                    "maxLines": 1,
+                    "textInputAction": "done"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 16.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Create account",
+                    "eventId": "cb:submit",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "submit"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

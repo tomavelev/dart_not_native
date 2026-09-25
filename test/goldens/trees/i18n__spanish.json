@@ -1,0 +1,444 @@
+{
+  "type": "Scaffold",
+  "props": {},
+  "children": [
+    {
+      "type": "AppBar",
+      "props": {
+        "title": "Configuración"
+      },
+      "children": null
+    },
+    {
+      "type": "Padding",
+      "props": {
+        "padding": 16.0
+      },
+      "children": [
+        {
+          "type": "Column",
+          "props": {
+            "crossAxisAlignment": "start"
+          },
+          "children": [
+            {
+              "type": "Text",
+              "props": {
+                "content": "Language: es",
+                "fontSize": 20.0,
+                "fontWeight": 500,
+                "id": "current_locale"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 16.0
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Select language:"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 8.0
+              },
+              "children": null
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 0.0
+              },
+              "children": [
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "English",
+                    "eventId": "cb:lang_en",
+                    "variant": "tertiary",
+                    "disabled": false,
+                    "id": "lang_en"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Español",
+                    "eventId": "cb:lang_es",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "lang_es"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Français",
+                    "eventId": "cb:lang_fr",
+                    "variant": "tertiary",
+                    "disabled": false,
+                    "id": "lang_fr"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Deutsch",
+                    "eventId": "cb:lang_de",
+                    "variant": "tertiary",
+                    "disabled": false,
+                    "id": "lang_de"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "日本語",
+                    "eventId": "cb:lang_ja",
+                    "variant": "tertiary",
+                    "disabled": false,
+                    "id": "lang_ja"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "中文",
+                    "eventId": "cb:lang_zh",
+                    "variant": "tertiary",
+                    "disabled": false,
+                    "id": "lang_zh"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 24.0
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Examples:",
+                "fontSize": 16.0,
+                "fontWeight": 700
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 8.0
+              },
+              "children": null
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Simple translation:",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Aceptar",
+                    "fontWeight": 500,
+                    "id": "value_ok"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Nested key (common.cancel):",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Cancelar",
+                    "fontWeight": 500,
+                    "id": "value_cancel"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Message:",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "¡Bienvenido!",
+                    "fontWeight": 500,
+                    "id": "value_welcome"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Form label (forms.email):",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Correo electrónico",
+                    "fontWeight": 500,
+                    "id": "value_email"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Validation error:",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Este campo es obligatorio",
+                    "fontWeight": 500,
+                    "id": "value_required"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Plural, 3 items:",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "3 elementos",
+                    "fontWeight": 500,
+                    "id": "value_items_3"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Plural, 1 item:",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "1 elemento",
+                    "fontWeight": 500,
+                    "id": "value_items_1"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Plural, 0 items:",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Sin elementos",
+                    "fontWeight": 500,
+                    "id": "value_items_0"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Plural, 25 users:",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "25 usuarios",
+                    "fontWeight": 500,
+                    "id": "value_users_25"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Relative time:",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Hace un momento",
+                    "fontWeight": 500,
+                    "id": "value_just_now"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Missing key with default:",
+                    "color": "#757575"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Custom default",
+                    "fontWeight": 500,
+                    "id": "value_fallback"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

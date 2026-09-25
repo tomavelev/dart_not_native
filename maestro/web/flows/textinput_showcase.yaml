@@ -1,0 +1,132 @@
+# TextInput showcase (lib/examples/apps/textinput_showcase_app.dart)
+#
+# The page is longer than the viewport, so each section is scrolled into
+# view before it is used.
+url: ${BASE_URL}/textinput_showcase/?kit=${KIT}&animations=off
+tags:
+  - web
+  - textinput
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: name_status
+    timeout: 20000
+- assertVisible: "TextInput Showcase"
+- assertVisible:
+    id: name_status
+    text: "Status: Not focused"
+- assertVisible:
+    id: email_status
+    text: "📝 Enter email"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: textinput_showcase/01_initial
+
+# Focus + validation on the name field
+- tapOn:
+    id: name_field
+- assertVisible:
+    id: name_status
+    text: "Status: Focused"
+- inputText: "A"
+- assertVisible: "Name must be at least 2 characters"
+- inputText: "da"
+- assertNotVisible: "Name must be at least 2 characters"
+# Enter submits and writes to the event log
+- pressKey: Enter
+- assertVisible:
+    id: name_status
+    text: "Status: Focused"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: textinput_showcase/02_name_submitted
+
+# Email validation, evaluated after blur
+- tapOn:
+    id: email_field
+- assertVisible:
+    id: email_status
+    text: "✏️ Editing email"
+- inputText: "nope"
+# Tapping the section heading blurs the field
+- tapOn: "📧 Email Input with Validation"
+- assertVisible:
+    id: email_status
+    text: "❌ Invalid email"
+- assertVisible: "Please enter a valid email"
+- tapOn:
+    id: email_field
+- eraseText: 4
+- inputText: "ada@example.com"
+- tapOn: "📧 Email Input with Validation"
+- assertVisible:
+    id: email_status
+    text: "✅ Email valid"
+
+# Password strength
+- scrollUntilVisible:
+    element:
+      id: password_status
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: password_field
+- inputText: "short"
+- assertVisible:
+    id: password_status
+    text: "Strength: Weak"
+- assertVisible: "Password must be at least 8 characters"
+- inputText: "erlonger1"
+- assertVisible:
+    id: password_status
+    text: "Strength: Medium"
+- assertNotVisible: "Password must be at least 8 characters"
+
+# Multi-line input counts characters
+- scrollUntilVisible:
+    element:
+      id: message_count
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    id: message_count
+    text: "Characters: 0"
+- tapOn:
+    id: message_field
+- inputText: "Hello"
+- assertVisible:
+    id: message_count
+    text: "Characters: 5"
+
+# The disabled field cannot be typed into
+- scrollUntilVisible:
+    element:
+      id: disabled_field
+    direction: DOWN
+    timeout: 20000
+- assertVisible: "Cannot edit this field"
+
+# Event log and Validate All
+- scrollUntilVisible:
+    element:
+      id: validate_all
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    id: log_0
+    text: "• Name submitted: Ada"
+- tapOn:
+    id: validate_all
+- assertVisible:
+    id: log_0
+    text: "• Validated all fields"
+- assertVisible:
+    id: log_1
+    text: "• Name submitted: Ada"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: textinput_showcase/03_event_log

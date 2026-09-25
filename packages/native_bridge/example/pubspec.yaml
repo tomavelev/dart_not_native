@@ -1,0 +1,21 @@
+name: dart_not_native_example
+description: The smallest app that uses dart_not_native on every target.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+  dart_not_native:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

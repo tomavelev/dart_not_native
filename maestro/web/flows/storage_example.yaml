@@ -1,0 +1,121 @@
+# Storage plugin (lib/examples/apps/storage_example_app.dart)
+#
+# On web the values are kept in localStorage, so the flow starts from a
+# cleared state and checks that data survives a relaunch.
+url: ${BASE_URL}/storage_example/?kit=${KIT}&animations=off
+tags:
+  - web
+  - storage
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: encryption_status
+    timeout: 20000
+
+# Empty to begin with; the browser offers no encryption at rest
+- assertVisible:
+    id: encryption_status
+    text: "Encryption: Enabled"
+- assertVisible:
+    id: regular_count
+    text: "0 keys"
+- assertVisible:
+    id: secure_count
+    text: "0 keys"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: storage_example/01_empty
+
+# Regular values of every supported type
+- tapOn:
+    id: save_regular
+- assertVisible:
+    id: status
+    text: "Status: Regular data saved"
+- assertVisible:
+    id: regular_count
+    text: "6 keys"
+- assertVisible:
+    id: regular_app_name
+    text: "app_name: MyApp"
+- assertVisible:
+    id: regular_app_launches
+    text: "app_launches: 42"
+- assertVisible:
+    id: regular_app_rating
+    text: "app_rating: 4.5"
+- assertVisible:
+    id: regular_onboarding_complete
+    text: "onboarding_complete: true"
+- assertVisible:
+    id: regular_recent_searches
+    text: 'recent_searches: \["flutter","dart","storage"\]'
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: storage_example/02_regular
+
+# Secrets are stored separately and shown truncated
+- tapOn:
+    id: save_secure
+- assertVisible:
+    id: secure_count
+    text: "4 keys"
+- assertVisible:
+    id: secure_auth_token
+    text: "auth_token: eyJhbGciOi..."
+- assertVisible:
+    id: secure_api_key
+    text: "api_key: sk_live_ab..."
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: storage_example/03_secure
+
+# Round-trip of all data types
+- tapOn:
+    id: test_types
+- assertVisible:
+    id: status
+    text: "Status: Types OK: Hello World / 12345 / 3.14159 / true / item1, item2, item3"
+- assertVisible:
+    id: regular_count
+    text: "11 keys"
+
+# Values survive a relaunch (localStorage), so reload finds them again
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: encryption_status
+    timeout: 20000
+- assertVisible:
+    id: regular_count
+    text: "11 keys"
+- assertVisible:
+    id: secure_count
+    text: "4 keys"
+- tapOn:
+    id: load_all
+- assertVisible:
+    id: regular_app_name
+    text: "app_name: MyApp"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: storage_example/04_persisted
+
+# Clearing empties both stores
+- tapOn:
+    id: clear_all
+- assertVisible:
+    id: status
+    text: "Status: All data cleared"
+- assertVisible:
+    id: regular_count
+    text: "0 keys"
+- assertVisible:
+    id: secure_count
+    text: "0 keys"

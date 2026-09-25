@@ -1,0 +1,101 @@
+# Design system showcase (lib/examples/apps/design_system_showcase_app.dart)
+#
+# The five pages are the main visual comparison between style kits: every
+# component here is built by the active kit.
+url: ${BASE_URL}/design_system_showcase/?kit=${KIT}&animations=off
+tags:
+  - web
+  - design-system
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: page_indicator
+    timeout: 20000
+
+# Page 1: typography
+- assertVisible:
+    id: page_indicator
+    text: "Page 1 of 5 · Typography"
+- assertVisible: "Heading 1 (32px)"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: design_system_showcase/01_typography
+
+# Page 2: colors
+- tapOn:
+    id: nav_next
+- assertVisible:
+    id: page_indicator
+    text: "Page 2 of 5 · Colors"
+- assertVisible: "Primary #1976d2"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: design_system_showcase/02_colors
+
+# Page 3: spacing
+- tapOn:
+    id: nav_next
+- assertVisible:
+    id: page_indicator
+    text: "Page 3 of 5 · Spacing"
+- assertVisible: "md: 16px"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: design_system_showcase/03_spacing
+
+# Page 4: buttons and cards, with a button press
+- tapOn:
+    id: nav_next
+- assertVisible:
+    id: page_indicator
+    text: "Page 4 of 5 · Buttons & Cards"
+- assertVisible:
+    id: last_action
+    text: "Last pressed: none"
+- tapOn: "Success"
+- assertVisible:
+    id: last_action
+    text: "Last pressed: success"
+- tapOn: "Warning"
+- assertVisible:
+    id: last_action
+    text: "Last pressed: warning"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: design_system_showcase/04_buttons_cards
+
+# Page 5: alerts and inputs, exercising checkbox, radio and switch
+- tapOn:
+    id: nav_next
+- assertVisible:
+    id: page_indicator
+    text: "Page 5 of 5 · Feedback & Inputs"
+- assertVisible: "Your changes were saved."
+- tapOn: "Subscribe to newsletter"
+- assertVisible:
+    id: newsletter_state
+    text: "Newsletter: on"
+- tapOn: "Plan: Pro"
+- assertVisible:
+    id: plan_state
+    text: "Selected plan: pro"
+- tapOn: "Dark mode"
+- assertVisible:
+    id: dark_mode_state
+    text: "Dark mode: on"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: design_system_showcase/05_inputs
+
+# The FAB (its aria-label is the tooltip) wraps around to page 1
+- tapOn:
+    id: "Next page"
+- assertVisible:
+    id: page_indicator
+    text: "Page 1 of 5 · Typography"

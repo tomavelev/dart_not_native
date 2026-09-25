@@ -1,0 +1,61 @@
+# Inbox (lib/examples/apps/inbox_example_app.dart)
+# A 10,000-row lazy list, row actions in a bottom sheet, a confirm dialog and
+# an undo snackbar.
+url: ${BASE_URL}/inbox_example/?kit=${KIT}&animations=off
+tags:
+  - web
+  - inbox
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Message 1"
+    timeout: 20000
+- assertVisible: "Inbox (6667 unread)"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: inbox_example/01_list
+
+# Open a row's actions. (The list scrolls inside its own viewport, which
+# Maestro's web scroll does not reach; scrolling is covered by the browser
+# tests in packages/native_bridge/test/web_ui/overlays_lazy_list_test.dart.)
+- tapOn:
+    id: actions_2
+- assertVisible: "Mark as read"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: inbox_example/02_sheet
+
+# Delete asks first
+- tapOn:
+    id: sheet_delete
+- assertVisible: "Delete message?"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: inbox_example/03_confirm
+
+# Cancel leaves the sheet open
+- tapOn:
+    id: confirm_cancel
+- assertNotVisible: "Delete message?"
+- assertVisible: "Mark as read"
+
+# Confirm deletes, and offers Undo
+- tapOn:
+    id: sheet_delete
+- tapOn:
+    id: confirm_ok
+- assertVisible: "Message deleted"
+- assertNotVisible:
+    id: actions_2
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: inbox_example/04_deleted
+
+- tapOn: "Undo"
+- assertNotVisible: "Message deleted"
+- assertVisible:
+    id: actions_2

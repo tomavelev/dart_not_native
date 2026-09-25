@@ -1,0 +1,97 @@
+# Navigation & routing (lib/examples/apps/routing_example_app.dart)
+url: ${BASE_URL}/routing_example/?kit=${KIT}&animations=off
+tags:
+  - web
+  - routing
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: current_path
+    timeout: 20000
+
+# Home
+- assertVisible: "Navigation Demo"
+- assertVisible:
+    id: current_path
+    text: "Current path: /"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: routing_example/01_home
+
+# Users list
+- tapOn:
+    id: nav_users
+- assertVisible: "User Directory"
+- assertVisible: "Alice Johnson"
+- assertVisible:
+    id: current_path
+    text: "Current path: /users"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: routing_example/02_users
+
+# Route parameter: /users/2
+- tapOn:
+    id: user_2
+- assertVisible:
+    id: detail_title
+    text: "Bob Smith"
+- assertVisible: "Role: Engineer"
+- assertVisible:
+    id: current_path
+    text: "Current path: /users/2"
+- assertVisible:
+    id: history
+    text: "History: / → /users → /users/2"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: routing_example/03_user_detail
+
+# Back to the list, then home
+- tapOn:
+    id: back
+- assertVisible:
+    id: current_path
+    text: "Current path: /users"
+- tapOn:
+    id: back
+- assertVisible:
+    id: current_path
+    text: "Current path: /"
+
+# Posts, with a second route parameter
+- tapOn:
+    id: nav_posts
+- assertVisible: "Recent Posts"
+- tapOn:
+    id: post_3
+- assertVisible:
+    id: detail_title
+    text: "Building Scalable Apps"
+- assertVisible: "By Carol White on 2024-01-25"
+- assertVisible:
+    id: current_path
+    text: "Current path: /posts/3"
+
+# Home button jumps straight back to /
+- tapOn:
+    id: home
+- assertVisible:
+    id: current_path
+    text: "Current path: /"
+
+# Settings shows the accumulated history
+- tapOn:
+    id: nav_settings
+- assertVisible: "Application Settings"
+- assertVisible:
+    id: can_go_back
+    text: "Can go back: true"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: routing_example/04_settings

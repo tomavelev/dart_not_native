@@ -1,0 +1,75 @@
+# Releasing
+
+What a version means here, where it is written down, and what has to be true
+before one is cut. Short, because a convention nobody can remember is not one.
+
+## What is versioned
+
+`packages/native_bridge` is the framework, and the only thing with a public
+version. It is published from that directory; the repository root is the
+example app, whose `version:` (`1.0.0+1`) is a build number for the demo and
+means nothing to anyone consuming the package.
+
+The framework's version appears in **three** files, which must agree:
+
+| File | Field |
+|---|---|
+| `packages/native_bridge/pubspec.yaml` | `version:` |
+| `packages/native_bridge/ios/dart_not_native.podspec` | `s.version` |
+| `packages/native_bridge/android/build.gradle` | `version` |
+
+A CocoaPods or Gradle consumer reads the platform file rather than the pubspec,
+so a version that drifts there is a real bug; `packages/native_bridge/test/release_test.dart`
+fails if they disagree, and if the CHANGELOG has never heard of the version in
+the pubspec.
+
+## Semantic versioning, 0.x rules
+
+[Semver](https://semver.org), with the usual 0.x reading while the major is 0:
+
+- **0.x.0** - anything breaking. A node type that changes shape, a builder
+  whose parameters change meaning, a renderer that stops accepting a tree it
+  used to. The protocol in `nodeTypes` is the contract; widening it is a minor
+  too, since every renderer must then draw the new type.
+- **0.x.y** - additions that do not break a tree already written, and fixes.
+
+Past 1.0 this becomes ordinary semver, and the protocol's node vocabulary is
+what the major number is about.
+
+## Branches
+
+- `main` is always releasable: every lane green.
+- Work happens on a branch named for what it is - `feat/swipe-actions`,
+  `fix/ios-build`, `docs/android-device-pass` - and lands on `main` when its
+  lanes pass.
+- A release is cut from `main`, not from a branch.
+
+## Tags
+
+One tag per release, on the commit that sets the version:
+
+```
+v0.2.0
+```
+
+`v` plus the framework's version, nothing else - no `package-name/` prefix,
+because this repository releases one package. Tag the commit that changes the
+three version fields and moves the CHANGELOG's `Unreleased` section under the
+new heading, so `git show v0.2.0` shows the release itself.
+
+## The checklist
+
+1. Every lane green: `flutter analyze --no-fatal-infos lib packages/native_bridge/lib`,
+   the package suite, the example suite, the DOM suite in Chrome, and
+   `flutter test integration_test` on an Android and an iOS device (see
+   `.github/workflows/ci.yml` for the exact commands).
+2. Move the CHANGELOG's `Unreleased` entries under a `## <version>` heading.
+   Anything still true and unfinished belongs under **Known limits** rather
+   than being dropped.
+3. Set the version in the three files above, in one commit.
+4. `git tag v<version>` on that commit, and push the tag.
+5. `dart pub publish --dry-run` from `packages/native_bridge`, then publish.
+
+Step 5 needs the repository to be hosted first: `repository:` in the pubspec
+and `s.source` in the podspec are still placeholders, and pub.dev expects them
+to point somewhere real. That is the open item in TODO.md §4.

@@ -1,0 +1,88 @@
+# Ten thousand rows, windowed, on a device.
+#
+# entry: android=lib/main_native_inbox.dart ios=lib/main_native_inbox.dart
+#
+# §1.4 says the window slides correctly and far-down rows build with their
+# real ids, which was checked by hand on a Pixel and an iPad and never since.
+# This is that check, automatically: scroll a long way, and the rows that
+# arrive have to be the right ones - a window that stopped moving, or moved
+# without rebuilding, shows the wrong numbers or none.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Message 1"
+    timeout: 20000
+- assertVisible: "Inbox (6667 unread)"
+
+# Far enough down that nothing from the first window can still be on screen.
+# Swipes rather than `scrollUntilVisible`, which does not move this list on
+# the iOS simulator; how far each one travels is the device's business, so the
+# row that arrives is matched loosely below.
+- repeat:
+    times: 12
+    commands:
+      - swipe:
+          direction: UP
+          duration: 300
+- assertNotVisible: "Message 1"
+- assertVisible: "Message [0-9]{2,}"
+
+# Whatever is on screen is a real row: its own number, its own sender, and an
+# actions button named for it.
+- assertVisible: "(Ada|Grace|Linus|Margaret|Dennis)"
+
+# And it is still a list that works: a far-down row's actions button opens the
+# sheet for that row, not for the row that was once in its place.
+#
+# The third match rather than the first: the row at the top of the window is
+# half scrolled out, and the tree reports it with a frame that starts above
+# the screen - tapping its centre would land on the app bar.
+- tapOn:
+    text: "Actions for Message [0-9]{2,}"
+    index: 2
+# "Mark as read" belongs to the sheet alone - every row has a *Delete* of its
+# own behind the swipe, so asserting that would pass without a sheet at all.
+- assertVisible: "(Mark as read|Mark as unread)"
+# Dismissed by tapping the scrim above it, which is what the sheet offers on
+# both platforms - Maestro's `back` is a system Back on Android and an edge
+# swipe on iOS, and the second one a modal sheet has no reason to answer.
+- tapOn:
+    point: "50%,15%"
+- assertNotVisible: "(Mark as read|Mark as unread)"
+
+# A row reveals its actions when it is dragged left. This is the only check
+# of that gesture on a device; that tapping a revealed action fires it is
+# covered by the browser and widget tests, which can hold the row open - here
+# the row snaps shut again between one command and the next, and a tap aimed
+# at where the action was lands on the row behind it.
+- swipe:
+    start: "80%,45%"
+    end: "10%,45%"
+    duration: 400
+- assertVisible: "Delete"
+
+# Dragged the other way it shows the leading action instead - which is what
+# iOS Mail puts under a right drag.
+- swipe:
+    start: "20%,45%"
+    end: "90%,45%"
+    duration: 400
+- assertVisible: "(Read|Unread)"
+
+# Let it fall back, so what follows is a list again.
+- swipe:
+    start: "80%,45%"
+    end: "20%,45%"
+    duration: 400
+
+# Back to the top - more swipes than it took to get here, since the ones at
+# the top do nothing - and the first row is the first row again.
+- repeat:
+    times: 24
+    commands:
+      - swipe:
+          direction: DOWN
+          duration: 300
+- assertVisible: "Message 1"

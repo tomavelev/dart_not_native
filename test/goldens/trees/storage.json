@@ -1,0 +1,232 @@
+{
+  "type": "Scaffold",
+  "props": {},
+  "children": [
+    {
+      "type": "AppBar",
+      "props": {
+        "title": "Storage Plugin Demo"
+      },
+      "children": null
+    },
+    {
+      "type": "Padding",
+      "props": {
+        "padding": 16.0
+      },
+      "children": [
+        {
+          "type": "Column",
+          "props": {
+            "crossAxisAlignment": "start"
+          },
+          "children": [
+            {
+              "type": "Text",
+              "props": {
+                "content": "Encryption: Enabled",
+                "fontWeight": 500,
+                "id": "encryption_status"
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Status: Ready",
+                "color": "#757575",
+                "id": "status"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 16.0
+              },
+              "children": null
+            },
+            {
+              "type": "Wrap",
+              "props": {
+                "spacing": 8.0,
+                "runSpacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Save Regular",
+                    "eventId": "cb:save_regular",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "save_regular"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Save Secure",
+                    "eventId": "cb:save_secure",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "save_secure"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Reload",
+                    "eventId": "cb:load_all",
+                    "variant": "tertiary",
+                    "disabled": false,
+                    "id": "load_all"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Test Types",
+                    "eventId": "cb:test_types",
+                    "variant": "primary",
+                    "color": "#9e9e9e",
+                    "disabled": false,
+                    "id": "test_types"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Clear All",
+                    "eventId": "cb:clear_all",
+                    "variant": "primary",
+                    "color": "#f44336",
+                    "disabled": false,
+                    "id": "clear_all"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 16.0
+              },
+              "children": null
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 24.0
+              },
+              "children": [
+                {
+                  "type": "Expanded",
+                  "props": {
+                    "flex": 1
+                  },
+                  "children": [
+                    {
+                      "type": "Column",
+                      "props": {
+                        "crossAxisAlignment": "start"
+                      },
+                      "children": [
+                        {
+                          "type": "Text",
+                          "props": {
+                            "content": "Regular storage (unencrypted)",
+                            "fontSize": 16.0,
+                            "fontWeight": 700
+                          },
+                          "children": null
+                        },
+                        {
+                          "type": "Text",
+                          "props": {
+                            "content": "0 keys",
+                            "id": "regular_count"
+                          },
+                          "children": null
+                        },
+                        {
+                          "type": "SizedBox",
+                          "props": {
+                            "height": 8.0
+                          },
+                          "children": null
+                        },
+                        {
+                          "type": "Text",
+                          "props": {
+                            "content": "(empty)",
+                            "color": "#757575"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Expanded",
+                  "props": {
+                    "flex": 1
+                  },
+                  "children": [
+                    {
+                      "type": "Column",
+                      "props": {
+                        "crossAxisAlignment": "start"
+                      },
+                      "children": [
+                        {
+                          "type": "Text",
+                          "props": {
+                            "content": "Secure storage (encrypted)",
+                            "fontSize": 16.0,
+                            "fontWeight": 700
+                          },
+                          "children": null
+                        },
+                        {
+                          "type": "Text",
+                          "props": {
+                            "content": "0 keys",
+                            "id": "secure_count"
+                          },
+                          "children": null
+                        },
+                        {
+                          "type": "SizedBox",
+                          "props": {
+                            "height": 8.0
+                          },
+                          "children": null
+                        },
+                        {
+                          "type": "Text",
+                          "props": {
+                            "content": "(empty)",
+                            "color": "#757575"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

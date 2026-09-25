@@ -1,0 +1,532 @@
+/*
+ * dart_not_native web renderer styles.
+ *
+ * Layout primitives used by every style kit, plus the components of the
+ * "plain" kit (WebStyleKit defaults). Kit-specific rules live in
+ * kits/<name>.css. Colors follow lib/design_system/tokens.dart.
+ */
+
+/* Every colour below is a token, and the renderer rewrites the whole set on the
+ * root element from the palette in force - which is how dark mode works here:
+ * there is no second stylesheet and no prefers-color-scheme rule, because the
+ * theme may say light or dark outright and only `system` defers to the browser.
+ * The values here are the light defaults, for a page rendered before (or
+ * without) a renderer. */
+:root {
+  --dnn-primary: #1976d2;
+  --dnn-secondary: #f57c00;
+  --dnn-success: #388e3c;
+  --dnn-error: #d32f2f;
+  --dnn-warning: #fbc02d;
+  --dnn-info: #0288d1;
+  --dnn-text: #212121;
+  --dnn-text-secondary: #757575;
+  --dnn-divider: #e0e0e0;
+  --dnn-surface: #ffffff;
+  --dnn-surface-variant: #f5f5f5;
+  --dnn-background: #fafafa;
+  /* The other appearance, for the snackbar - a message over the app. */
+  --dnn-inverse-surface: #121212;
+  --dnn-inverse-text: #ececec;
+  --dnn-inverse-primary: #90caf9;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  color: var(--dnn-text);
+  background: var(--dnn-background);
+}
+
+/* --dnn-viewport-height is the visual viewport's height, republished by the
+ * renderer as it changes. It is what keeps a focused field off the on-screen
+ * keyboard: 100vh does not shrink when the keyboard opens, so a screen sized by
+ * it keeps its bottom underneath. A browser with no visualViewport never sets
+ * the property and every rule below falls back to 100vh. */
+
+#app { min-height: var(--dnn-viewport-height, 100vh); display: flex; flex-direction: column; }
+
+/* ---- Structure -------------------------------------------------------- */
+
+.dnn-scaffold {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--dnn-viewport-height, 100vh);
+  flex: 1;
+}
+.dnn-scaffold > :not(.dnn-appbar):not(.dnn-navbar):not(.dnn-fab) {
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.dnn-appbar {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 16px;
+  flex-shrink: 0;
+  background: var(--dnn-primary);
+  color: var(--dnn-on-primary, #fff);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+.dnn-appbar__title { font-size: 20px; font-weight: 500; letter-spacing: 0.02em; }
+
+/* iOS-style navigation */
+.dnn-navstack { display: flex; flex-direction: column; min-height: var(--dnn-viewport-height, 100vh); flex: 1; }
+.dnn-navbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--dnn-surface) 94%, transparent);
+  border-bottom: 1px solid var(--dnn-divider);
+  flex-shrink: 0;
+}
+.dnn-navbar__title { font-size: 17px; font-weight: 600; }
+.dnn-navbar--large { justify-content: flex-start; min-height: 96px; align-items: flex-end; }
+.dnn-navbar--large .dnn-navbar__title { font-size: 34px; font-weight: 700; }
+
+/* ---- Layout ----------------------------------------------------------- */
+
+.dnn-column { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.dnn-column--start { align-items: flex-start; }
+.dnn-column--end { align-items: flex-end; }
+.dnn-column--stretch { align-items: stretch; }
+/* Main axis: how the children are distributed down the column. A column has
+   nothing to distribute unless it has been given height, which is why asking
+   for it also makes the column grow into what it is in. */
+.dnn-column--main-center,
+.dnn-column--main-end,
+.dnn-column--main-spaceBetween { flex: 1 1 auto; }
+.dnn-column--main-center { justify-content: center; }
+.dnn-column--main-end { justify-content: flex-end; }
+.dnn-column--main-spaceBetween { justify-content: space-between; }
+
+.dnn-row { display: flex; flex-direction: row; align-items: center; min-width: 0; }
+.dnn-row--center { justify-content: center; }
+.dnn-row--end { justify-content: flex-end; }
+.dnn-row--spaceBetween { justify-content: space-between; }
+
+.dnn-center { display: flex; align-items: center; justify-content: center; width: 100%; }
+.dnn-expanded { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.dnn-expanded > * { flex: 1 1 auto; }
+.dnn-sizedbox { flex-shrink: 0; }
+.dnn-spacer { flex: 1 1 auto; }
+
+.dnn-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+
+.dnn-divider { border: none; background: var(--dnn-divider); align-self: stretch; flex-shrink: 0; }
+
+/* ---- Buttons ----------------------------------------------------------
+ * .dnn-fab positioning is shared by every kit; the rest is the plain kit. */
+
+.dnn-fab { position: fixed; right: 24px; bottom: 24px; z-index: 10; }
+
+.dnn-button {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  height: 36px;
+  padding: 0 16px;
+  margin: 4px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--dnn-on-primary, #fff);
+  background: var(--dnn-primary);
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.14), 0 1px 5px rgba(0, 0, 0, 0.12);
+}
+.dnn-button--secondary { background: var(--dnn-secondary); }
+.dnn-button--success { background: var(--dnn-success); }
+.dnn-button--error { background: var(--dnn-error); }
+.dnn-button--warning { background: var(--dnn-warning); color: var(--dnn-text); }
+.dnn-button--tertiary { background: transparent; color: var(--dnn-primary); box-shadow: none; }
+.dnn-button--sm { height: 28px; font-size: 12px; padding: 0 12px; }
+.dnn-button--lg { height: 44px; font-size: 16px; padding: 0 24px; }
+.dnn-button[disabled] { background: var(--dnn-divider); color: var(--dnn-text-secondary); box-shadow: none; cursor: default; }
+
+.dnn-fab--plain {
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dnn-on-primary, #fff);
+  background: var(--dnn-primary);
+  box-shadow: 0 4px 5px rgba(0, 0, 0, 0.14), 0 1px 10px rgba(0, 0, 0, 0.12);
+}
+
+.dnn-icon-button {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dnn-text-secondary);
+}
+
+/* ---- Inputs ----------------------------------------------------------- */
+
+.dnn-textfield { display: flex; flex-direction: column; width: 100%; max-width: 480px; margin: 4px 0; }
+.dnn-textfield__label { font-size: 12px; font-weight: 500; color: var(--dnn-text-secondary); margin-bottom: 4px; }
+.dnn-textfield__input {
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--dnn-divider);
+  border-radius: 4px;
+  background: var(--dnn-surface);
+  color: var(--dnn-text);
+  outline: none;
+  resize: vertical;
+}
+.dnn-textfield__input:focus { border-color: var(--dnn-primary); box-shadow: inset 0 0 0 1px var(--dnn-primary); }
+.dnn-textfield__input:disabled { background: var(--dnn-surface-variant); color: var(--dnn-text-secondary); }
+.dnn-textfield__error { font-size: 12px; color: var(--dnn-error); margin-top: 4px; }
+.dnn-textfield--error .dnn-textfield__label { color: var(--dnn-error); }
+.dnn-textfield--error .dnn-textfield__input { border-color: var(--dnn-error); box-shadow: inset 0 0 0 1px var(--dnn-error); }
+
+/* A floating label: inside the outline while the field is empty and unfocused,
+   raised into the border once there is something to read. No JavaScript -
+   :focus-within covers focus and :placeholder-shown covers the value, which is
+   why a floating field always carries a placeholder (a space if it has no
+   hint). */
+.dnn-textfield.dnn-textfield--floating { position: relative; padding-top: 10px; }
+.dnn-textfield--floating .dnn-textfield__label {
+  position: absolute;
+  left: 8px;
+  top: 20px;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--dnn-text-secondary);
+  background: var(--dnn-surface);
+  pointer-events: none;
+  transform-origin: left top;
+  transition: transform 120ms ease, color 120ms ease;
+}
+.dnn-textfield--floating:focus-within .dnn-textfield__label,
+.dnn-textfield--floating:has(.dnn-textfield__input:not(:placeholder-shown)) .dnn-textfield__label {
+  transform: translateY(-16px) scale(0.75);
+}
+.dnn-textfield--floating:focus-within .dnn-textfield__label { color: var(--dnn-primary); }
+.dnn-textfield--error.dnn-textfield--floating .dnn-textfield__label { color: var(--dnn-error); }
+/* The hint would otherwise sit under the label; it appears once the label is
+   out of the way. */
+.dnn-textfield--floating .dnn-textfield__input::placeholder { color: transparent; }
+.dnn-textfield--floating .dnn-textfield__input:focus::placeholder { color: var(--dnn-text-secondary); }
+
+.dnn-camera {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #000;
+  border-radius: 4px;
+}
+.dnn-camera__video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dnn-camera__status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--dnn-text-secondary);
+  background: var(--dnn-surface-variant);
+}
+
+.dnn-map {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  background: var(--dnn-surface-variant);
+  border: 1px solid var(--dnn-divider);
+  border-radius: 4px;
+  touch-action: none; /* the drag pans the map, not the page */
+  cursor: grab;
+}
+.dnn-map__tiles { position: absolute; inset: 0; }
+.dnn-map__tile { position: absolute; width: 256px; height: 256px; user-select: none; }
+.dnn-map__marker {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--dnn-error);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.dnn-map__attribution {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 2px 6px;
+  font-size: 10px;
+  color: var(--dnn-text-secondary);
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.dnn-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--dnn-divider);
+  overflow-x: auto;
+}
+.dnn-tabs__tab {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dnn-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dnn-tabs__tab--selected {
+  color: var(--dnn-primary);
+  border-bottom-color: var(--dnn-primary);
+}
+
+.dnn-grid { display: grid; width: 100%; }
+/* Each cell keeps the grid's ratio, so the rows line up however tall the
+   content inside them is. */
+.dnn-grid > * { aspect-ratio: var(--dnn-grid-ratio, auto); min-width: 0; overflow: hidden; }
+
+.dnn-slider {
+  width: 100%;
+  max-width: 480px;
+  margin: 8px 0;
+  accent-color: var(--dnn-primary);
+}
+.dnn-slider:disabled { accent-color: var(--dnn-divider); cursor: default; }
+
+.dnn-checkbox, .dnn-radio, .dnn-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  user-select: none;
+}
+.dnn-checkbox input, .dnn-radio input { width: 18px; height: 18px; margin: 0; accent-color: var(--dnn-primary); cursor: pointer; }
+
+.dnn-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.dnn-switch__track {
+  position: relative;
+  width: 36px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--dnn-divider);
+  flex-shrink: 0;
+}
+.dnn-switch__track::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--dnn-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.dnn-switch input:checked + .dnn-switch__track { background: color-mix(in srgb, var(--dnn-primary) 50%, transparent); }
+.dnn-switch input:checked + .dnn-switch__track::after { left: 18px; background: var(--dnn-primary); }
+
+/* ---- Surfaces --------------------------------------------------------- */
+
+.dnn-card {
+  width: 100%;
+  max-width: 560px;
+  margin: 8px 0;
+  border-radius: 4px;
+  background: var(--dnn-surface);
+}
+.dnn-card--outlined { border: 1px solid var(--dnn-divider); }
+.dnn-card--filled { background: var(--dnn-surface-variant); }
+.dnn-card__title { font-size: 16px; font-weight: 500; padding: 16px 16px 0; }
+
+.dnn-list { display: flex; flex-direction: column; align-self: stretch; background: var(--dnn-surface); }
+.dnn-list-item { display: flex; flex-direction: column; justify-content: center; min-height: 48px; padding: 8px 16px; border-bottom: 1px solid var(--dnn-divider); }
+.dnn-list-item__text { font-size: 16px; }
+.dnn-list-item__subtitle { font-size: 14px; color: var(--dnn-text-secondary); }
+
+/* A lazy list scrolls itself, so a scaffold holding one is exactly the
+ * viewport tall rather than growing with the list. Its structure (overflow,
+ * content height, row sizes) is set inline by the renderer. */
+.dnn-scaffold:has(> .dnn-lazylist), .dnn-navstack:has(> .dnn-lazylist) {
+  height: var(--dnn-viewport-height, 100vh);
+  min-height: 0;
+}
+.dnn-lazylist { width: 100%; }
+
+/* ---- Overlays ---------------------------------------------------------
+ * The screen inside an Overlay is laid out as if it were the root; the
+ * overlays above it are fixed to the viewport, later ones on top. */
+
+.dnn-overlay { display: contents; }
+
+.dnn-modal { position: fixed; inset: 0; z-index: 20; display: flex; }
+.dnn-modal--dialog { align-items: center; justify-content: center; }
+.dnn-modal--sheet { align-items: flex-end; justify-content: center; }
+.dnn-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.4); }
+body:has(.dnn-modal) { overflow: hidden; }
+
+.dnn-dialog, .dnn-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--dnn-surface);
+  color: var(--dnn-text);
+  outline: none;
+  box-shadow: 0 11px 15px rgba(0, 0, 0, 0.2), 0 24px 38px rgba(0, 0, 0, 0.14);
+}
+.dnn-dialog {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 24px;
+  border-radius: 28px;
+}
+.dnn-sheet {
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  padding: 16px;
+  border-radius: 16px 16px 0 0;
+}
+.dnn-dialog__title, .dnn-sheet__title { margin: 0 0 16px; font-size: 22px; font-weight: 500; line-height: 1.3; flex-shrink: 0; }
+.dnn-dialog__body, .dnn-sheet__body { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.dnn-dialog__body > .dnn-column { flex-shrink: 0; }
+/* A dialog's actions are its last child (see UIBuilder.dialog). They sit
+ * inside the scrolling body, so stick them to its bottom edge: Confirm and
+ * Cancel stay in reach of a long body instead of scrolling away below the
+ * fold. The background is the surface's, so the content passes behind them
+ * rather than through them. */
+.dnn-dialog__body > .dnn-row {
+  margin-top: 16px;
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  background: var(--dnn-surface);
+}
+
+.dnn-snackbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  z-index: 20;
+  width: min(560px, calc(100vw - 32px));
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 8px 6px 16px;
+  border-radius: 4px;
+  background: var(--dnn-inverse-surface);
+  color: var(--dnn-inverse-text);
+  font-size: 14px;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2), 0 6px 10px rgba(0, 0, 0, 0.14);
+}
+.dnn-snackbar__message { flex: 1; }
+.dnn-snackbar__action {
+  font: inherit;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dnn-inverse-primary);
+  cursor: pointer;
+}
+
+.dnn-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  margin: 2px;
+}
+.dnn-badge--outlined { background: transparent; border: 1px solid currentColor; }
+.dnn-badge--dot { width: 8px; height: 8px; padding: 0; border-radius: 50%; }
+
+.dnn-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  max-width: 560px;
+  padding: 12px 16px;
+  margin: 4px 0;
+  border-radius: 4px;
+  border-left: 4px solid currentColor;
+  font-size: 14px;
+}
+.dnn-alert__body { flex: 1; display: flex; flex-direction: column; color: var(--dnn-text); }
+.dnn-alert__title { font-weight: 500; }
+.dnn-alert__close { border: none; background: none; cursor: pointer; font-size: 18px; line-height: 1; color: var(--dnn-text-secondary); padding: 0; }
+/* Tinted with the status colour over whatever the surface is, so the same
+ * rule reads as a pale wash on light and a deep one on dark. */
+.dnn-alert--success { color: var(--dnn-success); background: color-mix(in srgb, var(--dnn-success) 14%, var(--dnn-surface)); }
+.dnn-alert--error { color: var(--dnn-error); background: color-mix(in srgb, var(--dnn-error) 14%, var(--dnn-surface)); }
+.dnn-alert--warning { color: var(--dnn-warning); background: color-mix(in srgb, var(--dnn-warning) 14%, var(--dnn-surface)); }
+.dnn-alert--info { color: var(--dnn-info); background: color-mix(in srgb, var(--dnn-info) 14%, var(--dnn-surface)); }
+
+/* ---- Loading ----------------------------------------------------------
+ * Static by default so screenshots are deterministic; animation is added
+ * by the .dnn-animate class, which the renderer never sets during tests. */
+
+.dnn-spinner {
+  display: inline-block;
+  border-radius: 50%;
+  border: 3px solid var(--dnn-divider);
+  border-top-color: currentColor;
+}
+.dnn-progress { width: 100%; max-width: 320px; height: 4px; background: var(--dnn-divider); overflow: hidden; }
+.dnn-progress__bar { height: 100%; background: currentColor; }
+.dnn-progress-circular { display: inline-block; width: 40px; height: 40px; border-radius: 50%; }
+.dnn-skeleton { background: var(--dnn-divider); border-radius: 4px; }
+.dnn-animate.dnn-spinner { animation: dnn-spin 0.8s linear infinite; }
+.dnn-animate.dnn-pulse { animation: dnn-pulse 1.5s ease-in-out infinite; }
+@keyframes dnn-spin { to { transform: rotate(360deg); } }
+@keyframes dnn-pulse { 50% { opacity: 0.5; } }
+
+.dnn-unknown { font-size: 12px; color: var(--dnn-error); border: 1px dashed var(--dnn-error); padding: 4px 8px; }
+
+/* An animated box. The transition, the size and the colour are written as
+   inline styles by the renderer; this is only the part that never changes.
+   The child is centred, as it is on the other three renderers. */
+.dnn-animated-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  overflow: hidden;
+}

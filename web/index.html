@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Dart Not Native - Cross-platform framework with native UI rendering">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="dart_not_native">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <!-- This shell hosts the Flutter (canvas) build. The DOM + Material CSS
+       build of the examples uses packages/native_bridge/web_shell/ instead,
+       with its stylesheets vendored locally. -->
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background-color: #fafafa;
+    }
+
+    /* The renderer republishes the visual viewport's height here as the
+       on-screen keyboard opens and closes; 100vh, which does not shrink for
+       the keyboard, is the fallback where the API is missing. */
+    #app {
+      width: 100%;
+      min-height: var(--dnn-viewport-height, 100vh);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Material Design Lite overrides */
+    .mdl-layout {
+      width: 100%;
+      height: 100vh;
+    }
+
+    .mdl-layout__header {
+      background-color: #1976d2;
+    }
+
+    .mdl-layout__header-row {
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      height: 64px;
+    }
+
+    .mdl-layout-title {
+      color: white;
+      font-size: 20px;
+      font-weight: 500;
+    }
+
+    .mdl-layout__content {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .mdl-fab {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background-color: #ff5252;
+      color: white;
+      border: none;
+      cursor: pointer;
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 10px rgba(0,0,0,0.14);
+      font-size: 24px;
+      transition: all 0.3s ease;
+      font-family: 'Material Icons';
+    }
+
+    .mdl-fab:hover {
+      box-shadow: 0 8px 16px rgba(0,0,0,0.28);
+      transform: translateY(-2px);
+    }
+
+    .mdl-fab:active {
+      box-shadow: 0 4px 8px rgba(0,0,0,0.14);
+      transform: translateY(0);
+    }
+
+    .material-icons {
+      font-family: 'Material Icons';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 24px;
+      display: inline-block;
+      line-height: 1;
+      text-transform: none;
+      letter-spacing: normal;
+      word-wrap: normal;
+      white-space: nowrap;
+      direction: ltr;
+      user-select: none;
+    }
+  </style>
+
+  <title>Dart Not Native</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <div id="app"></div>
+
+  <script src="flutter_bootstrap.js" async></script>
+
+  <script>
+    // Auto-upgrade MDL components when added dynamically by Dart renderer
+    if (typeof componentHandler !== 'undefined') {
+      var observer = new MutationObserver(function() {
+        componentHandler.upgradeDom();
+      });
+      observer.observe(document.getElementById('app'), {
+        childList: true,
+        subtree: true
+      });
+    }
+  </script>
+</body>
+</html>

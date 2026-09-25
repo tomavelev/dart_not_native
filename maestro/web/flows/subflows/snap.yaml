@@ -1,0 +1,29 @@
+# Screenshot checkpoint shared by all example flows.
+#
+#   - runFlow:
+#       file: subflows/snap.yaml
+#       env:
+#         NAME: calculator_example/01_initial
+#
+# MODE=generate  writes flows/screenshots/<KIT>/<NAME>.png (run.sh passes
+#                --test-output-dir flows, Maestro adds screenshots/).
+# MODE=verify    compares the page against that baseline.
+# MODE unset     no screenshot; the flow only checks behaviour.
+#
+# Maestro cannot read thresholdPercentage from an env var, so it is fixed
+# here. 99.95% similarity still catches a one-digit change in a 1280x800 page.
+appId: web
+---
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      true: ${MODE == 'generate'}
+    commands:
+      - takeScreenshot: ${KIT}/${NAME}
+- runFlow:
+    when:
+      true: ${MODE == 'verify'}
+    commands:
+      - assertScreenshot:
+          path: ../screenshots/${KIT}/${NAME}.png
+          thresholdPercentage: 99.95

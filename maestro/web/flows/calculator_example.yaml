@@ -1,0 +1,95 @@
+# Calculator (lib/examples/apps/calculator_app.dart)
+url: ${BASE_URL}/calculator_example/?kit=${KIT}&animations=off
+tags:
+  - web
+  - calculator
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: display
+    timeout: 20000
+- assertVisible: "Calculator"
+- assertVisible:
+    id: display
+    text: "0"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: calculator_example/01_initial
+
+# 7 + 5 = 12
+- tapOn:
+    id: key_7
+- tapOn:
+    id: key_plus
+- tapOn:
+    id: key_5
+- assertVisible:
+    id: display
+    text: "5"
+- tapOn:
+    id: key_equals
+- assertVisible:
+    id: display
+    text: "12"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: calculator_example/02_addition
+
+# 12 × 3 = 36, then backspace
+- tapOn:
+    id: key_multiply
+- tapOn:
+    id: key_3
+- tapOn:
+    id: key_equals_2
+- assertVisible:
+    id: display
+    text: "36"
+- tapOn:
+    id: key_backspace
+- assertVisible:
+    id: display
+    text: "3"
+
+# Decimal division: 1 ÷ 4 = 0.25
+- tapOn:
+    id: key_clear
+- tapOn:
+    id: key_1
+- tapOn:
+    id: key_divide
+- tapOn:
+    id: key_4
+- tapOn:
+    id: key_equals
+- assertVisible:
+    id: display
+    text: "0.25"
+
+# Division by zero
+- tapOn:
+    id: key_clear
+- tapOn:
+    id: key_9
+- tapOn:
+    id: key_divide
+- tapOn:
+    id: key_0
+- tapOn:
+    id: key_equals
+- assertVisible:
+    id: display
+    text: "Error"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: calculator_example/03_error
+
+- tapOn:
+    id: key_clear
+- assertVisible:
+    id: display
+    text: "0"

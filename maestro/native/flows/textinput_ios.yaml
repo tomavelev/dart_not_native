@@ -1,0 +1,27 @@
+# Typing into a bound field reaches Dart (iOS).
+#
+# entry: ios=lib/main_native_textinput.dart
+#
+# The same round trip as the Android flow, with iOS's own field: the label is
+# drawn above the box rather than floating in it, so the field is tapped by its
+# placeholder.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "TextInput Showcase"
+    timeout: 20000
+- assertVisible: "Characters: 0"
+
+- tapOn: "Enter your message..."
+- inputText: "hello"
+- assertVisible: "Characters: 5"
+
+- tapOn: "user@example.com"
+- inputText: "not-an-email"
+# The validator answers while the field is still being typed into, and the
+# message is drawn by the field itself.
+- assertVisible: "Please enter a valid email"
+- inputText: "@example.com"
+- assertNotVisible: "Please enter a valid email"

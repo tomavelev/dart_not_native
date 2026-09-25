@@ -1,0 +1,33 @@
+# The app asks for the keyboard, and gives it back.
+#
+# entry: android=lib/main_native_textinput.dart ios=lib/main_native_textinput.dart
+#
+# A focus ask is a state change nothing on screen shows on its own - the
+# renderer either called becomeFirstResponder/requestFocus or it did not, and
+# a screenshot of an empty field looks the same either way. The showcase
+# reports the field's own focus and blur events as "Status: ...", so this
+# drives the two buttons and reads back what the *field* said happened.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "TextInput Showcase"
+    timeout: 20000
+- assertVisible: "Status: Not focused"
+
+# The app puts the caret in a field nobody touched.
+- tapOn:
+    text: "(?i)focus the name field"
+- assertVisible: "Status: Focused"
+
+# Asking again while it is already focused is not a second focus event, but it
+# is still the field the app asked for.
+- tapOn:
+    text: "(?i)focus the name field"
+- assertVisible: "Status: Focused"
+
+# And the app takes the keyboard away again.
+- tapOn:
+    text: "(?i)dismiss the keyboard"
+- assertVisible: "Status: Not focused"

@@ -1,0 +1,88 @@
+# Internationalization (lib/examples/apps/i18n_example_app.dart)
+url: ${BASE_URL}/i18n_example/?kit=${KIT}&animations=off
+tags:
+  - web
+  - i18n
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: current_locale
+    timeout: 20000
+
+# English (default locale)
+- assertVisible:
+    id: current_locale
+    text: "Language: en"
+- assertVisible:
+    id: value_ok
+    text: "OK"
+- assertVisible:
+    id: value_required
+    text: "This field is required"
+- assertVisible:
+    id: value_items_3
+    text: "3 items"
+- assertVisible:
+    id: value_items_1
+    text: "1 item"
+- assertVisible:
+    id: value_items_0
+    text: "No items"
+- assertVisible:
+    id: value_fallback
+    text: "Custom default"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: i18n_example/01_english
+
+# Spanish
+- tapOn:
+    id: lang_es
+- assertVisible:
+    id: current_locale
+    text: "Language: es"
+- assertVisible:
+    id: value_ok
+    text: "Aceptar"
+- assertVisible:
+    id: value_required
+    text: "Este campo es obligatorio"
+- assertVisible:
+    id: value_items_3
+    text: "3 elementos"
+- assertVisible:
+    id: value_just_now
+    text: "Hace un momento"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: i18n_example/02_spanish
+
+# Japanese: non-latin script
+- tapOn:
+    id: lang_ja
+- assertVisible:
+    id: current_locale
+    text: "Language: ja"
+- assertVisible:
+    id: value_cancel
+    text: "キャンセル"
+- assertVisible:
+    id: value_just_now
+    text: "たった今"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: i18n_example/03_japanese
+
+# Back to English
+- tapOn:
+    id: lang_en
+- assertVisible:
+    id: current_locale
+    text: "Language: en"
+- assertVisible:
+    id: value_cancel
+    text: "Cancel"

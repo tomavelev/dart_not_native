@@ -1,0 +1,6 @@
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+#include "Generated.xcconfig"
+
+// Signing is per developer, so it is not in the repository. Copy
+// Signing.xcconfig.example to Signing.xcconfig and put your team in it.
+#include? "Signing.xcconfig"

@@ -1,0 +1,548 @@
+{
+  "type": "Scaffold",
+  "props": {},
+  "children": [
+    {
+      "type": "AppBar",
+      "props": {
+        "title": "TextInput Showcase"
+      },
+      "children": null
+    },
+    {
+      "type": "Column",
+      "props": {
+        "crossAxisAlignment": "center"
+      },
+      "children": [
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 16.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "center"
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "🏷️ Floating Label Input",
+                    "fontSize": 16.0,
+                    "fontWeight": 700
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "TextField",
+                  "props": {
+                    "hint": "Enter your name",
+                    "eventId": "cb:name_field",
+                    "id": "name_field",
+                    "label": "Full Name",
+                    "obscureText": false,
+                    "enabled": true,
+                    "initialValue": "",
+                    "valueVersion": 0,
+                    "maxLines": 1,
+                    "textInputAction": "next"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Status: Not focused",
+                    "id": "name_status"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 16.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "center"
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "⌨️ Focus From The App",
+                    "fontSize": 16.0,
+                    "fontWeight": 700
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "The app can put the caret in a field, or take the keyboard away, without the user touching either."
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Focus the name field",
+                    "eventId": "cb:focus_name",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "focus_name"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Dismiss the keyboard",
+                    "eventId": "cb:dismiss_keyboard",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "dismiss_keyboard"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 16.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "center"
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "📧 Email Input with Validation",
+                    "fontSize": 16.0,
+                    "fontWeight": 700
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "TextField",
+                  "props": {
+                    "hint": "user@example.com",
+                    "eventId": "cb:email_field",
+                    "id": "email_field",
+                    "label": "Email Address",
+                    "obscureText": false,
+                    "enabled": true,
+                    "initialValue": "",
+                    "valueVersion": 0,
+                    "maxLines": 1,
+                    "textInputAction": "next"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "📝 Enter email",
+                    "id": "email_status"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 16.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "center"
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "🔒 Password Input",
+                    "fontSize": 16.0,
+                    "fontWeight": 700
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "TextField",
+                  "props": {
+                    "hint": "Enter password",
+                    "eventId": "cb:password_field",
+                    "id": "password_field",
+                    "label": "Password",
+                    "obscureText": true,
+                    "enabled": true,
+                    "initialValue": "",
+                    "valueVersion": 0,
+                    "maxLines": 1,
+                    "textInputAction": "done"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Enter at least 8 characters",
+                    "id": "password_status"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 16.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "center"
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "📝 Multi-line Input",
+                    "fontSize": 16.0,
+                    "fontWeight": 700
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "TextField",
+                  "props": {
+                    "hint": "Enter your message...",
+                    "eventId": "cb:message_field",
+                    "id": "message_field",
+                    "label": "Message",
+                    "obscureText": false,
+                    "enabled": true,
+                    "initialValue": "",
+                    "valueVersion": 0,
+                    "maxLines": 3,
+                    "textInputAction": "done"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Characters: 0",
+                    "id": "message_count"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 16.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "center"
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "🚫 Disabled Input",
+                    "fontSize": 16.0,
+                    "fontWeight": 700
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "TextField",
+                  "props": {
+                    "hint": "Cannot edit this field",
+                    "eventId": "cb:disabled_field",
+                    "id": "disabled_field",
+                    "label": "Read-only",
+                    "obscureText": false,
+                    "enabled": false,
+                    "initialValue": "Disabled value",
+                    "valueVersion": 0,
+                    "maxLines": 1,
+                    "textInputAction": "done"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 16.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "center"
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "📋 Event Log",
+                    "fontSize": 16.0,
+                    "fontWeight": 700
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Validate All",
+                    "eventId": "cb:validate_all",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "validate_all"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Last 5 events:"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 16.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "center"
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "✅ TextInput Features:",
+                    "fontSize": 16.0,
+                    "fontWeight": 700
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Floating labels"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Hint text"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Error state with message"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Disabled state"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Focus/Blur events"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Change events"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Submit/Next events"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Password obscuring"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Multi-line support"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Initial values"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Character counting"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "• Validation feedback"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "SizedBox",
+          "props": {
+            "height": 32.0
+          },
+          "children": null
+        }
+      ]
+    }
+  ]
+}

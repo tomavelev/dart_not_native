@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The WebView node loads a remote page, which needs this. Declared by
+         the plugin rather than left to each app, so the framework keeps its
+         zero-setup promise; it is a normal install-time permission, and it is
+         what webview_flutter declares for the same reason. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

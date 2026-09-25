@@ -1,0 +1,478 @@
+{
+  "type": "Scaffold",
+  "props": {},
+  "children": [
+    {
+      "type": "AppBar",
+      "props": {
+        "title": "Calculator"
+      },
+      "children": null
+    },
+    {
+      "type": "Column",
+      "props": {
+        "crossAxisAlignment": "stretch"
+      },
+      "children": [
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 24.0
+          },
+          "children": [
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "end",
+                "spacing": 0.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "12",
+                    "fontSize": 48.0,
+                    "fontWeight": 700,
+                    "id": "display"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Padding",
+          "props": {
+            "padding": 8.0
+          },
+          "children": [
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "stretch"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisAlignment": "start",
+                    "spacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "C",
+                            "eventId": "cb:key_clear",
+                            "variant": "primary",
+                            "color": "#f44336",
+                            "disabled": false,
+                            "id": "key_clear"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "←",
+                            "eventId": "cb:key_backspace",
+                            "variant": "primary",
+                            "color": "#f44336",
+                            "disabled": false,
+                            "id": "key_backspace"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "÷",
+                            "eventId": "cb:key_divide",
+                            "variant": "primary",
+                            "color": "#ff9800",
+                            "disabled": false,
+                            "id": "key_divide"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "×",
+                            "eventId": "cb:key_multiply",
+                            "variant": "primary",
+                            "color": "#ff9800",
+                            "disabled": false,
+                            "id": "key_multiply"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisAlignment": "start",
+                    "spacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "7",
+                            "eventId": "cb:key_7",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_7"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "8",
+                            "eventId": "cb:key_8",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_8"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "9",
+                            "eventId": "cb:key_9",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_9"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "-",
+                            "eventId": "cb:key_minus",
+                            "variant": "primary",
+                            "color": "#ff9800",
+                            "disabled": false,
+                            "id": "key_minus"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisAlignment": "start",
+                    "spacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "4",
+                            "eventId": "cb:key_4",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_4"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "5",
+                            "eventId": "cb:key_5",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_5"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "6",
+                            "eventId": "cb:key_6",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_6"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "+",
+                            "eventId": "cb:key_plus",
+                            "variant": "primary",
+                            "color": "#ff9800",
+                            "disabled": false,
+                            "id": "key_plus"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisAlignment": "start",
+                    "spacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "1",
+                            "eventId": "cb:key_1",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_1"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "2",
+                            "eventId": "cb:key_2",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_2"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "3",
+                            "eventId": "cb:key_3",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_3"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "=",
+                            "eventId": "cb:key_equals",
+                            "variant": "primary",
+                            "color": "#4caf50",
+                            "disabled": false,
+                            "id": "key_equals"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisAlignment": "start",
+                    "spacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "0",
+                            "eventId": "cb:key_0",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_0"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": ".",
+                            "eventId": "cb:key_dot",
+                            "variant": "primary",
+                            "disabled": false,
+                            "id": "key_dot"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "=",
+                            "eventId": "cb:key_equals_2",
+                            "variant": "primary",
+                            "color": "#4caf50",
+                            "disabled": false,
+                            "id": "key_equals_2"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

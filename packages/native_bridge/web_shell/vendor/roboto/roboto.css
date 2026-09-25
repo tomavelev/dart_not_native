@@ -1,0 +1,22 @@
+/* Roboto (latin subset) from @fontsource/roboto 5.1.0, SIL OFL 1.1 */
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('./roboto-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('./roboto-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('./roboto-latin-700-normal.woff2') format('woff2');
+}

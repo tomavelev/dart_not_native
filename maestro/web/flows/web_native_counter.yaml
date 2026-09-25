@@ -1,0 +1,38 @@
+# Counter (lib/examples/apps/web_native_counter_app.dart)
+url: ${BASE_URL}/web_native_counter/?kit=${KIT}&animations=off
+tags:
+  - web
+  - counter
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: count
+    timeout: 20000
+- assertVisible: "Counter App"
+- assertVisible: "You have pushed the button this many times:"
+- assertVisible:
+    id: count
+    text: "0"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: web_native_counter/01_initial
+
+# The FAB is found by its tooltip (aria-label)
+- tapOn:
+    id: Increment
+- assertVisible:
+    id: count
+    text: "1"
+- tapOn:
+    id: Increment
+- tapOn:
+    id: Increment
+- assertVisible:
+    id: count
+    text: "3"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: web_native_counter/02_three_taps

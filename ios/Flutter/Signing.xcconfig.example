@@ -1,0 +1,11 @@
+// Copy this file to `Signing.xcconfig` and put your own Apple Developer team
+// in it. That copy is git-ignored: a team id identifies whoever is building,
+// not the project, so it does not belong in the repository.
+//
+// Find yours with:
+//   xcrun devicectl list devices          # a paired device, to check signing works
+//   security find-identity -v -p codesigning   # the team is in the certificate name
+//
+// A simulator build needs none of this. A build for a physical device does.
+
+DEVELOPMENT_TEAM = YOUR_TEAM_ID

@@ -1,0 +1,48 @@
+# What a screen reader would find (iOS).
+#
+# entry: ios=lib/main_native_design_system.dart
+#
+# The same controls as the Android flow. UIKit has no checkbox, so the
+# renderer draws one as a button whose *image* carries the state - which a
+# screen reader cannot read. It carries the `.selected` trait as well, and
+# that is what this asserts.
+#
+# That any of it is visible at all is recent: a FlutterView answers
+# `accessibilityElements` with Flutter's own semantics, and UIKit took that
+# list instead of the renderer's real views, so this screen used to be empty
+# to assistive technology.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Design System (Page 1/5)"
+    timeout: 20000
+
+- repeat:
+    times: 4
+    commands:
+      - tapOn: "Next"
+- assertVisible: "Page 5 of 5 · Feedback & Inputs"
+
+# A checkbox announces its label, and its state through the selected trait.
+- assertVisible:
+    text: "Subscribe to newsletter"
+    selected: false
+- tapOn: "Subscribe to newsletter"
+- assertVisible:
+    text: "Subscribe to newsletter"
+    selected: true
+- assertVisible: "Newsletter: on"
+
+# The chosen radio is the selected one, and choosing another moves it.
+- assertVisible:
+    text: "Plan: Free"
+    selected: true
+- tapOn: "Plan: Pro"
+- assertVisible:
+    text: "Plan: Pro"
+    selected: true
+- assertVisible:
+    text: "Plan: Free"
+    selected: false

@@ -1,0 +1,165 @@
+{
+  "type": "Scaffold",
+  "props": {},
+  "children": [
+    {
+      "type": "AppBar",
+      "props": {
+        "title": "Navigation Demo"
+      },
+      "children": null
+    },
+    {
+      "type": "Padding",
+      "props": {
+        "padding": 16.0
+      },
+      "children": [
+        {
+          "type": "Column",
+          "props": {
+            "crossAxisAlignment": "start"
+          },
+          "children": [
+            {
+              "type": "Text",
+              "props": {
+                "content": "Navigation & Routing Example",
+                "fontSize": 24.0,
+                "fontWeight": 700
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 8.0
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Named routes, route parameters, history and guards.",
+                "color": "#757575"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 24.0
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Quick navigation:",
+                "fontWeight": 500
+              },
+              "children": null
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 0.0
+              },
+              "children": [
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Users List",
+                    "eventId": "cb:nav_users",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "nav_users"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Posts List",
+                    "eventId": "cb:nav_posts",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "nav_posts"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Settings",
+                    "eventId": "cb:nav_settings",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "nav_settings"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 24.0
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Favourites: 0",
+                "id": "favourites_count"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 24.0
+              },
+              "children": null
+            },
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "start"
+              },
+              "children": [
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 16.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Current path: /",
+                    "color": "#757575",
+                    "id": "current_path"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "History: /",
+                    "color": "#757575",
+                    "id": "history"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

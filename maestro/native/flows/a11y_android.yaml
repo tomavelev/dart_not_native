@@ -1,0 +1,53 @@
+# What a screen reader would find (Android).
+#
+# entry: android=lib/main_native_design_system.dart
+#
+# The design system's controls, read the way assistive technology reads them:
+# a checkable control has to announce *what it is*, *what it is called* and
+# *whether it is on* - the last of which lives in the drawable, where a screen
+# reader cannot see it, unless the renderer says it separately.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Design System (Page 1/5)"
+    timeout: 20000
+
+# Feedback & Inputs is the last page.
+- repeat:
+    times: 4
+    commands:
+      - tapOn: "(?i)next"
+- assertVisible: "Page 5 of 5 · Feedback & Inputs"
+
+# A checkbox says its label and its state, and both change when it is tapped.
+- assertVisible:
+    text: "Subscribe to newsletter"
+    checked: false
+- tapOn: "Subscribe to newsletter"
+- assertVisible:
+    text: "Subscribe to newsletter"
+    checked: true
+- assertVisible: "Newsletter: on"
+
+# One radio in the group is checked, and choosing another moves it.
+- assertVisible:
+    text: "Plan: Free"
+    checked: true
+- tapOn: "Plan: Pro"
+- assertVisible:
+    text: "Plan: Pro"
+    checked: true
+- assertVisible:
+    text: "Plan: Free"
+    checked: false
+
+# A switch reports its state too.
+- assertVisible:
+    text: "Dark mode"
+    checked: false
+- tapOn: "Dark mode"
+- assertVisible:
+    text: "Dark mode"
+    checked: true

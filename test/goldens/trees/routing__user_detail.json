@@ -1,0 +1,156 @@
+{
+  "type": "Scaffold",
+  "props": {},
+  "children": [
+    {
+      "type": "AppBar",
+      "props": {
+        "title": "User Detail"
+      },
+      "children": null
+    },
+    {
+      "type": "Padding",
+      "props": {
+        "padding": 16.0
+      },
+      "children": [
+        {
+          "type": "Column",
+          "props": {
+            "crossAxisAlignment": "start"
+          },
+          "children": [
+            {
+              "type": "Text",
+              "props": {
+                "content": "Bob Smith",
+                "fontSize": 24.0,
+                "fontWeight": 700,
+                "id": "detail_title"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 16.0
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Email: bob@example.com"
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Phone: +1 (555) 234-5678"
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Role: Engineer"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 16.0
+              },
+              "children": null
+            },
+            {
+              "type": "Button",
+              "props": {
+                "label": "Add favourite",
+                "eventId": "cb:favourite",
+                "variant": "primary",
+                "disabled": false,
+                "id": "favourite"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 24.0
+              },
+              "children": null
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "spacing": 0.0
+              },
+              "children": [
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Back",
+                    "eventId": "cb:back",
+                    "variant": "tertiary",
+                    "disabled": false,
+                    "id": "back"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Home",
+                    "eventId": "cb:home",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "home"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Column",
+              "props": {
+                "crossAxisAlignment": "start"
+              },
+              "children": [
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 16.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Current path: /users/2",
+                    "color": "#757575",
+                    "id": "current_path"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "History: / → /users → /users/2",
+                    "color": "#757575",
+                    "id": "history"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

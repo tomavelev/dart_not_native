@@ -1,0 +1,31 @@
+/* Material Design Lite kit (lib/web_ui/kits/mdl_kit.dart) */
+
+.dnn-kit-mdl .dnn-appbar { box-shadow: none; }
+
+/* Design-system variants on MDL raised buttons (html class wins over MDL's
+   :focus/:hover backgrounds, which would hide the variant color) */
+.dnn-mdl-button { margin: 4px; }
+.dnn-kit-mdl .dnn-mdl-button--primary.mdl-button--raised { background: var(--dnn-primary); color: var(--dnn-on-primary, #fff); }
+.dnn-kit-mdl .dnn-mdl-button--secondary.mdl-button--raised { background: var(--dnn-secondary); color: #fff; }
+.dnn-kit-mdl .dnn-mdl-button--success.mdl-button--raised { background: var(--dnn-success); color: #fff; }
+.dnn-kit-mdl .dnn-mdl-button--error.mdl-button--raised { background: var(--dnn-error); color: #fff; }
+.dnn-kit-mdl .dnn-mdl-button--warning.mdl-button--raised { background: var(--dnn-warning); color: var(--dnn-text); }
+.dnn-mdl-button--sm { height: 28px; line-height: 28px; font-size: 12px; padding: 0 12px; min-width: 0; }
+.dnn-mdl-button--lg { height: 44px; line-height: 44px; font-size: 16px; padding: 0 24px; }
+.dnn-mdl-button.mdl-button[disabled] { background: rgba(0, 0, 0, 0.12); color: rgba(0, 0, 0, 0.26); }
+
+.dnn-fab.mdl-button--fab { background: var(--dnn-primary); }
+
+/* MDL cards default to a fixed 330x200 box */
+.dnn-mdl-card.mdl-card { width: 100%; max-width: 560px; min-height: 0; margin: 8px 0; overflow: visible; }
+.dnn-mdl-card--outlined.mdl-card { box-shadow: none; border: 1px solid var(--dnn-divider); }
+.dnn-mdl-card--filled.mdl-card { box-shadow: none; }
+.dnn-mdl-card .mdl-card__title { padding: 16px 16px 0; }
+.dnn-mdl-card__content.mdl-card__supporting-text { width: 100%; color: var(--dnn-text); overflow: visible; }
+
+.dnn-mdl-chip.mdl-chip { margin: 2px; }
+.dnn-mdl-chip--solid .mdl-chip__text { color: #fff; }
+.dnn-mdl-chip--outlined { background: transparent; border: 1px solid currentColor; }
+.dnn-mdl-chip--outlined .mdl-chip__text { color: inherit; }
+
+.dnn-mdl-list.mdl-list { align-self: stretch; padding: 0; margin: 0; background: var(--dnn-surface); }

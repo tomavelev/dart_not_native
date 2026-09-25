@@ -1,0 +1,26 @@
+name: dart_not_native_local_auth
+description: >-
+  BiometricsService for dart_not_native on Android and iOS, backed by the
+  local_auth plugin.
+version: 0.1.0
+homepage: https://programtom.com
+# Not published until dart_not_native itself is hosted; see TODO.md.
+publish_to: none
+
+environment:
+  sdk: ^3.10.8
+  flutter: '>=3.38.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  dart_not_native:
+    path: ../native_bridge
+  local_auth: ^3.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  local_auth_platform_interface: ^1.1.0
+  plugin_platform_interface: ^2.1.7

@@ -1,0 +1,92 @@
+{
+  "type": "Scaffold",
+  "props": {},
+  "children": [
+    {
+      "type": "AppBar",
+      "props": {
+        "title": "Counter App"
+      },
+      "children": null
+    },
+    {
+      "type": "Center",
+      "props": {},
+      "children": [
+        {
+          "type": "Column",
+          "props": {
+            "crossAxisAlignment": "center",
+            "mainAxisAlignment": "center"
+          },
+          "children": [
+            {
+              "type": "Text",
+              "props": {
+                "content": "You have pushed the button this many times:"
+              },
+              "children": null
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "0",
+                "fontSize": 34.0,
+                "id": "count"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 24.0
+              },
+              "children": null
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "center",
+                "spacing": 8.0
+              },
+              "children": [
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Decrement",
+                    "eventId": "cb:decrement",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "decrement"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Button",
+                  "props": {
+                    "label": "Reset",
+                    "eventId": "cb:reset",
+                    "variant": "primary",
+                    "disabled": false,
+                    "id": "reset"
+                  },
+                  "children": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "FloatingActionButton",
+      "props": {
+        "tooltip": "Increment",
+        "eventId": "cb:0",
+        "icon": "add",
+        "iconCodepoint": 57415
+      },
+      "children": null
+    }
+  ]
+}

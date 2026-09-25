@@ -1,0 +1,30 @@
+# Typing into a bound field reaches Dart (Android).
+#
+# entry: android=lib/main_native_textinput.dart
+#
+# This is the flow that would have caught cc26696, where the floating-label
+# work dropped the line that sends `<eventId>_change`: the field drew, focused
+# and kept its caret while the app behind it heard nothing. Android's label
+# floats inside the field, so the field is tapped by that label.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "TextInput Showcase"
+    timeout: 20000
+- assertVisible: "Characters: 0"
+
+# What the user types is what the app counts.
+- tapOn: "Message"
+- inputText: "hello"
+- assertVisible: "Characters: 5"
+
+# And a field the app validates answers while it is being typed into.
+- tapOn: "Email Address"
+- inputText: "not-an-email"
+# The validator answers while the field is still being typed into, and the
+# message is drawn by the field itself.
+- assertVisible: "Please enter a valid email"
+- inputText: "@example.com"
+- assertNotVisible: "Please enter a valid email"

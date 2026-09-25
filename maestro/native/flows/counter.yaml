@@ -1,0 +1,29 @@
+# The counter, drawn as real platform views (lib/examples/apps/counter_app.dart).
+#
+# entry: android=lib/main_native_android.dart ios=lib/main_native_ios.dart
+#
+# What this is for: a tap has to cross the channel, reach Dart, rebuild the
+# tree and come back as a patched native view. Nothing else in the suite
+# checks that round trip on a device - the device lane asks a renderer to draw
+# every node type and only listens for errors.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Counter App"
+    timeout: 20000
+- assertVisible: "You have pushed the button this many times:"
+- assertVisible: "0"
+
+# The FAB increments, three taps in a row.
+- tapOn: "Increment"
+- tapOn: "Increment"
+- tapOn: "Increment"
+- assertVisible: "3"
+
+# The other buttons are ordinary ones, and the count is patched in place.
+- tapOn: "Decrement"
+- assertVisible: "2"
+- tapOn: "Reset"
+- assertVisible: "0"

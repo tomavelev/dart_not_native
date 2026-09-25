@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<!-- Superseded by ../web_shell/index.html, which runWebApp() serves with
+     locally vendored stylesheets. code.getmdl.io no longer serves these files. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Material Design Web App - dart_not_native framework">
+
+  <!-- Material Icons -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+
+  <!-- Material Design Lite CSS -->
+  <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.min.css">
+
+  <!-- Roboto Font -->
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700" rel="stylesheet">
+
+  <title>dart_not_native - Web Bridge</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+    }
+
+    body {
+      font-family: 'Roboto', sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: rgba(0, 0, 0, 0.87);
+      background-color: #fafafa;
+    }
+
+    #app {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mdl-layout {
+      width: 100%;
+      height: 100%;
+    }
+
+    .mdl-layout__header {
+      background-color: #1976d2;
+      color: white;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .mdl-layout__header-row {
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      height: 64px;
+    }
+
+    .mdl-layout-title {
+      flex: 1;
+      font-size: 20px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .mdl-layout__content {
+      flex: 1;
+      overflow: auto;
+      padding: 16px;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .mdl-card {
+      background-color: white;
+      border-radius: 2px;
+      box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.14),
+                  0 3px 1px -2px rgba(0, 0, 0, 0.2),
+                  0 1px 5px 0 rgba(0, 0, 0, 0.12);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .mdl-button {
+      background-color: #1976d2;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 2px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .mdl-button:hover {
+      background-color: #1565c0;
+    }
+
+    .mdl-fab {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background-color: #ff5252;
+      color: white;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 6px 10px 0 rgba(0, 0, 0, 0.14);
+    }
+
+    .mdl-fab:hover {
+      background-color: #ff3838;
+    }
+
+    @media (max-width: 768px) {
+      .mdl-layout__header-row {
+        height: 56px;
+      }
+      .mdl-layout-title {
+        font-size: 16px;
+      }
+      .mdl-layout__content {
+        padding: 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+  <script>
+    if (window.componentHandler) {
+      window.componentHandler.upgradeDom();
+    }
+  </script>
+</body>
+</html>

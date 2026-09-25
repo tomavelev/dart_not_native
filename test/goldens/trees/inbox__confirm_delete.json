@@ -1,0 +1,2899 @@
+{
+  "type": "Overlay",
+  "props": {},
+  "children": [
+    {
+      "type": "Scaffold",
+      "props": {},
+      "children": [
+        {
+          "type": "AppBar",
+          "props": {
+            "title": "Inbox (6667 unread)"
+          },
+          "children": null
+        },
+        {
+          "type": "LazyList",
+          "props": {
+            "id": "inbox",
+            "itemCount": 10000,
+            "itemExtent": 104.0,
+            "startIndex": 0,
+            "rangeEventId": "cb:inbox.range"
+          },
+          "children": [
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_1.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_1.l0"
+                  }
+                ],
+                "id": "swipe_1"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Grace",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 1",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "The build is green again after the flake in the storage tests",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_1",
+                            "tooltip": "Actions for Message 1",
+                            "id": "actions_1"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_2.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_2.l0"
+                  }
+                ],
+                "id": "swipe_2"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Linus",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 2",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Design review moved to 3pm - the room with the broken blind, sorry",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_2",
+                            "tooltip": "Actions for Message 2",
+                            "id": "actions_2"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_3.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_3.l0"
+                  }
+                ],
+                "id": "swipe_3"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Margaret",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 3",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Thanks for the quick turnaround on this, it unblocked the whole thing",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_3",
+                            "tooltip": "Actions for Message 3",
+                            "id": "actions_3"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_4.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_4.l0"
+                  }
+                ],
+                "id": "swipe_4"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Dennis",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 4",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Draft attached for your review whenever you have a moment this week",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_4",
+                            "tooltip": "Actions for Message 4",
+                            "id": "actions_4"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_5.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_5.l0"
+                  }
+                ],
+                "id": "swipe_5"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Ada",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 5",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Notes from today's sync, including the bits we said we would write down and then did not",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_5",
+                            "tooltip": "Actions for Message 5",
+                            "id": "actions_5"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_6.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_6.l0"
+                  }
+                ],
+                "id": "swipe_6"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Grace",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 6",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "The build is green again after the flake in the storage tests",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_6",
+                            "tooltip": "Actions for Message 6",
+                            "id": "actions_6"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_7.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_7.l0"
+                  }
+                ],
+                "id": "swipe_7"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Linus",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 7",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Design review moved to 3pm - the room with the broken blind, sorry",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_7",
+                            "tooltip": "Actions for Message 7",
+                            "id": "actions_7"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_8.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_8.l0"
+                  }
+                ],
+                "id": "swipe_8"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Margaret",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 8",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Thanks for the quick turnaround on this, it unblocked the whole thing",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_8",
+                            "tooltip": "Actions for Message 8",
+                            "id": "actions_8"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_9.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_9.l0"
+                  }
+                ],
+                "id": "swipe_9"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Dennis",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 9",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Draft attached for your review whenever you have a moment this week",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_9",
+                            "tooltip": "Actions for Message 9",
+                            "id": "actions_9"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_10.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_10.l0"
+                  }
+                ],
+                "id": "swipe_10"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Ada",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 10",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Notes from today's sync, including the bits we said we would write down and then did not",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_10",
+                            "tooltip": "Actions for Message 10",
+                            "id": "actions_10"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_11.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_11.l0"
+                  }
+                ],
+                "id": "swipe_11"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Grace",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 11",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "The build is green again after the flake in the storage tests",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_11",
+                            "tooltip": "Actions for Message 11",
+                            "id": "actions_11"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_12.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_12.l0"
+                  }
+                ],
+                "id": "swipe_12"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Linus",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 12",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Design review moved to 3pm - the room with the broken blind, sorry",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_12",
+                            "tooltip": "Actions for Message 12",
+                            "id": "actions_12"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_13.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_13.l0"
+                  }
+                ],
+                "id": "swipe_13"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Margaret",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 13",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Thanks for the quick turnaround on this, it unblocked the whole thing",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_13",
+                            "tooltip": "Actions for Message 13",
+                            "id": "actions_13"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_14.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_14.l0"
+                  }
+                ],
+                "id": "swipe_14"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Dennis",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 14",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Draft attached for your review whenever you have a moment this week",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_14",
+                            "tooltip": "Actions for Message 14",
+                            "id": "actions_14"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_15.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_15.l0"
+                  }
+                ],
+                "id": "swipe_15"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Ada",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 15",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Notes from today's sync, including the bits we said we would write down and then did not",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_15",
+                            "tooltip": "Actions for Message 15",
+                            "id": "actions_15"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_16.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_16.l0"
+                  }
+                ],
+                "id": "swipe_16"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Grace",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 16",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "The build is green again after the flake in the storage tests",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_16",
+                            "tooltip": "Actions for Message 16",
+                            "id": "actions_16"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_17.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_17.l0"
+                  }
+                ],
+                "id": "swipe_17"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Linus",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 17",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Design review moved to 3pm - the room with the broken blind, sorry",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_17",
+                            "tooltip": "Actions for Message 17",
+                            "id": "actions_17"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_18.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_18.l0"
+                  }
+                ],
+                "id": "swipe_18"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Margaret",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 18",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Thanks for the quick turnaround on this, it unblocked the whole thing",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_18",
+                            "tooltip": "Actions for Message 18",
+                            "id": "actions_18"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_19.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_19.l0"
+                  }
+                ],
+                "id": "swipe_19"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Dennis",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 19",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Draft attached for your review whenever you have a moment this week",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_19",
+                            "tooltip": "Actions for Message 19",
+                            "id": "actions_19"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_20.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_20.l0"
+                  }
+                ],
+                "id": "swipe_20"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Ada",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 20",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Notes from today's sync, including the bits we said we would write down and then did not",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_20",
+                            "tooltip": "Actions for Message 20",
+                            "id": "actions_20"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_21.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_21.l0"
+                  }
+                ],
+                "id": "swipe_21"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Grace",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 21",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "The build is green again after the flake in the storage tests",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_21",
+                            "tooltip": "Actions for Message 21",
+                            "id": "actions_21"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_22.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_22.l0"
+                  }
+                ],
+                "id": "swipe_22"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Linus",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 22",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Design review moved to 3pm - the room with the broken blind, sorry",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_22",
+                            "tooltip": "Actions for Message 22",
+                            "id": "actions_22"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_23.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_23.l0"
+                  }
+                ],
+                "id": "swipe_23"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Margaret",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 23",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Thanks for the quick turnaround on this, it unblocked the whole thing",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_23",
+                            "tooltip": "Actions for Message 23",
+                            "id": "actions_23"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_24.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_24.l0"
+                  }
+                ],
+                "id": "swipe_24"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Dennis",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 24",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Draft attached for your review whenever you have a moment this week",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_24",
+                            "tooltip": "Actions for Message 24",
+                            "id": "actions_24"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_25.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_25.l0"
+                  }
+                ],
+                "id": "swipe_25"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Ada",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 25",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Notes from today's sync, including the bits we said we would write down and then did not",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_25",
+                            "tooltip": "Actions for Message 25",
+                            "id": "actions_25"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_26.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_26.l0"
+                  }
+                ],
+                "id": "swipe_26"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Grace",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 26",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "The build is green again after the flake in the storage tests",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_26",
+                            "tooltip": "Actions for Message 26",
+                            "id": "actions_26"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_27.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_27.l0"
+                  }
+                ],
+                "id": "swipe_27"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Linus",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 27",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Design review moved to 3pm - the room with the broken blind, sorry",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_27",
+                            "tooltip": "Actions for Message 27",
+                            "id": "actions_27"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_28.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_28.l0"
+                  }
+                ],
+                "id": "swipe_28"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Margaret",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 28",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Thanks for the quick turnaround on this, it unblocked the whole thing",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_28",
+                            "tooltip": "Actions for Message 28",
+                            "id": "actions_28"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_29.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Read",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_29.l0"
+                  }
+                ],
+                "id": "swipe_29"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Dennis",
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 29",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Draft attached for your review whenever you have a moment this week",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_29",
+                            "tooltip": "Actions for Message 29",
+                            "id": "actions_29"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SwipeActions",
+              "props": {
+                "actions": [
+                  {
+                    "label": "Delete",
+                    "color": "#d32f2f",
+                    "eventId": "cb:swipe_30.a0"
+                  }
+                ],
+                "leadingActions": [
+                  {
+                    "label": "Unread",
+                    "color": "#1976d2",
+                    "eventId": "cb:swipe_30.l0"
+                  }
+                ],
+                "id": "swipe_30"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 12.0
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "spacing": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Expanded",
+                          "props": {
+                            "flex": 1
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "props": {
+                                "crossAxisAlignment": "start"
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Ada",
+                                    "fontWeight": 400
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Message 30",
+                                    "fontWeight": 600
+                                  },
+                                  "children": null
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Notes from today's sync, including the bits we said we would write down and then did not",
+                                    "color": "#757575",
+                                    "maxLines": 1,
+                                    "overflow": "ellipsis"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "IconButton",
+                          "props": {
+                            "icon": "more_vert",
+                            "iconCodepoint": 58372,
+                            "eventId": "cb:actions_30",
+                            "tooltip": "Actions for Message 30",
+                            "id": "actions_30"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "BottomSheet",
+      "props": {
+        "dismissible": true,
+        "dismissEventId": "cb:overlay_0.dismiss",
+        "id": "overlay_0"
+      },
+      "children": [
+        {
+          "type": "Column",
+          "props": {
+            "crossAxisAlignment": "stretch"
+          },
+          "children": [
+            {
+              "type": "Text",
+              "props": {
+                "content": "Message 2",
+                "fontWeight": 700,
+                "id": "sheet_title"
+              },
+              "children": null
+            },
+            {
+              "type": "Button",
+              "props": {
+                "label": "Mark as read",
+                "eventId": "cb:sheet_toggle_read",
+                "variant": "tertiary",
+                "disabled": false,
+                "id": "sheet_toggle_read"
+              },
+              "children": null
+            },
+            {
+              "type": "Button",
+              "props": {
+                "label": "Delete",
+                "eventId": "cb:sheet_delete",
+                "variant": "primary",
+                "color": "#f44336",
+                "disabled": false,
+                "id": "sheet_delete"
+              },
+              "children": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Dialog",
+      "props": {
+        "title": "Delete message?",
+        "dismissible": true,
+        "dismissEventId": "cb:confirm_delete.dismiss",
+        "id": "confirm_delete"
+      },
+      "children": [
+        {
+          "type": "Column",
+          "props": {
+            "crossAxisAlignment": "stretch"
+          },
+          "children": [
+            {
+              "type": "Text",
+              "props": {
+                "content": "\"Message 2\" from Linus will be deleted."
+              },
+              "children": null
+            }
+          ]
+        },
+        {
+          "type": "Row",
+          "props": {
+            "mainAxisAlignment": "end",
+            "spacing": 8.0
+          },
+          "children": [
+            {
+              "type": "Button",
+              "props": {
+                "label": "Cancel",
+                "eventId": "cb:confirm_cancel",
+                "variant": "tertiary",
+                "disabled": false,
+                "id": "confirm_cancel"
+              },
+              "children": null
+            },
+            {
+              "type": "Button",
+              "props": {
+                "label": "Delete",
+                "eventId": "cb:confirm_ok",
+                "variant": "primary",
+                "color": "#f44336",
+                "disabled": false,
+                "id": "confirm_ok"
+              },
+              "children": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

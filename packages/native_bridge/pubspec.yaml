@@ -1,0 +1,47 @@
+name: dart_not_native
+description: >-
+  Write a screen once and let each platform draw it with its own UI: real DOM
+  and Material CSS on web, Android Views and iOS UIViews on mobile, or Flutter
+  widgets where a Flutter host is available.
+version: 0.1.0
+homepage: https://programtom.com
+repository: https://github.com/tomavelev/dart_not_native
+issue_tracker: https://github.com/tomavelev/dart_not_native/issues
+
+topics:
+  - ui
+  - native
+  - cross-platform
+  - renderer
+  - web
+
+# Apache-2.0; see LICENSE and NOTICE.
+environment:
+  sdk: ^3.10.8
+  # The plugin declaration below needs a Flutter that understands it.
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.1.0
+  web: ^1.1.0
+    # FFI only needed for mobile platforms
+    # Web uses dart:html conditionally imported in native_bridge.dart
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+# Shipping the native halves as a plugin is what lets a consuming app get the
+# renderer and the system back gesture by adding the dependency, with no files
+# to copy and no host edits.
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.programtom.dart_not_native
+        pluginClass: DartNotNativePlugin
+      ios:
+        pluginClass: DartNotNativePlugin

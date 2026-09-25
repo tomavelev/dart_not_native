@@ -1,0 +1,50 @@
+# iOS counter (lib/examples/apps/ios_native_counter_app.dart)
+url: ${BASE_URL}/ios_native_counter/?kit=${KIT}&animations=off
+tags:
+  - web
+  - ios
+  - counter
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: count
+    timeout: 20000
+- assertVisible: "Counter"
+- assertVisible:
+    id: count
+    text: "0"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: ios_native_counter/01_initial
+
+- tapOn:
+    id: increment
+- tapOn:
+    id: increment
+- assertVisible:
+    id: count
+    text: "2"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: ios_native_counter/02_incremented
+
+- tapOn:
+    id: decrement
+- assertVisible:
+    id: count
+    text: "1"
+- tapOn:
+    id: reset
+- assertVisible:
+    id: count
+    text: "0"
+
+# Decrement never goes below zero
+- tapOn:
+    id: decrement
+- assertVisible:
+    id: count
+    text: "0"

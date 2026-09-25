@@ -1,0 +1,77 @@
+# Todo list (lib/examples/apps/todo_example_app.dart)
+url: ${BASE_URL}/todo_example/?kit=${KIT}&animations=off
+tags:
+  - web
+  - todo
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "No todos yet. Add one above!"
+    timeout: 20000
+- assertVisible: "My Todos"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: todo_example/01_empty
+
+# Add with the + button
+- tapOn: "Add a new todo..."
+- inputText: "Buy milk"
+- tapOn:
+    id: "Add Todo"
+- assertVisible:
+    id: todo_1_title
+    text: "Buy milk"
+- assertNotVisible: "No todos yet. Add one above!"
+# The field is cleared after adding
+- assertVisible: "Add a new todo..."
+
+# Add with the Enter key
+- tapOn: "Add a new todo..."
+- inputText: "Walk the dog"
+- pressKey: Enter
+- assertVisible:
+    id: todo_2_title
+    text: "Walk the dog"
+
+# Empty input is ignored
+- tapOn:
+    id: "Add Todo"
+- assertNotVisible:
+    id: todo_3_title
+- assertVisible:
+    id: todo_summary
+    text: "0 of 2 completed"
+
+# Complete the first todo
+- tapOn:
+    id: todo_1_done
+- assertVisible:
+    id: todo_summary
+    text: "1 of 2 completed"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: todo_example/02_one_done
+
+# Un-complete it again
+- tapOn:
+    id: todo_1_done
+- assertVisible:
+    id: todo_summary
+    text: "0 of 2 completed"
+
+# Delete both
+- tapOn:
+    id: "Delete Walk the dog"
+- assertNotVisible: "Walk the dog"
+- assertVisible:
+    id: todo_summary
+    text: "0 of 1 completed"
+- tapOn:
+    id: "Delete Buy milk"
+- assertVisible: "No todos yet. Add one above!"
+- runFlow:
+    file: subflows/snap.yaml
+    env:
+      NAME: todo_example/03_cleared
