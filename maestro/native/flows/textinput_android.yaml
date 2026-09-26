@@ -2,10 +2,16 @@
 #
 # entry: android=lib/main_native_textinput.dart
 #
-# This is the flow that would have caught cc26696, where the floating-label
-# work dropped the line that sends `<eventId>_change`: the field drew, focused
-# and kept its caret while the app behind it heard nothing. Android's label
-# floats inside the field, so the field is tapped by that label.
+# This is the flow that would have caught the floating-label regression, where
+# that work dropped the line sending `<eventId>_change`: the field drew,
+# focused and kept its caret while the app behind it heard nothing. Android's
+# label floats inside the field, so the field is tapped by that label.
+#
+# Nothing below assumes where a control lands. The showcase is taller than a
+# phone, so the character count sits near the bottom of a tall screen and off
+# the bottom of a short one - a CI emulator failed on exactly that while a
+# 2400px phone passed. Scrolling to a control before touching it is the
+# difference between testing the app and testing the screen size.
 appId: ${APP_ID}
 ---
 - launchApp:
@@ -13,14 +19,26 @@ appId: ${APP_ID}
 - extendedWaitUntil:
     visible: "TextInput Showcase"
     timeout: 20000
-- assertVisible: "Characters: 0"
 
 # What the user types is what the app counts.
+- scrollUntilVisible:
+    element:
+      text: "Characters: 0"
+    direction: DOWN
+- assertVisible: "Characters: 0"
 - tapOn: "Message"
 - inputText: "hello"
+- scrollUntilVisible:
+    element:
+      text: "Characters: 5"
+    direction: DOWN
 - assertVisible: "Characters: 5"
 
 # And a field the app validates answers while it is being typed into.
+- scrollUntilVisible:
+    element:
+      text: "Email Address"
+    direction: UP
 - tapOn: "Email Address"
 - inputText: "not-an-email"
 # The validator answers while the field is still being typed into, and the

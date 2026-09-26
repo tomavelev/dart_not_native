@@ -17,6 +17,7 @@ env:
 jobs:
   test:
     name: Analyze & test (Dart + Flutter + DOM)
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +54,7 @@ jobs:
 
   integration-linux:
     name: Integration (Linux desktop host)
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,11 +69,22 @@ jobs:
           sudo apt-get install -y ninja-build libgtk-3-dev xvfb
       - run: flutter config --enable-linux-desktop
       - run: flutter pub get
+      # One invocation per file. A desktop host cannot start a second app
+      # inside one `flutter test integration_test` run - the first launches,
+      # the second answers "the log reader stopped unexpectedly, or never
+      # started" - and it is the runner doing that, not the tests: each file
+      # passes on its own, and the same failure reproduces on macOS, so it is
+      # not xvfb or the Linux runner either.
       - name: Run integration_test headless
-        run: xvfb-run -a flutter test integration_test -d linux
+        run: |
+          for f in integration_test/*.dart; do
+            echo "== $f"
+            xvfb-run -a flutter test "$f" -d linux
+          done
 
   android-build:
     name: Android native compile
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +105,7 @@ jobs:
 
   ios-build:
     name: iOS native compile
+    timeout-minutes: 40
     # Xcode only exists on the macOS runners, which is why this lane was missing
     # and why the Swift renderer could sit un-compiled through several commits
     # (the swipe-actions change left it failing on a missing `override`).
@@ -137,6 +151,7 @@ jobs:
 
   android-device:
     name: Native renderer on an Android emulator
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     # The Kotlin and Swift renderers are otherwise only read (the source-level
     # node-type check) and compiled. Neither notices a renderer that builds,
@@ -187,6 +202,7 @@ jobs:
 
   benchmarks:
     name: Benchmarks (recorded, not gated)
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     # The numbers belong to the runner as much as to the code, so this lane
     # records rather than gates: it keeps every BENCH_JSON line as an
@@ -222,6 +238,7 @@ jobs:
 
   web-examples:
     name: Web examples compile
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     # The web target is plain dart2js against package:dart_not_native/web.dart,
     # which no other lane compiles: the browser tests exercise the renderer,
