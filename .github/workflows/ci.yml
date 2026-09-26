@@ -1,9 +1,13 @@
 name: CI
 
-# Runs the test lanes the project has (unit, widget/native-UI, DOM in a real
-# browser, integration on the Linux desktop host and on an Android emulator)
-# plus the Android and iOS native compiles, so a change that breaks any one of
-# them is caught automatically.
+# The lanes that are quick enough to wait for: analyze, the three test suites,
+# integration on the Linux desktop host, the web examples and the benchmarks.
+# Together they take about three minutes.
+#
+# The native lanes live in `native.yml` and do not run here. They were 85% of
+# the wall clock - an iOS compile is 12 minutes and an emulator boot 11 - to
+# check things that only break when native code changes, so they are triggered
+# by the paths that can break them instead of by every push.
 
 on:
   push:
@@ -81,124 +85,6 @@ jobs:
             echo "== $f"
             xvfb-run -a flutter test "$f" -d linux
           done
-
-  android-build:
-    name: Android native compile
-    timeout-minutes: 25
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      # Compiles the Kotlin renderer and every plugin's Android half — the lane
-      # that would have caught the BackgroundTasksPlugin and SwitchCompat breaks.
-      - name: Build debug APK
-        run: flutter build apk --debug
-
-  ios-build:
-    name: iOS native compile
-    timeout-minutes: 40
-    # Xcode only exists on the macOS runners, which is why this lane was missing
-    # and why the Swift renderer could sit un-compiled through several commits
-    # (the swipe-actions change left it failing on a missing `override`).
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      # The simulator build compiles NativeUIRenderer.swift and every plugin's
-      # iOS half without needing a signing identity.
-      - name: Build simulator app
-        run: flutter build ios --simulator --debug --no-codesign
-
-      # And then runs it: the Swift renderer draws one of every node type and
-      # all ten example apps, which compiling alone never checks. The iOS half
-      # is the least device-verified one, so this is the lane that matters
-      # most for it.
-      - name: Boot a simulator
-        run: |
-          UDID=$(xcrun simctl list devices available \
-            | grep -E '^ +iPhone' | head -1 \
-            | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
-          echo "SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
-          xcrun simctl boot "$UDID"
-          xcrun simctl bootstatus "$UDID"
-
-      - name: Native renderer on the simulator
-        run: flutter test integration_test -d "$SIMULATOR_UDID"
-
-      - name: Install Maestro
-        run: |
-          curl -Ls https://get.maestro.mobile.dev | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-
-      - name: Device flows on the simulator
-        # The only lane that checks a tap or a keystroke *reaches* the app:
-        # Maestro drives the real views through the accessibility tree.
-        run: maestro/native/run.sh ios --device "$SIMULATOR_UDID"
-
-  android-device:
-    name: Native renderer on an Android emulator
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-    # The Kotlin and Swift renderers are otherwise only read (the source-level
-    # node-type check) and compiled. Neither notices a renderer that builds,
-    # dispatches on every type, and then throws when handed one - a wrong
-    # LayoutParams, an un-themed context. This lane draws one of every node
-    # type and all ten example apps on a real Android, and a native render
-    # answers with what it could not draw.
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - run: flutter pub get
-
-      # Without KVM the emulator falls back to software rendering and the boot
-      # takes long enough to time out.
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Install Maestro
-        run: |
-          curl -Ls https://get.maestro.mobile.dev | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-
-      - name: Integration tests and device flows on an emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          # Both integration files (the Flutter-hosted app and the native
-          # renderer drawing the whole protocol), then the Maestro flows -
-          # which are the only thing here that checks a tap or a keystroke
-          # *reaches* the app rather than that a view was drawn.
-          script: |
-            flutter test integration_test
-            maestro/native/run.sh android
 
   benchmarks:
     name: Benchmarks (recorded, not gated)

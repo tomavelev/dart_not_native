@@ -40,14 +40,24 @@
                   "children": null
                 },
                 {
-                  "type": "Text",
+                  "type": "Expanded",
                   "props": {
-                    "content": "Page 1 of 5 · Typography",
-                    "fontSize": 16.0,
-                    "fontWeight": 500,
-                    "id": "page_indicator"
+                    "flex": 1
                   },
-                  "children": null
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Page 1 of 5 · Typography",
+                        "fontSize": 16.0,
+                        "fontWeight": 500,
+                        "maxLines": 1,
+                        "overflow": "ellipsis",
+                        "id": "page_indicator"
+                      },
+                      "children": null
+                    }
+                  ]
                 },
                 {
                   "type": "Button",

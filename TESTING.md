@@ -37,6 +37,31 @@ behaviours the same way (the focus ask on both build and patch paths, the app
 bar's insets). A renderer that stops handling a type fails that test on any
 machine, instead of showing a placeholder on a device nobody is holding.
 
+## What runs in CI, and when
+
+Two workflows, split by how long they take:
+
+| Workflow | Lanes | When |
+|---|---|---|
+| `ci.yml` | analyze, the three suites, Linux integration, web examples, benchmarks | every push and PR - about three minutes |
+| `native.yml` | Android compile, iOS compile, the emulator device lane | only when a path that can break them changes, plus nightly and on demand |
+
+The native lanes were 85% of the wall clock: twelve minutes for the iOS
+compile and eleven for the emulator boot, against roughly three for everything
+else put together. Paying that on a commit that touched a README is what
+stops people waiting for CI at all.
+
+The paths that trigger them are chosen from what has actually broken them -
+the Kotlin and Swift renderers, the host projects (an iOS `Info.plist` once
+stopped the app launching entirely), the protocol, the flows, and the example
+apps the flows drive. A commit that only touches docs or tests skips the
+workflow, and GitHub shows no result for it at all rather than a tick.
+
+Two things to know before making either workflow a required check: a skipped
+workflow is not a passing one, so a required native lane blocks any PR that
+does not touch native paths, and the nightly `schedule:` is what keeps the
+lanes honest in between.
+
 ## Counting the tests
 
 TODO.md's "What is already solid" quotes how many tests there are.
