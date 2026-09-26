@@ -63,8 +63,8 @@ list is deliberately short so it does not drift out of step with them.
 - **Optional native code** - FFI bridge and a plugin architecture.
 
 ### ⏳ Not there yet
-- **Offline-first sync** - the types are decided, nothing performs a sync (see
-  *Offline-First* below).
+- **Offline-first sync** - not here at all, and deliberately so (see
+  *Offline-First* below). It belongs in its own package.
 - **Published packages** - nothing is on pub.dev, and the CI lanes are written
   but have never executed, because the repository has no remote yet.
 - **iOS screens on a phone** - six example apps have been looked at on a
@@ -111,7 +111,6 @@ dart_not_native/
 │   │   │   ├── mobile_bridge.dart     # FFI (Android/iOS)
 │   │   │   └── web_bridge.dart        # In-memory (Web)
 │   │   └── plugins/
-│   │       └── backend_sync_plugin.dart # Offline-first
 │   └── README.md
 │
 ├── android/app/
@@ -159,15 +158,18 @@ void main() {
 }
 ```
 
-### 3. Offline-First (not implemented)
+### 3. Offline-First (not here)
 
-`packages/native_bridge/lib/plugins/backend_sync_plugin.dart` holds the types
-an offline-first sync
-would need - a pending-operation queue, a retry policy, a sync status - and
-nothing that performs a sync. There is no `BackendSync` API to call yet, so an
-app that needs to work offline stores its own state (`StorageService`) and
-talks to its own backend. This entry is here because the shape is decided, not
-because the feature is there.
+There is no sync in this package, and no types for one either. There used to
+be a sketch - a pending-operation queue, a retry policy, a sync status - with
+nothing behind it: every method threw `UnimplementedError`, and nothing in the
+project ever called them. Publishing that would have turned a guess into
+public API, and a shape fixed before any real backend argued with it is a bad
+thing to owe compatibility to.
+
+An app that has to work offline today keeps its own state with
+`StorageService` and talks to its own backend. When sync is built it belongs in
+its own package, designed against something real rather than in advance.
 
 ### 4. Plugin System
 
@@ -374,9 +376,9 @@ A: No. Pure Flutter works great. Native is optional.
 A: Yes. Same code on Android, iOS, Web (if you don't use platform-specific APIs).
 
 **Q: How does offline-first work?**  
-A: It does not, yet. `backend_sync_plugin.dart` has the types a sync queue
-needs and no sync; an app that must work offline keeps its own state through
-`StorageService` and talks to its own backend.
+A: It does not. There is no sync here and no types for one; an app that must
+work offline keeps its own state through `StorageService` and talks to its own
+backend. Sync, when it exists, will be its own package.
 
 **Q: Can I use this framework with existing Flutter apps?**  
 A: Yes. It's additive—use what you need.
@@ -394,7 +396,7 @@ A: Only for performance-critical code (ML, heavy computation, existing C librari
 - ✅ Native UI renderers (Android Views, UIKit), proven on a device
 - ✅ Storage, including secure storage on web with key rotation
 - ✅ State beyond one screen - `ValueNotifier` stores, `InheritedWidget`, `Theme`
-- ⏳ Offline-first sync
+- ⏳ Offline-first sync, as a package of its own
 - ⏳ Publishing to pub.dev, and CI that has actually run
 
 What is left, in order and with the reasoning, is [TODO.md](TODO.md).

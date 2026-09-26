@@ -1630,6 +1630,29 @@ affordance, not a production error screen.
   against 0.50 ms). The 1.8x ratio is recorded rather than asserted: a first
   attempt at gating on it passed alone and failed inside the full browser
   suite, which is precisely the flaky test this design is meant to avoid.
+- **Offline-first sync removed rather than published (2026-09-26).**
+  `backend_sync_plugin.dart` was 243 lines declaring a sync queue - a retry
+  policy, a pending operation that serialises itself, a conflict outcome, a
+  network-status stream - and behind them 11 methods that threw
+  `UnimplementedError`. No test, no example and no other file in the project
+  ever called one. It was exported publicly from `native_bridge_flutter.dart`.
+
+  That export is why it went. Publishing the package makes those types a
+  compatibility promise, and they were a guess: a shape settled before a line
+  of sync existed and before any real backend disagreed with it. Owing semver
+  to a guess is worse than owing nothing. The API surface of a package about
+  to be published is also the wrong place to keep a sketch.
+
+  The thinking was not thrown away - the three write modes it distinguished
+  (optimistic, blocking, queued) are a genuinely good decision, and a pending
+  operation being a serialisable record rather than a closure is what lets a
+  queue survive a process death. That, and the questions it never answered -
+  where the queue persists, why the API is `static` on an `abstract class` and
+  therefore untestable, what `operation` actually is, how conflicts resolve -
+  are written up outside this repository as the seed of a separate package.
+
+  Left: when sync is built it belongs in its own package, designed against a
+  real backend. The plugin system is how it would be dropped in.
 - **The pixel golden is gone, and why it had to be (2026-09-26).** A golden of
   the counter as the Flutter renderer paints it stopped passing on the very
   machine that wrote it: two pixels of the floating action button came out two
@@ -1675,10 +1698,11 @@ It kept four guides as "still accurate" that were not. The second pass checked
 them against the code and removed seven more files:
 
 - **`OFFLINE_FIRST.md`** (488 lines) documented `BackendSync.optimisticUpdate`,
-  `ConflictResolver` and `LocalCache`. None of them exist:
-  `backend_sync_plugin.dart` declares the types a sync queue would need and
-  performs no sync, as its own first line says. Both READMEs showed the same
-  imaginary API; they now say what is actually there.
+  `ConflictResolver` and `LocalCache`. None of them existed:
+  `backend_sync_plugin.dart` declared the types a sync queue would need and
+  performed no sync, as its own first line said. Both READMEs showed the same
+  imaginary API; they say what is actually there now. (The plugin file itself
+  went on 2026-09-26 - see the entry below.)
 - **`STATE_MANAGEMENT_GUIDE.md`** (800 lines) taught Redux, Provider and GetX.
   Those need Flutter, and the widget layer here is deliberately Flutter-free, so
   none of it could be followed; the framework's own answer is the `ValueNotifier`

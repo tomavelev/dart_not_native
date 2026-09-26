@@ -183,6 +183,13 @@ a device in the room.
 - A `SwitchCompat` crash on the design-system switch, blank `Expanded` content
   in a row, and the four bugs the first audit documented.
 
+- Offline-first sync is gone rather than unimplemented. The package exported
+  243 lines of sync types - a retry policy, a pending operation, a conflict
+  outcome - behind which every method threw `UnimplementedError`. Exported
+  types are a compatibility promise, and these were a guess made before any
+  backend had argued with them, so they were removed instead of published.
+  Sync belongs in a package of its own.
+
 ### Known limits
 
 - Map and camera preview are drawn only where they cost nothing: `MapView` on

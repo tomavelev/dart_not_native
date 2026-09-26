@@ -237,15 +237,18 @@ Plugins would hook into `initializeWeb()` in `platforms/web_bridge.dart` without
 - Hot reload requires native library to be reloaded (not automatic)
 - Web state is not persisted by default (future plugin)
 
-## Not yet: offline-first sync
+## Not here: offline-first sync
 
-`lib/plugins/backend_sync_plugin.dart` declares the pieces an offline-first
-sync needs - a queue of pending operations, a retry policy, a sync status, a
-conflict outcome - and performs no sync. There is no `BackendSync` API to call.
+This package has no sync, and no types for one. It carried a sketch of them
+once - a queue of pending operations, a retry policy, a sync status, a
+conflict outcome - behind which every method threw `UnimplementedError`. They
+were removed rather than published, because exported types are a compatibility
+promise and these were a guess made before any backend had argued with them.
 
 An app that has to work offline today keeps its own state with
-`StorageService` (or `SecureStorageService`) and talks to its own backend; the
-plugin system is how a sync would be dropped in later without the app changing.
+`StorageService` (or `SecureStorageService`) and talks to its own backend. The
+plugin system is how a sync would be dropped in later without the app
+changing, and it belongs in a package of its own.
 
 ## Example Project
 

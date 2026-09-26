@@ -58,7 +58,6 @@ export 'platforms/mobile_bridge.dart' show initializeMobile;
 export 'platforms/web_bridge.dart' show initializeWeb;
 
 // Export plugin system (designed, implementation coming)
-export 'plugins/backend_sync_plugin.dart';
 
 // Material widgets exported via material_adapter with platform detection
 // This single export provides different implementations per platform:
