@@ -62,6 +62,30 @@ workflow is not a passing one, so a required native lane blocks any PR that
 does not touch native paths, and the nightly `schedule:` is what keeps the
 lanes honest in between.
 
+## Quality lanes
+
+`quality.yml` runs on everything and takes seconds:
+
+- **Secret scan** - gitleaks over the full history. GitHub's own secret
+  scanning and push protection are enabled on the repository and are the
+  better defence, because they block a secret before it lands; this is the
+  second pair of eyes. `.gitleaks.toml` narrows the default rules where this
+  repository has a string that looks like a credential and is not one, and
+  each exception says why.
+- **No signing identifiers committed** - an Apple team id is ten uppercase
+  alphanumerics, and it belongs in the git-ignored
+  `ios/Flutter/Signing.xcconfig`. The committed `.example` says YOUR_TEAM_ID,
+  which the check deliberately allows.
+- **Package still publishable** - `dart pub publish --dry-run`, which catches
+  a missing repository URL, a changelog that has not heard of the version in
+  the pubspec, or a file that should not ship. All easier to fix now than on
+  release day.
+
+`dependabot.yml` keeps the pinned actions current by opening pull requests,
+which the other lanes then judge. It deliberately leaves Dart dependencies
+alone: the lanes pin a Flutter version on purpose and a bot bumping packages
+underneath that would fight it.
+
 ## Counting the tests
 
 TODO.md's "What is already solid" quotes how many tests there are.

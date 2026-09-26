@@ -1,0 +1,15 @@
+# Keeps the actions this repository pins from going stale. No CI time: it
+# opens pull requests, which the existing lanes then judge.
+#
+# Only GitHub Actions for now. Dart and Flutter dependencies are managed by
+# `flutter pub` and pinned in pubspec.lock, and a bot that bumps them would
+# fight the Flutter SDK version the lanes pin deliberately.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    open-pull-requests-limit: 3

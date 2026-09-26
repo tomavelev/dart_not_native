@@ -1,0 +1,66 @@
+name: Quality
+
+# The cheap checks that are not about whether the code works: whether anything
+# secret or identifying has been committed, and whether the package could
+# still be published today. Seconds, not minutes, so they run on everything.
+#
+# GitHub's own secret scanning and push protection are enabled on this
+# repository and are the better defence - they block a secret before it lands
+# rather than reporting it afterwards. This lane is the second pair of eyes,
+# and covers the project-specific things a generic scanner has no opinion on.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  secrets:
+    name: Secrets and identifiers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Gitleaks reads history, so it needs more than the tip.
+          fetch-depth: 0
+
+      - name: Secret scan (gitleaks)
+        run: |
+          docker run --rm -v "$PWD:/repo" \
+            ghcr.io/gitleaks/gitleaks:latest \
+            detect --source=/repo --config=/repo/.gitleaks.toml \
+              --redact --verbose --exit-code 1
+
+      # An Apple team id is ten uppercase alphanumerics. Signing belongs in
+      # `ios/Flutter/Signing.xcconfig`, which is git-ignored; the committed
+      # `.example` beside it says YOUR_TEAM_ID, which this deliberately allows.
+      - name: No signing identifiers committed
+        run: |
+          if git grep -nE 'DEVELOPMENT_TEAM *= *"?[A-Z0-9]{10}"?' -- . ; then
+            echo "::error::A real Apple team id is committed. It belongs in the ignored ios/Flutter/Signing.xcconfig."
+            exit 1
+          fi
+          echo "none found"
+
+  publishable:
+    name: Package still publishable
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The package is not on pub.dev yet, but `--dry-run` is what catches a
+    # missing repository URL, a changelog that has not heard of the version in
+    # the pubspec, or a file that should not ship - each of which is easier to
+    # fix now than on the day someone decides to release.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: packages/native_bridge
+      - name: dart pub publish --dry-run
+        working-directory: packages/native_bridge
+        run: dart pub publish --dry-run

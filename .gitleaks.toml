@@ -1,0 +1,28 @@
+# gitleaks configuration for dart_not_native.
+#
+# Starts from the default rules and narrows them where this repository has a
+# string that looks like a credential and is not one. Each exception says why;
+# an allowlist without a reason is how a real secret eventually gets ignored.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "jwt"
+description = "JWT"
+regex = '''\beyJ[A-Za-z0-9_\/+-]{10,}={0,2}\.[A-Za-z0-9_\/+-]{10,}={0,2}\.[A-Za-z0-9_\/+-]{10,}={0,2}'''
+keywords = ["eyJ"]
+
+[allowlist]
+description = "Strings that look like credentials and are not"
+paths = [
+  # The signing template. It says YOUR_TEAM_ID, and a real team id is caught
+  # by its own check in the Quality workflow rather than by pattern matching.
+  '''ios/Flutter/Signing\.xcconfig\.example''',
+]
+regexes = [
+  # The storage example writes a fake `auth_token` so the screen has something
+  # to show. It is the base64 of {"alg":"HS256","typ":"JWT"} - a JWT header
+  # with no payload and no signature, so it is not a token and cannot be one.
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9''',
+]
