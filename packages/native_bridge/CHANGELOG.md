@@ -208,8 +208,10 @@ a device in the room.
   Maestro cannot build its driver for a physical iOS device (see
   `maestro/native/README.md`), so it stays a by-hand job.
 - Nothing has been tested with a screen reader.
-- The repository is not published yet, so `repository:` and the podspec source
-  still point nowhere.
+- The package is not on pub.dev. The repository is public and both pubspecs
+  and the podspec point at it, so a git dependency works; `dart pub publish
+  --dry-run` reports no warnings, so releasing is a decision rather than a
+  task.
 
 ## 0.1.0
 

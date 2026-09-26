@@ -65,8 +65,8 @@ list is deliberately short so it does not drift out of step with them.
 ### ⏳ Not there yet
 - **Offline-first sync** - not here at all, and deliberately so (see
   *Offline-First* below). It belongs in its own package.
-- **Published packages** - nothing is on pub.dev, and the CI lanes are written
-  but have never executed, because the repository has no remote yet.
+- **Published packages** - nothing is on pub.dev yet. The repository itself is
+  public and its lanes run on every push; a git dependency works today.
 - **iOS screens on a phone** - six example apps have been looked at on a
   simulator and three on an iPad; the rest are drawn-without-error rather than
   seen.

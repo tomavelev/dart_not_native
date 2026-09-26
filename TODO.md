@@ -1500,11 +1500,13 @@ affordance, not a production error screen.
   `NativeUIRenderer.swift` and every plugin's iOS half. That lane exists because
   its absence let the Swift renderer sit broken: the swipe-actions commit
   left `SwipeActionsView.gestureRecognizerShouldBegin` without an
-  `override`, a hard compile error, and nothing noticed for two commits. It runs
-  once the repository is hosted on GitHub (see "Publish the repository" above),
-  which has still not happened — the repo has no remote, so no lane has ever
-  actually executed. The
-  web e2e (Maestro) and benchmark recording are still manual. Two device lanes
+  `override`, a hard compile error, and nothing noticed for two commits. It has
+  run since 2026-09-26, when the repository was published: the first push found
+  five red lanes, none of them in the framework - an executable bit, a
+  `flutter test integration_test` that cannot start a second desktop app in one
+  invocation, a flow that assumed a screen height, an unportable pixel golden
+  and no timeouts anywhere. The web e2e (Maestro) and benchmark recording are
+  still manual. Two device lanes
   were added on 2026-09-19 - see "A device lane in CI" below. Analyze gates on
   errors and warnings, not the pre-existing style infos.
 - **A device lane in CI — landed (2026-09-19).** `integration_test/
@@ -1600,9 +1602,10 @@ affordance, not a production error screen.
   put its children off screen. A row is capped at the window's width now, once
   it has a window to measure against.
 
-  Both lanes in CI run the flows after the integration tests, which - like
-  everything else in that file - has still never executed, because the
-  repository is not hosted.
+  Both device lanes were taken out of CI on 2026-09-26 and live in
+  `tool/device_check.sh` instead: they cost tens of minutes against about three
+  for everything else, and they were the only lanes that ever hung. They are
+  run by hand now, which RELEASING.md makes a condition of cutting a version.
 - **Benchmarks - recorded, and the parts that survive a change of machine are
   asserted (2026-09-19).** `test/benchmark/` printed numbers into a log nobody
   kept, and a number cannot gate a build anyway: the runner owns as much of it
