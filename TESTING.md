@@ -99,13 +99,24 @@ widget tree that a native renderer turns into platform views, so those are
 what a golden can meaningfully pin. Screenshots are covered by the Maestro
 flows.
 
-There is exactly one pixel golden - `test/gallery/counter_gallery_golden_test.dart`,
-the counter as the Flutter renderer paints it. It is compared with a tolerance
-(`test/support/tolerant_golden_comparator.dart`) because a picture is the one
-thing here that does not survive a change of engine: an upgrade moved two
-pixels of an icon's edge and failed a test nothing had broken. Note what it
-cannot see - the suite draws with the test font, whose every glyph is the same
-box, so it pins where things are and how big, never which glyph.
+There are no pixel goldens, and that is a decision rather than an omission.
+There was one - the counter as the Flutter renderer paints it - compared with
+a tolerance, because a picture does not survive a change of engine. The
+tolerance was set from a drift of two pixels between two versions of the same
+engine on one machine. Then CI ran it on Linux and it drifted by **2810
+pixels, 1.04% of the frame**, because FreeType and CoreText do not draw the
+same glyph edges. No tolerance spans that honestly: 1% of a frame is enough to
+hide a widget that moved, so a golden that permits it asserts nothing while
+looking like it asserts something.
+
+It was also blind to more than it appeared: the suite draws with the test
+font, whose every glyph is the same box, so the picture pinned where things
+were and how big, never which glyph. Swapping one icon for another left it
+byte for byte identical.
+
+The tree and markup goldens do the work instead. They compare structure, which
+is what this framework actually produces, and they mean the same thing on
+every machine.
 
 Regenerate the tree goldens after an intended change:
 

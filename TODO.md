@@ -1630,45 +1630,36 @@ affordance, not a production error screen.
   against 0.50 ms). The 1.8x ratio is recorded rather than asserted: a first
   attempt at gating on it passed alone and failed inside the full browser
   suite, which is precisely the flaky test this design is meant to avoid.
-- **The pixel golden compares what a rasteriser cannot change
-  (2026-09-23).** `test/gallery/counter_gallery_golden_test.dart` had stopped
-  passing on the machine that wrote it. Two pixels of the counter's floating
-  action button came out two parts in 255 lighter under Flutter 3.47.5 than
-  under the 3.47.2 they were drawn with on 2026-09-19 - same an Apple Silicon Mac, same
-  macOS, one engine build apart - and `matchesGoldenFile` compares byte for
-  byte, so 0.0007% of one frame was a red suite. It failed at the commit that
-  last regenerated it, which is how we know nothing in the log
-  broke it.
+- **The pixel golden is gone, and why it had to be (2026-09-26).** A golden of
+  the counter as the Flutter renderer paints it stopped passing on the very
+  machine that wrote it: two pixels of the floating action button came out two
+  parts in 255 lighter one engine build apart. `matchesGoldenFile` compares
+  byte for byte, so 0.0007% of one frame was a red suite.
 
-  Same lesson as the benchmarks above, in pixels: the engine that rasterised a
-  golden is never the engine that reads it back, so what a golden may assert is
-  what survives that. `AntiAliasTolerantComparator`
-  (`test/support/tolerant_golden_comparator.dart`) checks two things and fails
-  on either - **how far** a pixel moved, since antialiasing nudges a channel
-  while a widget that moved or changed colour replaces one (4 in 255), and
-  **how much** of the frame moved, since an edge is a handful of pixels and a
-  regression is a shape (0.01%, against the 0.0007% seen). A frame of a
-  different size fails outright, and anything outside the bounds falls through
-  to the strict comparison, so a real failure still writes its masked and
-  isolated diffs.
+  The first answer was a tolerance - fail on how *far* a pixel moved (4 in
+  255) and on how *much* of the frame moved (0.01%), so antialiasing is
+  forgiven and a widget that moved is not. Both bounds were asserted by tests
+  that drove frames either side of them, and each bound was deleted to watch
+  its own test fail. It was a good answer to the question being asked.
 
-  Both bounds are asserted, not just documented:
-  `tolerant_golden_comparator_test.dart` drives the comparator with frames
-  built to sit either side of each, and each bound was deleted to watch its own
-  test fail - the magnitude bound fails the pixel moved 40, the share bound the
-  wash of 1 across 2% of the frame. A one-pixel change to the counter buttons'
-  spacing moves 875 pixels and still fails, so the golden has not been widened
-  into uselessness.
+  It was the wrong question. Those bounds were fitted to a drift measured
+  between two versions of one engine on one machine. The first CI run put the
+  same golden on Linux, where it drifted by **2810 pixels, 1.04% of the
+  frame**, because FreeType and CoreText do not draw the same glyph edges at
+  all. Nothing survives that: a tolerance wide enough to pass 1% of a frame
+  would hide a widget that moved, so it would assert nothing while looking
+  like it asserted something.
 
-  Worth knowing, and now written at the top of the test: this golden cannot see
-  *identity*. The suite draws with the test font, whose every glyph is the same
-  box, so the picture carries where text and icons sit and how big they are and
-  nothing about which ones - swapping `Icons.add` for `Icons.remove` leaves it
-  byte for byte identical, under the strict comparator too. The tree goldens
-  are what covers that, and this one should not be read as if it did.
+  So the golden, its comparator and the comparator's own tests are deleted.
+  What is lost is less than it sounds - the suite draws with the test font,
+  whose every glyph is the same box, so the picture only ever pinned where
+  things were and how big, never which glyph. Swapping `Icons.add` for
+  `Icons.remove` left it byte for byte identical. Identity was always the tree
+  goldens' job, and structure is what this framework actually produces.
 
-  Left: it is still the only *pixel* golden in the project, and it is one
-  screen on one renderer.
+  The lesson is the benchmarks' lesson in pixels, arrived at the hard way: a
+  number that belongs to the machine cannot be asserted, only recorded. A
+  picture belongs to the rasteriser the same way.
 
 ---
 
@@ -1730,9 +1721,9 @@ forms via `FormBuilder`/`TextFormField`), and `packages/native_bridge/API_REFERE
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 1109 tests
-  (588 in the package, 322 for the example apps and goldens, 199 in the browser,
-  counted 2026-09-24), plus 15 integration tests that run on a real Android and
+  contracts, the plugin system and the design system are covered by 1103 tests
+  (588 in the package, 316 for the example apps and goldens, 199 in the browser,
+  counted 2026-09-26), plus 15 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, thirteen the native
   renderers drawing the whole node vocabulary and every example app.
 - The web DOM renderer is tested in a real browser, including markup goldens

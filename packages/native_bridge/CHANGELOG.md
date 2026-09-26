@@ -25,13 +25,13 @@ a device in the room.
 - Frame times are measured rather than assumed: a `FrameProbe` on each renderer
   reports what the platform actually presented. The the Android phone scrolls the 10k-row
   list at 0.7-0.8% janky frames with a 19.7ms worst frame.
-- The gallery's pixel golden asserts what a rasteriser cannot change. An engine
-  upgrade moved two pixels of an icon's edge by two parts in 255 and failed a
-  test nothing had broken, so the comparison now bounds how far a pixel may
-  drift (4 in 255) and how much of the frame may drift at all (0.01%) - and a
-  one-pixel layout change still moves 875 pixels and still fails. What it does
-  not cover: the suite draws with the test font, whose every glyph is the same
-  box, so the picture carries where things are and how big, never which glyph.
+- The gallery's pixel golden is gone. A tolerance was tried first, fitted to a
+  two-pixel drift between engine builds on one machine; then CI drew the same
+  frame on Linux and it moved 2810 pixels, 1.04% of it, because FreeType and
+  CoreText draw different glyph edges. A tolerance that passes 1% of a frame
+  hides a widget that moved, so the golden went instead. The tree and markup
+  goldens compare structure, which is what this framework produces and what
+  means the same thing on every machine.
 
 ### Native views are patched, not rebuilt
 

@@ -154,7 +154,7 @@ void main() {
     );
   });
 
-  test('there is exactly one pixel golden, which TESTING.md states', () {
+  test('there are no pixel goldens, which TESTING.md states', () {
     final callers = <String>[];
     for (final dir in ['test', 'packages/native_bridge/test']) {
       for (final file in Directory(dir).listSync(recursive: true)) {
@@ -167,11 +167,12 @@ void main() {
     }
     expect(
       callers,
-      ['test/gallery/counter_gallery_golden_test.dart'],
+      isEmpty,
       reason:
-          'TESTING.md says there is exactly one pixel golden and describes '
-          'what it cannot see. A second one needs saying there, and needs to '
-          'decide whether it too is compared with a tolerance.',
+          'TESTING.md says the suite has no pixel goldens, because a PNG does '
+          'not survive a change of text rasteriser: the one that used to be '
+          'here drifted by 1.04% of the frame between CoreText and FreeType. '
+          'A new one needs an answer to that before it needs a test.',
     );
   });
 }

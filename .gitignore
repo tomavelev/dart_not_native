@@ -59,7 +59,9 @@ ios/Flutter/flutter_export_environment.sh
 macos/Flutter/Flutter-Generated.xcconfig
 macos/Flutter/ephemeral/
 
-# Golden-failure artefacts, written by flutter_test when a pixel golden drifts
+# Golden-failure artefacts, written by flutter_test when a pixel golden drifts.
+# There are no pixel goldens now - see TESTING.md - so this only matters if one
+# ever comes back.
 test/**/failures/
 
 # Signing is per developer - see ios/Flutter/Signing.xcconfig.example
