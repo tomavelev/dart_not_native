@@ -66,12 +66,17 @@ lanes honest in between.
 
 `quality.yml` runs on everything and takes seconds:
 
-- **Secret scan** - gitleaks over the full history. GitHub's own secret
-  scanning and push protection are enabled on the repository and are the
-  better defence, because they block a secret before it lands; this is the
-  second pair of eyes. `.gitleaks.toml` narrows the default rules where this
-  repository has a string that looks like a credential and is not one, and
-  each exception says why.
+- **Secret scan** - gitleaks over the full history, which is the point: a
+  secret that was committed and later deleted is the one worth finding.
+  GitHub's own secret scanning and push protection are enabled on the
+  repository and are the better defence, because they block a secret before it
+  lands; this is the second pair of eyes, and it is stricter - it objected to
+  demo values GitHub's scanner passed.
+  `.gitleaks.toml` carries the exceptions, and each says why. They are all
+  strings that exist only in commits *before* the example that wrote them was
+  fixed; the working tree has none of them. If a new one appears, change the
+  code rather than the config - a sample that ships a credential-shaped string
+  teaches the shape and trips every scanner its readers run.
 - **No signing identifiers committed** - an Apple team id is ten uppercase
   alphanumerics, and it belongs in the git-ignored
   `ios/Flutter/Signing.xcconfig`. The committed `.example` says YOUR_TEAM_ID,

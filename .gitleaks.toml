@@ -20,8 +20,23 @@ paths = [
   # by its own check in the Quality workflow rather than by pattern matching.
   '''ios/Flutter/Signing\.xcconfig\.example''',
 ]
-# No regex exceptions. The storage example used to write values shaped like a
-# live Stripe key and a JWT; gitleaks was right to object, so the example was
-# changed rather than the scanner silenced. An example that ships a
-# credential-shaped string teaches the shape and trips every scanner its
-# readers run.
+# The scan reads history, not just the working tree - which is the point of
+# having it, since a secret that was committed and then deleted is exactly the
+# one worth finding. The cost is that a string cannot be un-committed by
+# editing a file.
+#
+# The storage example used to write `sk_live_abc123xyz789`: fake in its digits
+# and wearing Stripe's live-key prefix. gitleaks was right to object, so the
+# example was changed rather than the scanner silenced - it now writes
+# `not-a-real-key-000`, because a sample that ships a credential-shaped string
+# teaches the shape and trips every scanner its readers run.
+#
+# The old value survives in commits before that fix and can only be allowlisted
+# or rewritten away, and rewriting history over a string that was never a
+# secret is not worth it. GitHub's own secret scanning, which reads the same
+# history, raised no alert for it.
+regexes = [
+  '''sk_live_abc123xyz789''',
+  '''super_secret_password_123''',
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9''',
+]
