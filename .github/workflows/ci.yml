@@ -30,7 +30,7 @@ env:
 jobs:
   test:
     name: Analyze & test (Dart + Flutter + DOM)
-    timeout-minutes: 25
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +67,7 @@ jobs:
 
   integration-linux:
     name: Integration (Linux desktop host)
-    timeout-minutes: 25
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +97,7 @@ jobs:
 
   benchmarks:
     name: Benchmarks (recorded, not gated)
-    timeout-minutes: 25
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     # The numbers belong to the runner as much as to the code, so this lane
     # records rather than gates: it keeps every BENCH_JSON line as an
@@ -133,7 +133,7 @@ jobs:
 
   web-examples:
     name: Web examples compile
-    timeout-minutes: 20
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     # The web target is plain dart2js against package:dart_not_native/web.dart,
     # which no other lane compiles: the browser tests exercise the renderer,

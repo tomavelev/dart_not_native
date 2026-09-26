@@ -12,6 +12,13 @@ name: Native
 #
 # The nightly run is the backstop, so a lane cannot rot unnoticed between two
 # native changes, and `workflow_dispatch` is there for when you want it anyway.
+#
+# Every job stops at 15 minutes. That is deliberately tight: the iOS compile
+# has taken 12 and the emulator 11, so a run that passes has about three
+# minutes to spare and one that is stuck fails while someone is still watching.
+# If a lane starts timing out while making real progress, the answer is to make
+# it faster or split it - not to raise the number back up, which is how a step
+# once ran for 54 minutes before anyone noticed.
 
 on:
   push:
@@ -64,7 +71,7 @@ env:
 jobs:
   android-build:
     name: Android native compile
-    timeout-minutes: 25
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +92,7 @@ jobs:
 
   ios-build:
     name: iOS native compile
-    timeout-minutes: 40
+    timeout-minutes: 15
     # Xcode only exists on the macOS runners, which is why this lane was missing
     # and why the Swift renderer could sit un-compiled through several commits
     # (the swipe-actions change left it failing on a missing `override`).
@@ -131,7 +138,7 @@ jobs:
 
   android-device:
     name: Native renderer on an Android emulator
-    timeout-minutes: 45
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     # The Kotlin and Swift renderers are otherwise only read (the source-level
     # node-type check) and compiled. Neither notices a renderer that builds,
