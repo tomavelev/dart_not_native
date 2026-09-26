@@ -49,6 +49,15 @@ on:
     - cron: '0 3 * * *'
   workflow_dispatch:
 
+
+# Only the newest run of a workflow per branch is worth finishing: an older one
+# is testing a commit nobody will look at again. Without this they pile up -
+# four were in flight at once, two of them superseded - and on a free account
+# they queue behind each other as well as burning time.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FLUTTER_VERSION: "3.47.2"
 
