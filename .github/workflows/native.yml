@@ -132,18 +132,36 @@ jobs:
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID"
 
-      - name: Native renderer on the simulator
-        run: flutter test integration_test -d "$SIMULATOR_UDID"
-
       - name: Install Maestro
         run: |
           curl -Ls https://get.maestro.mobile.dev | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
+      # The flows come first on purpose. They are the half that catches an app
+      # which compiles and then will not launch - the UIScene refusal did
+      # exactly that - and they should not be blocked by a step that has been
+      # unreliable on a CI simulator.
       - name: Device flows on the simulator
         # The only lane that checks a tap or a keystroke *reaches* the app:
         # Maestro drives the real views through the accessibility tree.
         run: maestro/native/run.sh ios --device "$SIMULATOR_UDID"
+
+      # One invocation per file, as the Linux lane does, because
+      # `flutter test integration_test` over a directory launches an app per
+      # file and has hung here: sixteen minutes on a step that takes seconds
+      # of test time locally, with no output after the first Xcode build.
+      # Running them separately also says which file stopped, rather than
+      # leaving the whole directory silent.
+      #
+      # The step carries its own ceiling so a hang costs twelve minutes rather
+      # than the job's thirty.
+      - name: Native renderer on the simulator
+        timeout-minutes: 12
+        run: |
+          for f in integration_test/*.dart; do
+            echo "== $f"
+            flutter test "$f" -d "$SIMULATOR_UDID"
+          done
 
   android-device:
     name: Native renderer on an Android emulator
