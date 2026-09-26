@@ -44,7 +44,20 @@ Two workflows, split by how long they take:
 | Workflow | Lanes | When |
 |---|---|---|
 | `ci.yml` | analyze, the three suites, Linux integration, web examples, benchmarks | every push and PR - about three minutes |
-| `native.yml` | Android compile, iOS compile, the emulator device lane | only when a path that can break them changes, plus nightly and on demand |
+| `native.yml` | Android and iOS compiles | when a path that can break them changes |
+| `quality.yml` | secret scan, no signing identifiers, publishable | every push and PR - seconds |
+| `device.yml` | an iOS simulator and an Android emulator, each running the integration suite and the flows | **never on a push** - nightly, or `gh workflow run device.yml` |
+
+Nothing that boots a device runs on a push. Those two lanes take tens of
+minutes against about three for everything else, and they are the only ones
+that have hung - sixteen minutes with no output on a simulator that finishes
+in under two locally.
+
+Be clear about what that costs, because it is not free: those are the only
+lanes that *start* the app. A compile cannot see an app that builds and then
+refuses to launch, which is precisely what the iOS 26 UIScene failure was. So
+run `device.yml` before a release and after a native change worth trusting,
+and read the nightly.
 
 The native lanes were 85% of the wall clock: twelve minutes for the iOS
 compile and eleven for the emulator boot, against roughly three for everything
