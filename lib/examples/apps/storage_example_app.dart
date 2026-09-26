@@ -67,13 +67,13 @@ class _StorageExampleAppState extends State<StorageExampleApp> {
     try {
       await secureStorage.setString(
         'auth_token',
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+        'not-a-real-token-000',
       );
       await secureStorage.setString(
         'user_password',
-        'super_secret_password_123',
+        'not-a-real-password',
       );
-      await secureStorage.setString('api_key', 'sk_live_abc123xyz789');
+      await secureStorage.setString('api_key', 'not-a-real-key-000');
       await secureStorage.setBool('biometric_enabled', true);
       message = 'Secure data saved';
       await _loadAllData();

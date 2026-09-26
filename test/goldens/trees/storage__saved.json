@@ -253,7 +253,7 @@
                         {
                           "type": "Text",
                           "props": {
-                            "content": "auth_token: eyJhbGciOi...",
+                            "content": "auth_token: not-a-real...",
                             "id": "secure_auth_token"
                           },
                           "children": null
@@ -261,7 +261,7 @@
                         {
                           "type": "Text",
                           "props": {
-                            "content": "user_password: super_secr...",
+                            "content": "user_password: not-a-real...",
                             "id": "secure_user_password"
                           },
                           "children": null
@@ -269,7 +269,7 @@
                         {
                           "type": "Text",
                           "props": {
-                            "content": "api_key: sk_live_ab...",
+                            "content": "api_key: not-a-real...",
                             "id": "secure_api_key"
                           },
                           "children": null

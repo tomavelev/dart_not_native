@@ -69,11 +69,11 @@ void main() {
     await tester.tap('save_secure');
     await settle();
 
-    expect(secure.entries['api_key'], 'sk_live_abc123xyz789');
+    expect(secure.entries['api_key'], 'not-a-real-key-000');
     expect(tester.text('secure_count'), '4 keys');
-    expect(tester.text('secure_api_key'), 'api_key: sk_live_ab...');
+    expect(tester.text('secure_api_key'), 'api_key: not-a-real...');
     expect(
-      tester.texts.any((t) => t.contains('super_secret_password_123')),
+      tester.texts.any((t) => t.contains('not-a-real-password')),
       isFalse,
       reason: 'secrets must not be rendered in full',
     );

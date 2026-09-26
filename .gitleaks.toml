@@ -20,9 +20,8 @@ paths = [
   # by its own check in the Quality workflow rather than by pattern matching.
   '''ios/Flutter/Signing\.xcconfig\.example''',
 ]
-regexes = [
-  # The storage example writes a fake `auth_token` so the screen has something
-  # to show. It is the base64 of {"alg":"HS256","typ":"JWT"} - a JWT header
-  # with no payload and no signature, so it is not a token and cannot be one.
-  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9''',
-]
+# No regex exceptions. The storage example used to write values shaped like a
+# live Stripe key and a JWT; gitleaks was right to object, so the example was
+# changed rather than the scanner silenced. An example that ships a
+# credential-shaped string teaches the shape and trips every scanner its
+# readers run.
