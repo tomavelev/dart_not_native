@@ -46,34 +46,36 @@ Two workflows, split by how long they take:
 | `ci.yml` | analyze, the three suites, Linux integration, web examples, benchmarks | every push and PR - about three minutes |
 | `native.yml` | Android and iOS compiles | when a path that can break them changes |
 | `quality.yml` | secret scan, no signing identifiers, publishable | every push and PR - seconds |
-| `device.yml` | an iOS simulator and an Android emulator, each running the integration suite and the flows | **never on a push** - nightly, or `gh workflow run device.yml` |
 
-Nothing that boots a device runs on a push. Those two lanes take tens of
-minutes against about three for everything else, and they are the only ones
-that have hung - sixteen minutes with no output on a simulator that finishes
-in under two locally.
+**Nothing in CI boots a device.** No simulator, no emulator, not even nightly.
+Those lanes took tens of minutes against about three for everything else, and
+they were the only ones that ever hung - sixteen minutes with no output on a
+simulator that finishes in under two on a laptop. They ran where the device
+was slowest to get and least reliable.
 
-Be clear about what that costs, because it is not free: those are the only
-lanes that *start* the app. A compile cannot see an app that builds and then
-refuses to launch, which is precisely what the iOS 26 UIScene failure was. So
-run `device.yml` before a release and after a native change worth trusting,
-and read the nightly.
+## The device checks, on your machine
 
-The native lanes were 85% of the wall clock: twelve minutes for the iOS
-compile and eleven for the emulator boot, against roughly three for everything
-else put together. Paying that on a commit that touched a README is what
-stops people waiting for CI at all.
+`tool/device_check.sh` is what those lanes did, run where the device already
+is:
 
-The paths that trigger them are chosen from what has actually broken them -
-the Kotlin and Swift renderers, the host projects (an iOS `Info.plist` once
-stopped the app launching entirely), the protocol, the flows, and the example
-apps the flows drive. A commit that only touches docs or tests skips the
-workflow, and GitHub shows no result for it at all rather than a tick.
+```bash
+tool/device_check.sh android          # a phone over USB, or a running emulator
+tool/device_check.sh ios              # a booted simulator
+tool/device_check.sh ios --device <udid>
+tool/device_check.sh android --flows-only
+tool/device_check.sh ios --tests-only
+```
 
-Two things to know before making either workflow a required check: a skipped
-workflow is not a passing one, so a required native lane blocks any PR that
-does not touch native paths, and the nightly `schedule:` is what keeps the
-lanes honest in between.
+It runs the Maestro flows first, then the integration tests one file at a
+time, and finds the device itself. On Android it also sets `svc power stayon
+true`, because a phone that sleeps mid-run produces black screenshots and dead
+first taps that look exactly like render bugs.
+
+**Run it after a change to the Kotlin or Swift renderers, and before a
+release.** That is not a suggestion to be polite about: the flows are the only
+thing that starts the app, and a compile cannot see an app that builds and
+then refuses to launch. The iOS 26 UIScene failure was exactly that - `Runner`
+quit before any Dart ran, and every compile lane was green.
 
 ## Quality lanes
 

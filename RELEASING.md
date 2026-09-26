@@ -38,7 +38,11 @@ what the major number is about.
 
 ## Branches
 
-- `main` is always releasable: every lane green.
+- `main` is always releasable: every lane green. The lanes do not include
+  anything that boots a device, so "green" does not mean the app starts -
+  run `tool/device_check.sh android` and `tool/device_check.sh ios` before
+  cutting a version. A compile cannot see an app that builds and then refuses
+  to launch, which is what the iOS 26 UIScene failure did.
 - Work happens on a branch named for what it is - `feat/swipe-actions`,
   `fix/ios-build`, `docs/android-device-pass` - and lands on `main` when its
   lanes pass.

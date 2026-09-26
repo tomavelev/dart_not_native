@@ -11,6 +11,12 @@ maestro/native/run.sh android counter    # one flow
 maestro/native/run.sh ios textinput_ios --no-build   # reuse what is installed
 ```
 
+For the flows *and* the integration tests in one go, use
+`tool/device_check.sh android` (or `ios`), which finds the device, runs these
+flows first and the integration tests after. None of this runs in CI - see
+TESTING.md for why - so it is worth running by hand after a change to the
+Kotlin or Swift renderers.
+
 Each flow names the entry point it needs in an `# entry:` comment, because
 every example shares one application id; the runner builds and installs that
 app first. `--device` picks a specific emulator or simulator when more than one
