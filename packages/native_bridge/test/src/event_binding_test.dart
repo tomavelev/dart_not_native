@@ -166,6 +166,61 @@ void main() {
     });
   });
 
+  group('an event from the tree of an earlier build', () {
+    // Ids given by order name a different callback once a build gives out a
+    // different number before them. A renderer whose views may still show
+    // the earlier tree says which build its event is for.
+    late _ShiftingApp shifting;
+    late InMemoryRenderer shown;
+
+    setUp(() {
+      shifting = _ShiftingApp();
+      shown = InMemoryRenderer();
+      shifting.mount(shown);
+    });
+
+    test('is answered by the callback its id named in that build', () async {
+      final first = shown.tree!;
+      final second = nodeById(first, 'second')!.props['eventId'] as String;
+      final build = EventBindings.buildOf(first);
+      expect(build, isNotNull);
+
+      // A button now comes before the two: every id by order has moved on.
+      shifting.setState(() => shifting.extra = true);
+      expect(
+        nodeById(shown.tree!, 'first')!.props['eventId'],
+        second,
+        reason: 'the id that was the second button\'s is the first one\'s now',
+      );
+
+      EventBindings.eventBuild = build;
+      try {
+        await shown.handleEvent(second, const {});
+      } finally {
+        EventBindings.eventBuild = null;
+      }
+      expect(shifting.pressed, ['second']);
+
+      // Without a build named it is the latest tree's, as it always was.
+      await shown.handleEvent(second, const {});
+      expect(shifting.pressed, ['second', 'first']);
+    });
+
+    test('an id that build never gave out is answered by the latest', () async {
+      final build = EventBindings.buildOf(shown.tree!);
+      shifting.setState(() => shifting.extra = true);
+      final third = nodeById(shown.tree!, 'second')!.props['eventId'] as String;
+
+      EventBindings.eventBuild = build;
+      try {
+        await shown.handleEvent(third, const {});
+      } finally {
+        EventBindings.eventBuild = null;
+      }
+      expect(shifting.pressed, ['second']);
+    });
+  });
+
   group('outside a build', () {
     test('a callback outside a build fails with a clear message', () {
       expect(
@@ -191,4 +246,34 @@ class _ExplicitApp extends NativeUIApp {
   @override
   WidgetNode build() =>
       UIBuilder.button(label: 'Tap', eventId: 'explicit', id: 'button');
+}
+
+/// Buttons whose event ids come from the order they are built in, with one
+/// more in front of them once [extra] is set.
+class _ShiftingApp extends NativeUIApp {
+  bool extra = false;
+  final List<String> pressed = [];
+
+  @override
+  WidgetNode build() => UIBuilder.column(
+    children: [
+      if (extra)
+        UIBuilder.button(label: 'Extra', onPressed: () => pressed.add('extra')),
+      _keyed('first'),
+      _keyed('second'),
+    ],
+  );
+
+  /// The node is findable by [name]; its event id is still by order.
+  WidgetNode _keyed(String name) {
+    final button = UIBuilder.button(
+      label: name,
+      onPressed: () => pressed.add(name),
+    );
+    return WidgetNode(
+      type: button.type,
+      props: {...button.props, 'id': name},
+      children: button.children,
+    );
+  }
 }

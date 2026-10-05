@@ -10,9 +10,11 @@ const Map<String, String> domGoldens = {
   'app_shell__mdl': r'''
 <div class="dnn-scaffold" data-children="" data-type="Scaffold">
   <header class="dnn-appbar mdl-shadow--4dp" data-type="AppBar">
-    <span class="dnn-appbar__title">
+    <span class="dnn-appbar__title" role="heading" aria-level="1">
       My Todos
     </span>
+    <div class="dnn-appbar__actions" data-children="">
+    </div>
   </header>
   <div class="dnn-column dnn-column--stretch" data-children="" data-type="Column">
     <div class="dnn-padding" data-children="" data-type="Padding" style="padding: 16px;">
@@ -28,7 +30,7 @@ const Map<String, String> domGoldens = {
         </div>
         <button class="mdl-button mdl-button--icon dnn-icon-button" aria-label="Add Todo" title="Add Todo" data-type="IconButton">
           <i class="material-icons">
-            add
+            &#xe047;
           </i>
         </button>
       </div>
@@ -53,7 +55,7 @@ const Map<String, String> domGoldens = {
   </div>
   <button class="mdl-button mdl-button--fab mdl-button--colored dnn-fab" aria-label="Add" title="Add" data-type="FloatingActionButton">
     <i class="material-icons">
-      add
+      &#xe047;
     </i>
   </button>
 </div>
@@ -63,9 +65,11 @@ const Map<String, String> domGoldens = {
 <div class="dnn-scaffold" data-children="" data-type="Scaffold">
   <nav class="dnn-appbar dnn-mz-nav blue darken-2" data-type="AppBar">
     <div class="nav-wrapper">
-      <span class="dnn-mz-nav__title">
+      <span class="dnn-mz-nav__title" role="heading" aria-level="1">
         My Todos
       </span>
+      <div class="dnn-appbar__actions" data-children="">
+      </div>
     </div>
   </nav>
   <div class="dnn-column dnn-column--stretch" data-children="" data-type="Column">
@@ -82,7 +86,7 @@ const Map<String, String> domGoldens = {
         </div>
         <button class="btn-flat dnn-mz-icon-button" aria-label="Add Todo" title="Add Todo" data-type="IconButton">
           <i class="material-icons">
-            add
+            &#xe047;
           </i>
         </button>
       </div>
@@ -107,7 +111,7 @@ const Map<String, String> domGoldens = {
   </div>
   <button class="btn-floating btn-large blue darken-2 dnn-fab" aria-label="Add" title="Add" data-type="FloatingActionButton">
     <i class="material-icons">
-      add
+      &#xe047;
     </i>
   </button>
 </div>
@@ -116,9 +120,11 @@ const Map<String, String> domGoldens = {
   'app_shell__plain': r'''
 <div class="dnn-scaffold" data-children="" data-type="Scaffold">
   <header class="dnn-appbar" data-type="AppBar">
-    <span class="dnn-appbar__title">
+    <span class="dnn-appbar__title" role="heading" aria-level="1">
       My Todos
     </span>
+    <div class="dnn-appbar__actions" data-children="">
+    </div>
   </header>
   <div class="dnn-column dnn-column--stretch" data-children="" data-type="Column">
     <div class="dnn-padding" data-children="" data-type="Padding" style="padding: 16px;">
@@ -134,7 +140,7 @@ const Map<String, String> domGoldens = {
         </div>
         <button class="dnn-icon-button" aria-label="Add Todo" title="Add Todo" data-type="IconButton">
           <i class="material-icons">
-            add
+            &#xe047;
           </i>
         </button>
       </div>
@@ -159,7 +165,7 @@ const Map<String, String> domGoldens = {
   </div>
   <button class="dnn-fab dnn-fab--plain" aria-label="Add" title="Add" data-type="FloatingActionButton">
     <i class="material-icons">
-      add
+      &#xe047;
     </i>
   </button>
 </div>
@@ -229,7 +235,7 @@ const Map<String, String> domGoldens = {
   </label>
   <div class="dnn-divider" data-type="Divider" style="height: 1px; margin: 16px 0px;">
   </div>
-  <div class="dnn-progress" data-type="Loading" style="color: rgb(25, 118, 210);">
+  <div class="dnn-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" data-type="Loading" style="color: rgb(25, 118, 210);">
     <div class="dnn-progress__bar" style="width: 50%;">
     </div>
   </div>
@@ -295,7 +301,7 @@ const Map<String, String> domGoldens = {
     </div>
     <button class="btn-flat dnn-mz-alert__close" aria-label="Dismiss">
       <i class="material-icons">
-        close
+        &#xe16a;
       </i>
     </button>
   </div>
@@ -313,7 +319,7 @@ const Map<String, String> domGoldens = {
   </label>
   <div class="switch dnn-mz-switch" data-type="Toggle">
     <label class="">
-      <input type="checkbox">
+      <input type="checkbox" role="switch">
       <span class="lever">
       </span>
       <span class="dnn-mz-switch__label">
@@ -323,7 +329,7 @@ const Map<String, String> domGoldens = {
   </div>
   <div class="dnn-divider" data-type="Divider" style="height: 1px; margin: 16px 0px;">
   </div>
-  <div class="progress dnn-mz-progress" data-type="Loading">
+  <div class="progress dnn-mz-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" data-type="Loading">
     <div class="determinate" style="width: 50%; background-color: rgb(25, 118, 210);">
     </div>
   </div>
@@ -409,7 +415,7 @@ const Map<String, String> domGoldens = {
   </label>
   <div class="dnn-divider" data-type="Divider" style="height: 1px; margin: 16px 0px;">
   </div>
-  <div class="dnn-progress" data-type="Loading" style="color: rgb(25, 118, 210);">
+  <div class="dnn-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" data-type="Loading" style="color: rgb(25, 118, 210);">
     <div class="dnn-progress__bar" style="width: 50%;">
     </div>
   </div>

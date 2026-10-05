@@ -24,9 +24,17 @@ Future<String> renderToHtml(WidgetNode tree, {required WebStyleKit kit}) async {
 }
 
 /// Drops the renderer's internal props fingerprint and collapses whitespace.
+///
+/// An icon is a private-use character, which in a golden would be an
+/// invisible one; it is written as its character reference instead, so the
+/// golden says which glyph (`&#xe047;` is `Icons.add`).
 String normalizeHtml(String html) => html
     .replaceAll(RegExp(r'\sdata-sig="[^"]*"'), '')
     .replaceAll(RegExp(r'>\s+<'), '><')
+    .replaceAllMapped(
+      RegExp(r'[\u{E000}-\u{F8FF}\u{F0000}-\u{10FFFD}]', unicode: true),
+      (match) => '&#x${match[0]!.runes.single.toRadixString(16)};',
+    )
     .trim();
 
 /// One tag per line, indented, so a golden diff points at the element that

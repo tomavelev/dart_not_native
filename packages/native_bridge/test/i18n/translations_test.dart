@@ -46,7 +46,7 @@ void main() {
 
     test('round trips through toString', () {
       expect(const Locale('en').toString(), 'en');
-      expect(const Locale('en', region: 'US').toString(), 'en_US');
+      expect(const Locale('en', 'US').toString(), 'en_US');
       expect(Locale.fromString('pt_BR').toString(), 'pt_BR');
     });
 
@@ -65,19 +65,19 @@ void main() {
     test('equality and hashCode cover every subtag', () {
       expect(const Locale('en'), const Locale('en'));
       expect(const Locale('en').hashCode, const Locale('en').hashCode);
-      expect(const Locale('en', region: 'US'), isNot(const Locale('en')));
+      expect(const Locale('en', 'US'), isNot(const Locale('en')));
       expect(const Locale('en'), isNot(const Locale('es')));
     });
 
     test('matches ignores a region the other side leaves open', () {
       const en = Locale('en');
-      const enUs = Locale('en', region: 'US');
-      const enGb = Locale('en', region: 'GB');
+      const enUs = Locale('en', 'US');
+      const enGb = Locale('en', 'GB');
 
       expect(enUs.matches(en), isTrue);
       expect(en.matches(enUs), isTrue);
       expect(enUs.matches(enGb), isFalse);
-      expect(enUs.matches(const Locale('es', region: 'US')), isFalse);
+      expect(enUs.matches(const Locale('es', 'US')), isFalse);
     });
   });
 
@@ -112,7 +112,7 @@ void main() {
     });
 
     test('a regional locale falls back to its base language', () {
-      final manager = I18n(defaultLocale: const Locale('en', region: 'US'))
+      final manager = I18n(defaultLocale: const Locale('en', 'US'))
         ..loadTranslations(const Locale('en'), _en);
 
       expect(manager.t('greeting'), 'Hello');

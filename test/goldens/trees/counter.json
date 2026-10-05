@@ -1,11 +1,15 @@
 {
   "type": "Scaffold",
-  "props": {},
+  "props": {
+    "bodyScrolls": false
+  },
   "children": [
     {
       "type": "AppBar",
       "props": {
-        "title": "Counter App"
+        "title": "Counter App",
+        "backgroundColor": "#ffffff",
+        "foregroundColor": "#212121"
       },
       "children": null
     },
@@ -47,6 +51,7 @@
               "type": "Row",
               "props": {
                 "mainAxisAlignment": "center",
+                "mainAxisSize": "max",
                 "spacing": 8.0
               },
               "children": [
@@ -56,6 +61,8 @@
                     "label": "Decrement",
                     "eventId": "cb:decrement",
                     "variant": "primary",
+                    "minHeight": 40.0,
+                    "paddingHorizontal": 24.0,
                     "disabled": false,
                     "id": "decrement"
                   },
@@ -67,6 +74,8 @@
                     "label": "Reset",
                     "eventId": "cb:reset",
                     "variant": "primary",
+                    "minHeight": 40.0,
+                    "paddingHorizontal": 24.0,
                     "disabled": false,
                     "id": "reset"
                   },

@@ -1,237 +1,256 @@
 {
   "type": "Scaffold",
-  "props": {},
+  "props": {
+    "bodyScrolls": false
+  },
   "children": [
     {
       "type": "AppBar",
       "props": {
-        "title": "Component Showcase (Page 1/3)"
+        "title": "Component Showcase (Page 1/3)",
+        "backgroundColor": "#ffffff",
+        "foregroundColor": "#212121"
       },
       "children": null
     },
     {
-      "type": "Column",
+      "type": "Scroll",
       "props": {
-        "crossAxisAlignment": "center"
+        "scrollOffset": 0.0,
+        "scrollVersion": 0,
+        "scrollEventId": "cb:1"
       },
       "children": [
         {
-          "type": "Padding",
+          "type": "Column",
           "props": {
-            "padding": 16.0
+            "crossAxisAlignment": "center"
           },
           "children": [
             {
-              "type": "Column",
+              "type": "Padding",
               "props": {
-                "crossAxisAlignment": "center"
+                "padding": 16.0
               },
               "children": [
                 {
-                  "type": "Text",
+                  "type": "Column",
                   "props": {
-                    "content": "📐 Layout Components",
-                    "fontSize": 20.0,
-                    "fontWeight": 500
-                  },
-                  "children": null
-                },
-                {
-                  "type": "SizedBox",
-                  "props": {
-                    "height": 8.0
-                  },
-                  "children": null
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "Padding",
-          "props": {
-            "padding": 16.0
-          },
-          "children": [
-            {
-              "type": "Column",
-              "props": {
-                "crossAxisAlignment": "center"
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "✓ Column"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Arranges children vertically. Used for stacking widgets."
-                  },
-                  "children": null
-                },
-                {
-                  "type": "SizedBox",
-                  "props": {
-                    "height": 16.0
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "✓ Center"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Centers its child both horizontally and vertically."
-                  },
-                  "children": null
-                },
-                {
-                  "type": "SizedBox",
-                  "props": {
-                    "height": 16.0
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "✓ Padding"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Adds space around a widget using the padding property."
-                  },
-                  "children": null
-                },
-                {
-                  "type": "SizedBox",
-                  "props": {
-                    "height": 16.0
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "✓ SizedBox"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Creates a box with fixed height for spacing."
-                  },
-                  "children": null
-                },
-                {
-                  "type": "SizedBox",
-                  "props": {
-                    "height": 16.0
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "✓ Scaffold"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "App structure with an AppBar and a FAB."
-                  },
-                  "children": null
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "Padding",
-          "props": {
-            "padding": 16.0
-          },
-          "children": [
-            {
-              "type": "Column",
-              "props": {
-                "crossAxisAlignment": "center"
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Page 1 of 3",
-                    "id": "page_indicator"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "SizedBox",
-                  "props": {
-                    "height": 16.0
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Row",
-                  "props": {
-                    "mainAxisAlignment": "start",
-                    "spacing": 8.0
+                    "crossAxisAlignment": "center"
                   },
                   "children": [
                     {
-                      "type": "Button",
+                      "type": "Text",
                       "props": {
-                        "label": "← Previous",
-                        "eventId": "cb:prev_page",
-                        "variant": "primary",
-                        "disabled": false,
-                        "id": "prev_page"
+                        "content": "📐 Layout Components",
+                        "fontSize": 20.0,
+                        "fontWeight": 500
                       },
                       "children": null
                     },
                     {
-                      "type": "Button",
+                      "type": "SizedBox",
                       "props": {
-                        "label": "Next →",
-                        "eventId": "cb:next_page",
-                        "variant": "primary",
-                        "disabled": false,
-                        "id": "next_page"
+                        "height": 8.0
                       },
                       "children": null
                     }
                   ]
-                },
+                }
+              ]
+            },
+            {
+              "type": "Padding",
+              "props": {
+                "padding": 16.0
+              },
+              "children": [
                 {
-                  "type": "SizedBox",
+                  "type": "Column",
                   "props": {
-                    "height": 16.0
+                    "crossAxisAlignment": "center"
                   },
-                  "children": null
-                },
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "✓ Column"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Arranges children vertically. Used for stacking widgets."
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 16.0
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "✓ Center"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Centers its child both horizontally and vertically."
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 16.0
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "✓ Padding"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Adds space around a widget using the padding property."
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 16.0
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "✓ SizedBox"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Creates a box with fixed height for spacing."
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 16.0
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "✓ Scaffold"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "App structure with an AppBar and a FAB."
+                      },
+                      "children": null
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Padding",
+              "props": {
+                "padding": 16.0
+              },
+              "children": [
                 {
-                  "type": "Text",
+                  "type": "Column",
                   "props": {
-                    "content": "Tap + to increment the counter"
+                    "crossAxisAlignment": "center"
                   },
-                  "children": null
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Page 1 of 3",
+                        "id": "page_indicator"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 16.0
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
+                        "spacing": 8.0
+                      },
+                      "children": [
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "← Previous",
+                            "eventId": "cb:prev_page",
+                            "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
+                            "disabled": false,
+                            "id": "prev_page"
+                          },
+                          "children": null
+                        },
+                        {
+                          "type": "Button",
+                          "props": {
+                            "label": "Next →",
+                            "eventId": "cb:next_page",
+                            "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
+                            "disabled": false,
+                            "id": "next_page"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 16.0
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Tap + to increment the counter"
+                      },
+                      "children": null
+                    }
+                  ]
                 }
               ]
             }

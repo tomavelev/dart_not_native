@@ -38,16 +38,21 @@ class MdlKit extends WebStyleKit {
     required String size,
     String? color,
   }) {
-    final classes = variant == 'tertiary'
-        ? 'mdl-button mdl-button--primary'
-        : 'mdl-button mdl-button--raised';
+    // MDL has a raised button and a flat one. Tertiary is its flat button in
+    // the primary colour; outlined and tonal are the flat button too, with
+    // the border or the wash added by kits/mdl.css.
+    final classes = switch (variant) {
+      'tertiary' => 'mdl-button mdl-button--primary',
+      'outlined' || 'tonal' => 'mdl-button',
+      _ => 'mdl-button mdl-button--raised',
+    };
     final button = el(
       'button',
       '$classes dnn-mdl-button dnn-mdl-button--$variant dnn-mdl-button--$size',
       text: label,
     );
     if (color != null) {
-      style(button, 'background', color);
+      style(button, 'background', cssColor(color));
       style(button, 'color', textOn(color));
     }
     return button;
@@ -84,7 +89,7 @@ class MdlKit extends WebStyleKit {
       'mdl-card dnn-mdl-card dnn-mdl-card--$variant${variant == 'elevated' ? ' mdl-shadow--${depth}dp' : ''}',
     );
     if (backgroundColor != null) {
-      style(card, 'background', backgroundColor);
+      style(card, 'background', cssColor(backgroundColor));
       // Inherited by the title and the content, which is what makes a card the
       // app coloured readable - see `src/contrast.dart`.
       style(card, 'color', textOn(backgroundColor));
@@ -114,9 +119,9 @@ class MdlKit extends WebStyleKit {
     final chip = el('span', 'mdl-chip dnn-mdl-chip dnn-mdl-chip--$variant');
     chip.appendChild(el('span', 'mdl-chip__text', text: label));
     if (variant == 'outlined') {
-      style(chip, 'color', color);
+      style(chip, 'color', cssColor(color));
     } else {
-      style(chip, 'background', color);
+      style(chip, 'background', cssColor(color));
       style(chip, 'color', textOn(color));
     }
     return chip;

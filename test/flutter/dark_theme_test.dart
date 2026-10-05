@@ -136,7 +136,8 @@ void main() {
             .first,
       );
       final decoration = container.decoration! as flutter.BoxDecoration;
-      return (decoration.border! as flutter.Border).left.color;
+      // The bar is at the start edge, whichever side that is.
+      return (decoration.border! as flutter.BorderDirectional).start.color;
     }
 
     testWidgets('are the light ones by default', (tester) async {

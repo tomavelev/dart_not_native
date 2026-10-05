@@ -8,6 +8,7 @@ library;
 import 'package:web/web.dart' as web;
 
 import '../../src/contrast.dart';
+import '../../src/icons.dart';
 import '../style_kit.dart';
 
 class MaterializeKit extends WebStyleKit {
@@ -45,7 +46,7 @@ class MaterializeKit extends WebStyleKit {
   web.Element appBar(String title, {String? backgroundColor}) {
     final nav = el('nav', 'dnn-appbar dnn-mz-nav ${_colors['primary']}');
     if (backgroundColor != null) {
-      style(nav, 'background', backgroundColor);
+      style(nav, 'background', cssColor(backgroundColor));
       style(nav, 'color', textOn(backgroundColor));
     }
     final wrapper = el('div', 'nav-wrapper');
@@ -53,6 +54,9 @@ class MaterializeKit extends WebStyleKit {
     nav.appendChild(wrapper);
     return nav;
   }
+
+  @override
+  web.Element appBarRow(web.Element bar) => bar.firstElementChild ?? bar;
 
   @override
   web.Element button(
@@ -66,12 +70,17 @@ class MaterializeKit extends WebStyleKit {
       'lg' => ' btn-large',
       _ => '',
     };
-    final classes = variant == 'tertiary'
-        ? 'btn-flat$sizeClass'
-        : 'btn$sizeClass ${_colors[variant] ?? _colors['primary']}';
+    // Materialize has no outlined or tonal button: both start from its flat
+    // one, and kits/materialize.css adds the border or the wash.
+    final classes = switch (variant) {
+      'tertiary' => 'btn-flat$sizeClass',
+      'outlined' ||
+      'tonal' => 'btn-flat$sizeClass dnn-mz-button--$variant',
+      _ => 'btn$sizeClass ${_colors[variant] ?? _colors['primary']}',
+    };
     final button = el('button', '$classes dnn-mz-button', text: label);
     if (color != null) {
-      style(button, 'background', color);
+      style(button, 'background', cssColor(color));
       style(button, 'color', textOn(color));
     }
     return button;
@@ -149,7 +158,7 @@ class MaterializeKit extends WebStyleKit {
       'card dnn-mz-card dnn-mz-card--$variant${variant == 'elevated' ? ' z-depth-$depth' : ''}',
     );
     if (backgroundColor != null) {
-      style(card, 'background', backgroundColor);
+      style(card, 'background', cssColor(backgroundColor));
       style(card, 'color', textOn(backgroundColor));
     }
     final content = el('div', 'card-content');
@@ -176,9 +185,9 @@ class MaterializeKit extends WebStyleKit {
       text: label,
     );
     if (variant == 'outlined') {
-      style(chip, 'color', color);
+      style(chip, 'color', cssColor(color));
     } else {
-      style(chip, 'background', color);
+      style(chip, 'background', cssColor(color));
       style(chip, 'color', textOn(color));
     }
     return chip;
@@ -203,7 +212,9 @@ class MaterializeKit extends WebStyleKit {
     web.Element? close;
     if (dismissible) {
       close = el('button', 'btn-flat dnn-mz-alert__close');
-      close.appendChild(materialIcon('close'));
+      close.appendChild(
+        materialIcon(String.fromCharCode(Icons.close.codePoint)),
+      );
       panel.appendChild(close);
     }
     return AlertParts(root: panel, close: close);
@@ -214,7 +225,7 @@ class MaterializeKit extends WebStyleKit {
     final track = el('div', 'progress dnn-mz-progress');
     final bar = el('div', 'determinate');
     style(bar, 'width', '${(value * 100).clamp(0, 100)}%');
-    style(bar, 'background-color', color);
+    style(bar, 'background-color', cssColor(color));
     track.appendChild(bar);
     return track;
   }

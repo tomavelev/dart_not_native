@@ -54,13 +54,13 @@ class _DesignSystemShowcaseAppState extends State<DesignSystemShowcaseApp> {
           'Design System (Page ${currentPage + 1}/${designSystemPages.length})',
         ),
       ),
-      body: Column(
+      body: SingleChildScrollView(child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _navigation(),
           Padding(padding: const EdgeInsets.all(16), child: _page()),
         ],
-      ),
+      )),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Next page',
         onPressed: _next,
@@ -267,11 +267,30 @@ class _DesignSystemShowcaseAppState extends State<DesignSystemShowcaseApp> {
 
   // --- Page 4: Buttons & Cards ---
 
+  Widget _sizedButton(
+    String label, {
+    required double height,
+    required double fontSize,
+    required double padding,
+  }) => ElevatedButton(
+    style: ElevatedButton.styleFrom(
+      minimumSize: Size(0, height),
+      padding: EdgeInsets.symmetric(horizontal: padding),
+      textStyle: TextStyle(fontSize: fontSize),
+    ),
+    onPressed: () {},
+    child: Text(label),
+  );
+
   Widget _buttonsAndCards() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _label('Button variants'),
-      Row(
+      // A Wrap, not a Row: six buttons are wider than a phone, and a Row is
+      // one line that overflows rather than taking a second.
+      Wrap(
+        spacing: SPACING_SM,
+        runSpacing: SPACING_SM,
         children: [
           ElevatedButton(
             onPressed: () => setState(() => lastAction = 'primary'),
@@ -314,11 +333,16 @@ class _DesignSystemShowcaseAppState extends State<DesignSystemShowcaseApp> {
       Text('Last pressed: $lastAction', key: const ValueKey('last_action')),
       const SizedBox(height: SPACING_SM),
       _label('Sizes and states'),
-      Row(
+      Wrap(
+        spacing: SPACING_SM,
+        runSpacing: SPACING_SM,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          ElevatedButton(onPressed: () {}, child: const Text('Small')),
-          ElevatedButton(onPressed: () {}, child: const Text('Medium')),
-          ElevatedButton(onPressed: () {}, child: const Text('Large')),
+          // The protocol's button scale (see UIBuilder.button), asked for the
+          // way a Flutter app asks: height, text and padding.
+          _sizedButton('Small', height: 28, fontSize: 12, padding: 12),
+          _sizedButton('Medium', height: 36, fontSize: 14, padding: 16),
+          _sizedButton('Large', height: 44, fontSize: 16, padding: 24),
           const ElevatedButton(onPressed: null, child: Text('Disabled')),
         ],
       ),
@@ -329,7 +353,7 @@ class _DesignSystemShowcaseAppState extends State<DesignSystemShowcaseApp> {
         children: const [
           Expanded(
             child: Card(
-              child: Column(
+              child: Padding(padding: EdgeInsets.all(16), child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -338,12 +362,12 @@ class _DesignSystemShowcaseAppState extends State<DesignSystemShowcaseApp> {
                   ),
                   Text('Card with a shadow'),
                 ],
-              ),
+              )),
             ),
           ),
           Expanded(
             child: Card.outlined(
-              child: Column(
+              child: Padding(padding: EdgeInsets.all(16), child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -352,18 +376,18 @@ class _DesignSystemShowcaseAppState extends State<DesignSystemShowcaseApp> {
                   ),
                   Text('Border only'),
                 ],
-              ),
+              )),
             ),
           ),
           Expanded(
             child: Card.filled(
-              child: Column(
+              child: Padding(padding: EdgeInsets.all(16), child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Filled', style: TextStyle(fontWeight: FontWeight.w700)),
                   Text('Colored background'),
                 ],
-              ),
+              )),
             ),
           ),
         ],
@@ -411,7 +435,7 @@ class _DesignSystemShowcaseAppState extends State<DesignSystemShowcaseApp> {
     _section('Inputs', [
       Checkbox(
         value: newsletter,
-        onChanged: (v) => setState(() => newsletter = v),
+        onChanged: (v) => setState(() => newsletter = v ?? false),
         label: 'Subscribe to newsletter',
       ),
       Text(
@@ -423,7 +447,7 @@ class _DesignSystemShowcaseAppState extends State<DesignSystemShowcaseApp> {
         Radio<String>(
           value: option,
           groupValue: plan,
-          onChanged: (v) => setState(() => plan = v),
+          onChanged: (v) => setState(() => plan = v ?? plan),
           label: 'Plan: ${option[0].toUpperCase()}${option.substring(1)}',
         ),
       Text('Selected plan: $plan', key: const ValueKey('plan_state')),

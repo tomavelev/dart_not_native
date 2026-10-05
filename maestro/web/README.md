@@ -44,10 +44,12 @@ maestro/web/
 ## How it works
 
 - **Web builds.** Each example has a pure-Dart app in `lib/examples/apps/`
-  (a `NativeUIApp`: state, a `WidgetNode` tree and event handlers) and a
-  web entry in `lib/examples/web/` that calls `runWebApp(...)`.
-  `build_examples.sh` compiles the entries with plain `dart compile js`
-  (~150 KB each) and copies `packages/native_bridge/web_shell/` next to them.
+  (written against `package:dart_not_native/widgets.dart`, with no Flutter
+  import) and a web entry in `lib/examples/web/` that calls
+  `runWebApp(hostApp(...))`. `build_examples.sh` compiles the entries with
+  plain `dart compile js` (about 360-380 KB of JavaScript each, measured
+  2026-10-03 at `-O2`) and copies `packages/native_bridge/web_shell/` next to
+  them.
 - **Style kits.** `WebUIRenderer` owns the DOM and events. A `WebStyleKit`
   builds the Material components. The page picks its kit from the URL
   (`?kit=mdl|materialize|plain`), so one build serves all kits. The flows open
@@ -75,7 +77,7 @@ tags: [web]
     visible: "My title"
     timeout: 20000
 - tapOn:
-    id: save_button          # UIBuilder.button(..., id: 'save_button')
+    id: save_button          # ElevatedButton(key: ValueKey('save_button'), ...)
 - runFlow:
     file: subflows/snap.yaml
     env:
@@ -83,9 +85,10 @@ tags: [web]
 ```
 
 Selectors: Maestro reads an element's text from its own text nodes, and its
-`id` from the DOM `id`, `aria-label`, `name` or `title` attribute. Give nodes
-an `id` (`UIBuilder.text(..., id:)`, `UIBuilder.button(..., id:)`) whenever
-the visible text alone is ambiguous. Icon buttons and FABs can be selected by
+`id` from the DOM `id`, `aria-label`, `name` or `title` attribute. Give a
+widget a `ValueKey` - it becomes the node's `id`, and so the element's -
+whenever the visible text alone is ambiguous (`UIBuilder.text(..., id:)` and
+`UIBuilder.button(..., id:)` at the protocol level). Icon buttons and FABs can be selected by
 their tooltip (`id: "Increment"`).
 
 After changing an example's UI on purpose, run `generate` for it and review

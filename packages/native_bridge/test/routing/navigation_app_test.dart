@@ -1,7 +1,7 @@
 /// Tests for NavigationApp: the router driving a renderer.
 library;
 
-import 'package:dart_not_native/core.dart' hide Route, Router, RouterConfig;
+import 'package:dart_not_native/core.dart' hide Router;
 import 'package:dart_not_native/routing/navigation_app.dart';
 import 'package:flutter_test/flutter_test.dart';
 

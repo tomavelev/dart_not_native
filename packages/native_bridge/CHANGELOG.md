@@ -12,6 +12,66 @@ The lanes that would keep it that way are written and have never executed -
 the repository has no remote yet, so every result below was got by hand or on
 a device in the room.
 
+### The widget layer takes Flutter's shape (breaking)
+
+`widgets.dart` grew from a handful of widgets to the surface a real Flutter app
+uses - `Container`, `Stack`, `GestureDetector`, `Navigator.push`, `Form`,
+`CustomPaint`, `ThemeData`, `MediaQuery`, `LayoutBuilder` and the rest - so a
+screen migrates by changing its import. Where the old layer disagreed with
+Flutter, it now agrees, and these are the places existing code has to change:
+
+- **A `Scaffold`'s body no longer scrolls.** Put a screen taller than the
+  window in a `SingleChildScrollView` or a `ListView`, as in Flutter. `ListView`
+  and `GridView` now scroll themselves (they used to be a column and a grid
+  inside the scrolling body).
+- **`ListView.builder`** takes Flutter's `itemBuilder: (context, index)`, no
+  longer needs a `key`, and no longer needs a row height: with `itemExtent`
+  (or `itemExtentBuilder`, now Flutter's two-argument form) it is windowed as
+  before; without one every row is built inside a scroller.
+- **`Theme.of(context)` returns a `ThemeData`**, not the protocol's `AppTheme`.
+  The palette is `Theme.of(context).appTheme`; `ThemeData.toAppTheme()` makes
+  the one to hand to `runApp(appTheme:)`.
+- **`Form`, `FormField` and `TextFormField` are Flutter's** (`GlobalKey<FormState>`,
+  `validator`, `onSaved`). The framework's own form model is exported from
+  `widgets.dart` as `FormModel` and `FormFieldModel`, and the field bound to it
+  is `ModelTextFormField(field:)`. `forms/form.dart` itself is unchanged.
+- **`Locale`** is `Locale('en', 'US')` - positional, with `languageCode`,
+  `countryCode`, `scriptCode` and `toLanguageTag()`. The named `region:` and
+  `script:` parameters are gone (`Locale.fromSubtags` names a script);
+  `language`, `region` and `script` remain as getters.
+- **`Color` carries its alpha to the renderers**: `#rrggbb` when opaque,
+  `#aarrggbb` otherwise. It used to be dropped.
+- **`Icon` renders an `Icon` node**, not a `Text` node holding the glyph.
+- **`Card` has Flutter's metrics**: a margin of 4 and no padding of its own.
+  Put a `Padding` inside it.
+- **`ListTile`** is composed in Material's metrics (and its `onTap`, which was
+  dropped, works); **`Divider(height:)`** is the height of the strip, not the
+  margin on each side.
+- **`Checkbox.onChanged`** is `ValueChanged<bool?>` and **`Radio.onChanged`**
+  `ValueChanged<T?>`, as in Flutter.
+- **`ButtonStyle`'s fields are `WidgetStateProperty`s**; `styleFrom` is
+  unchanged in use. `MainAxisAlignment` and `CrossAxisAlignment` are enums.
+- **`AnimatedContainer`** renders a `Box` node with `animateMs` (the
+  `AnimatedContainer` node is still drawn, but the widget no longer builds
+  it), no longer centres its child, and - like `AnimatedOpacity` - requires
+  its `duration` and defaults to `Curves.linear`, as in Flutter.
+- **`MaterialApp.routes`** takes Flutter's `(context) => Widget`; the
+  `(context, params) => Widget` form is still accepted for a path with
+  parameters, so the map is typed `Map<String, Function>`.
+- **`Navigator.of(context)` returns a `NavigatorState`**; an `AppBar` gains a
+  back button on a page that can be popped.
+- **`TextField.textInputAction` and `maxLines` are nullable**, `decoration`
+  defaults to an empty `InputDecoration`, and `FocusNode.requestFocus()` and
+  `TextEditingController.text =` redraw the field without a `setState`.
+- **A keyed widget's `State` is kept per page and per widget type**, so the
+  same key on two routes is two states. A `State`'s `mounted` is now false
+  after `dispose()`, and a `State` inside a dialog is no longer disposed on
+  every rebuild.
+- **`core.dart` no longer exports the legacy router's `Route` and
+  `RouterConfig`** (they are Flutter's names in `widgets.dart` now); import
+  `routing/route.dart` for them.
+- `ChangeNotifier` is a `mixin class`, so `with ChangeNotifier` works.
+
 ### Proven, not just written
 
 - The Android and iOS renderers run on devices - a physical Android phone (all seven
@@ -32,6 +92,85 @@ a device in the room.
   hides a widget that moved, so the golden went instead. The tree and markup
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
+
+### Three real apps on an Android emulator
+
+Three migrated Flutter apps were walked screen by screen on a Pixel 8 emulator
+(API 35). What that found in the Android renderer, and fixed:
+
+- **An event is answered by the build it was raised against.** Callback ids
+  are allocated by order, so an id names a different callback once a build
+  allocates a different number before it. The views may still be showing an
+  earlier tree when their event arrives: a list's size report was landing on
+  whichever row's tap had since been given its number, selecting a time nobody
+  touched. The tree now travels with its build number, the views hand it back
+  with every event, and `EventBindings` keeps the last few builds' callbacks.
+  Both native renderers echo the number - the Swift is written and not
+  compiled - and the web and Flutter renderers name the build they are
+  showing: the Flutter host builds its widgets a frame after a render, so a
+  tap in that frame was from the build before.
+- **Buttons are drawn as written**: no forced capitals or wide tracking on a
+  button, a tab, a snackbar action or an extended FAB, and no shadow box
+  around a text, outlined or tonal button.
+- **A hugging column is as wide as what is in it wants**: a `Row`, a `Wrap`
+  or a box that expands no longer collapses to the width of its narrowest
+  sibling (a d-pad's middle row, a wrap cut to one line's height, a square
+  board the size of the button under it).
+- **A box keeps what its child states**: an image or a sized box inside a
+  `Box` keeps its size; a clipped box is clipped to the rectangle it was just
+  laid out at (its first outline was empty, and hid the child); a row in an
+  aligned box gets the box's width, so a list tile's trailing sits at the end.
+- **The app bar** centres its back arrow on the title's line, and the status
+  icons are drawn light or dark to read over the bar behind them.
+- **Material's own** check box, radio button and linear progress bar, built
+  against the Material context; slider, tab bar, text field and dropdown take
+  the app's primary where they showed the Material theme's purple.
+- **Icon buttons have a 48dp target** and a ripple; a draggable box is picked
+  up by a long press even when a child takes the touch; a dropdown in a row is
+  as wide as what it shows; a stack clips at its own edge, not each child's;
+  a shadow or a moved box is not cut off by the views above it; a dialog's
+  scrim reaches the bottom of the window; the keyboard closes with the field
+  it was typing into.
+- **A scroller says where it is, and comes back there.** `UIBuilder.scroll`
+  takes `onScroll`: the node carries a `scrollEventId` and the renderer sends
+  `{offset, maxExtent, viewport}` when the scroller comes to rest and at most
+  every 100 ms on the way - never once a frame. The widget layer's
+  `ScrollController.offset`, its `position` and its listeners follow the
+  reader from that, and every scroller's node now carries its offset, so a
+  view the renderer has to make again - the page came back from under a
+  pushed one, a snackbar changed the shape of the screen - starts where the
+  reader was instead of at the top. A scroller without a controller keeps its
+  position by its place in the tree. On Android, web and the Flutter host;
+  written for iOS and not compiled. A windowed list still reports rows, not
+  pixels.
+- **A snackbar sits above the bottom bar and the floating button**, not over
+  them, on Android, web and the Flutter host (iOS written, not compiled).
+- **A navigation rail scrolls when its destinations do not fit** - seven of
+  them on a phone held sideways - on all four renderers (iOS not compiled).
+- **Material 3 on Android.** The Material views are built against a Material
+  3 theme: buttons have round ends, the bottom navigation is 80dp with a pill
+  behind the selected destination, the floating button is the rounded square,
+  cards are 12dp, an app bar's title is 22sp regular. The theme is chosen by
+  the palette in force rather than by the device, so an app with one theme is
+  not handed dark Material views on a dark phone. The app bar stays 56dp,
+  which is what Flutter's `AppBar` is under Material 3 too.
+- **A dropdown puts the keyboard away** when it takes the focus from a field,
+  and its arrow, its menu and a field's caret are the app's colours.
+- **A card that turns dark turns its text light**: a patch that changed the
+  colour in force inside a box or card left the unchanged text below painted
+  for the old one - dark on dark at a launch in dark mode. It rebuilds now.
+- **An `AppBar` decides its own colours, as Flutter does** (widget layer):
+  its own, then `AppBarTheme`'s, then the surface under Material 3 (the
+  default) and the primary under a light Material 2 theme - and always states
+  them, so a page's bar and the bar of a scaffold nested in it are one app's.
+  This changes the look of an app that relied on the renderers'
+  primary-coloured bar; `UIBuilder.appBar` with no colour is still the
+  renderer's. A button with no style states Material 3's 40 by 24 (12 on a
+  text button) under a Material 3 theme.
+
+In the widget layer (shared with every renderer): a box around a `Center` or
+a `Row` fills the width it is offered, as Flutter's does; a `ListTile` is as
+wide as its list; an `IconButton` takes the inherited icon colour.
 
 ### Native views are patched, not rebuilt
 
@@ -156,8 +295,83 @@ a device in the room.
 - Web secure storage can rotate its key, and stored values can be migrated
   between versions.
 
+### What a screen reader - and a device test - can find
+
+Driving the three apps with [agent-device](https://github.com/callstack/agent-device)
+showed their screens were nearly empty to anything that reads the
+accessibility tree: no view had an identifier, and what was composed from
+boxes - every `InkWell`, list tile, chip and drawn button - had no name and
+no role. Each was a defect for TalkBack and VoiceOver before it was one for a
+test. Verified on an Android 15 emulator; the DOM renderer has browser tests
+for the same; **the Swift is uncompiled**, like the rest of the iOS renderer
+since 2026-10-03.
+
+- **A node's `id` reaches the tree.** A widget's `Key` was already the node's
+  `id`; the renderers now expose it - Android as the view's resource name
+  (`resource-id` in uiautomator), iOS as `accessibilityIdentifier`, the DOM as
+  `id` - on build and on every patch. It is the id as written, with no
+  `<package>:id/` in front, which is what React Native and Compose do and
+  what the tools match. A text field's and a dropdown's id is on the field
+  itself on the native renderers; a swipe row's actions are
+  `<row id>.action-<n>`.
+- **A box with a tap can be activated.** It is announced as a button named by
+  the text inside it (or its `semanticLabel`, or its `tooltip`), unless it
+  holds another control - a card with a button in it is a clickable group, so
+  that both stay reachable. A long press is offered as an action too. On the
+  web the same box is `role="button"` with a tab stop, and `role="group"`
+  when it holds a control.
+- **`IgnorePointer` holds for a screen reader.** Nothing under it can be
+  activated, by "activate" or by the keyboard, and what would have been is
+  announced as unavailable.
+- **New on a `Box`:** `semanticRole` (`heading`, `button`, `image`,
+  `progress` - read off any node), `semanticValue`, `liveRegion`,
+  `excludeSemantics`, `disabled` and `selected`. `Canvas`, `Checkbox`,
+  `Radio`, `Toggle` and `Loading` take a `semanticLabel`.
+- **The widget layer carries what it used to drop.** `Semantics` passes
+  `header`, `button`, `image`, `liveRegion` and `excludeSemantics`, and puts a
+  label on the child itself when the child is what takes the tap - as
+  `Tooltip` now does with its message. `ExcludeSemantics` hides its child.
+  `CheckboxListTile`, `SwitchListTile` and `RadioListTile` name their control
+  by the tile's title (`labelledBy`, and `semanticLabel`, on the three
+  controls). A button or icon button drawn from a box says it is a button and
+  that it is off when it has no handler. A filter, choice or input chip says
+  whether it is selected, as does a selected `ListTile`; a chip's delete
+  button is called "Delete". The progress indicators pass their key and
+  `semanticsLabel`.
+- **Smaller things:** an icon nobody named no longer puts its private-use
+  character in the tree, and a named one says its name instead; the app bar's
+  title and a dialog's title are headings; on the web, `Loading` is a
+  `progressbar` and every kit's switch is a `switch`.
+- **A device lane that needs all of the above**: `e2e/agent-device/`, six
+  flows over four example entry points, one of them new - the controls
+  gallery, which has the node types the older examples lack. `TESTING.md`
+  says how to run it and how a widget maps to a selector.
+  `maestro/native/run.sh --agent-device` runs the Maestro flows through the
+  same tool; three of the five Android ones pass that way.
+
+Not exposed, and why: a `Semantics(onTap:)` (put the tap on a
+`GestureDetector`); the expanded state of an `ExpansionTile`; a heading's
+level (every `semanticRole: heading` is level 2 on the web); a long press on
+the web, which has no keyboard or screen-reader equivalent; and on iOS, the
+tap of a box that also holds another control, which stays touch-only so the
+inner control is not hidden. The Flutter renderer was not touched.
+
 ### Fixed
 
+- `Column(verticalDirection: VerticalDirection.up)` now turns the main axis
+  round as well as the children: `start` is the bottom, as in Flutter. It used
+  to reverse the children and still pack them against the top.
+- A `GestureDetector` or `InkWell` around a child that fills - a
+  `SizedBox.expand`, a `CustomPaint` with one - fills too, so the whole area
+  takes the touch rather than a box hugging nothing.
+- A `CustomPaint` that left the tree and came back to the same place - a chart
+  that gave way to a spinner while its data loaded - painted against the
+  viewport from then on: it is a new `State`, and a renderer does not repeat a
+  size that has not changed. The size last reported for the surface is kept
+  with the app now, and a new state starts from it.
+- A `FlutterSlot` on a page that is only kept alive under another one no
+  longer registers itself on every build; a ticking page on top used to make
+  the slot registry add and drop it once a frame.
 - The iOS app could not launch at all on the iOS 26 SDK: that SDK requires the
   UIScene life cycle, and the project declared no scene manifest, so `Runner`
   quit before any Dart ran. It names the engine's `FlutterSceneDelegate` now.
@@ -189,6 +403,175 @@ a device in the room.
   types are a compatibility promise, and these were a guess made before any
   backend had argued with them, so they were removed instead of published.
   Sync belongs in a package of its own.
+- Icons on web were the wrong pictures. `Icons.x` carries the codepoint of
+  Flutter's own font, which is what the native renderers draw from; the web
+  shell's icon font had the same names at other codepoints, so `Icons.home`
+  drew a caps-lock key. The shell now ships Flutter's font itself
+  (`MaterialIcons-Regular.otf`, rewrapped as WOFF by
+  `tool/generate_material_icons.dart`) and the web renderer draws every icon -
+  an `Icon`, a button's, a destination's, a text field's - as the character at
+  its codepoint, as the other three renderers do. That font has no ligatures
+  for the names, so an icon button's name is drawn through the codepoint the
+  builder resolves for it; a name the table does not know, with no `codepoint`
+  beside it, draws the button's default glyph. `web_shell` is about 270 kB
+  larger for it: the one font is 557 kB, the two it replaces were 293 kB.
+- `Icons` had no `_outlined`, `_rounded` or `_sharp` names, on the belief that
+  those glyphs live in fonts Flutter does not bundle. They do not: Flutter
+  declares all 8,825 icons in the one `MaterialIcons` family, and the bundled
+  file has a glyph at every one of those codepoints. `Icons` now has them all,
+  so `Icons.home_outlined` compiles and draws on every renderer; a constant an
+  app does not use is not compiled in. `materialIconCodepoint` keeps to the
+  2,231 base names - it is a map, kept whole by any build that looks a name
+  up, and the variants would add 209 kB to a 352 kB `main.dart.js`.
+  `Icons.extension` is spelled as Flutter spells it (it was `extension_`).
+- A keyless widget's position id doubled in length at every stateful widget
+  above it, because each pushed its whole id as its step of the path. Thirty
+  deep - a dozen providers, a router, a shell - that is megabytes per id, and
+  a keyless `Draggable`, which writes its id into the tree, hung the page.
+  Each level now adds only its own step.
+- A `ListTile`'s row is as wide as the tile, so `trailing` sits at the far
+  edge instead of straight after the title.
+- On web, a nested scaffold's floating button is pinned to its own corner
+  rather than the window's (it sat on the outer scaffold's bottom bar), and a
+  dropdown beside other things in a row - a list row's trailing - is as wide
+  as its choices rather than the row.
+
+### What migrating real apps onto it found
+
+- **Right-to-left screens.** The framework had no notion of reading direction,
+  so an app that was right-to-left in Arabic under Flutter came out
+  left-to-right. The tree's root now carries `textDirection: 'rtl'`
+  (`RootProps.textDirection`, put there by `UIBuilder.withTextDirection`;
+  absent means left to right) and every renderer turns the screen round from
+  that one prop, live: `dir="rtl"` on the web root with the stylesheet's
+  start-and-end rules made logical, a `Directionality` on the Flutter host,
+  `layoutDirection` on Android, a forced `semanticContentAttribute` on iOS.
+  Rows run from the right, an app bar's leading and actions and a list tile's
+  leading and trailing swap ends, a text field's prefix and suffix swap, the
+  floating button moves to the bottom left and the app bar's back arrow
+  points the other way. What names a side stays on it, as in Flutter:
+  `padding` and `margin`, a `Positioned`'s `left`, an `alignment`'s x,
+  `textAlign: 'left'`, canvas coordinates.
+- In the widget layer, `Directionality` and `Directionality.of`/`maybeOf`;
+  `MaterialApp` takes the direction from its locale (ar, fa, he, ps, sd, ur -
+  Flutter's six - and ug, yi, dv), overridable from its `builder` as in
+  Flutter; `EdgeInsetsDirectional`, `AlignmentDirectional`,
+  `BorderRadiusDirectional` and `TextAlign.start`/`end` resolve against the
+  direction they are built under instead of always left to right;
+  `Positioned.directional` is new. Only the screen's direction reaches the
+  renderers: a `Directionality` deep in a screen turns the values and the
+  rows below it, not the platform's own controls there.
+- **Breaking, on web:** a `Box` or `Stack` alignment's x is written as
+  `left`/`right` rather than `start`/`end`, because it is physical; a `Stack`
+  with no alignment is still top-start. **Breaking, on the Flutter host:** a
+  tree that states no direction is drawn left to right even inside a Flutter
+  app whose own `Directionality` is right-to-left - the direction is the
+  tree's to say.
+- **A `Row` is a row when it says so (breaking on the Flutter host).** There,
+  a row with no `Expanded` in it was drawn as a `Wrap` and so was only as
+  wide as its children, which put the two ends of a `spaceBetween` row side
+  by side and left a trailing child in the middle. A row that says
+  `mainAxisSize: 'max'` or carries a distributing `mainAxisAlignment` is now
+  Flutter's `Row` - one line, full width, overflowing rather than reflowing -
+  and the widget layer's `Row` says `'max'` wherever its width is bounded, as
+  Flutter's default does. Only a row that asks for neither still reflows; a
+  run of buttons that is meant to take a second line is a `Wrap`, which is
+  what two of the examples became. On web, padding or a box around such a row
+  now takes the width it is offered (it used to hug, leaving the row nothing
+  to fill), and an `Expanded` in a row gives a max-size column the row's
+  height instead of none.
+- **Remote images are cached on Android, and an image can say what to show
+  instead.** The Android renderer fetched a URL again on every rebuild and
+  kept nothing; remote images now share the decoded-bitmap cache assets
+  already had (keyed by URL and target size), sit over an HTTP cache on disk
+  that the plugin installs itself if the app has none, are fetched once
+  however many views ask, are decoded off the main thread, and are drawn at
+  once - no alt text in between - when they are already in memory. iOS gains
+  the same decoded-image cache over `URLCache`. An `Image` node takes an
+  optional child (`UIBuilder.image(fallback:)`), drawn in place of the alt
+  text while the image loads and if it fails, on all four renderers; the
+  widget layer's `Image.errorBuilder` is how to give one - built once, up
+  front, with an `ImageLoadFailure`, since a renderer cannot call back into a
+  build. `loadingBuilder` and `frameBuilder` are accepted and not called.
+- **`disabled` on a checkbox, radio and switch** is documented
+  (`UIBuilder.checkbox(disabled:)`) and drawn the same everywhere: the label
+  greys with the control on Flutter, Android and iOS, the web marks it for
+  the stylesheet, and on web the three are now patched in place - ticked,
+  unticked, disabled, enabled - instead of rebuilt, so a box toggled from the
+  keyboard keeps the focus.
+- On the Android emulator, right-to-left was looked at under an Arabic
+  locale - app bar, bottom-navigation order, list tiles, tabs, calendar and
+  switch all mirrored - and remote images loaded in list rows. What the disk
+  cache does offline or at expiry was not examined, and nothing records the
+  disabled controls on a device. The Swift has not been compiled and is
+  pinned by source-level tests only.
+
+### Two more apps, and what they needed
+
+A food-reference app (about forty screens, eighty locales through `intl`, a
+drawer, named routes, a barcode scanner, a Flutter web build) and a small
+terminal-sessions client were moved onto the layer. Both analyze clean, their
+test suites pass and their debug APKs build. On the Android emulator (Pixel 8,
+Android 15) the first was walked through its search screen, a list, a detail
+page, the drawer and navigation from it, the first-launch notice and the
+barcode scanner - a Flutter widget in a `FlutterSlot` filling a native page,
+showing the emulator's camera - and its `flutter build web` was opened in
+headless Chrome as far as the search screen. The second was only seen at its
+sign-in form: nothing past it was reached without a server and a key, so its
+popup menus are covered by the tree tests alone. No iOS, no phone.
+What they asked for that was not there:
+
+- **`PopupMenuButton`, `PopupMenuItem`, `CheckedPopupMenuItem`,
+  `PopupMenuDivider` and `showMenu`.** No platform here has a menu that takes
+  arbitrary rows, so the menu is a dialog of them. `onOpened`, an entry's
+  `onTap`, `onSelected` and `onCanceled` are called as in Flutter; the entry
+  for `initialValue` is ticked; where the menu goes and what its surface looks
+  like are accepted and not carried.
+- **`Scaffold` has a state.** `Scaffold.of(context)`, `Scaffold.maybeOf` and a
+  `GlobalKey<ScaffoldState>` reach `openDrawer`, `closeDrawer`,
+  `isDrawerOpen` and their `endDrawer` twins; `onDrawerChanged` is called.
+  `Drawer` and `DrawerHeader` exist. A drawer closes when the app moves to
+  another page - it used to stay, a sheet over the page that replaced its
+  own.
+- **Named routes replace and clear.** `pushReplacementNamed`,
+  `pushNamedAndRemoveUntil`, `popAndPushNamed` and `ModalRoute.withName`, on
+  `Navigator` and `NavigatorState`. `pushNamed` returns Flutter's
+  `Future<T?>`. A named route asked for while a pushed page is on screen is
+  now pushed over it - it used to change the named history underneath, where
+  nobody could see it. `ModalRoute.of(context).settings` carries the named
+  route's `name` and the `arguments` it was reached with. With `routes`,
+  `MaterialApp.home` is the route `/` (it was ignored, and an app with both
+  and no `/` threw).
+- **`LocalizationsDelegate` and `Localizations.of<T>`.**
+  `MaterialApp.localizationsDelegates` is no longer ignored: the delegates
+  that are this library's are loaded for the app's locale, again when it
+  changes, and `Localizations.of<T>(context, T)` answers what they loaded -
+  so an `intl`-style `AppLocalizations.of(context)` moves over with its
+  import. It answers null until the load completes, where Flutter holds the
+  first frame back; Flutter's own delegates in the same list are passed over.
+- **`AppLifecycleListener`**, over the binding's observers.
+- **Widgets that only have to be there:** `Hero` (no flight - pages have no
+  transition), `MouseRegion` and `SystemMouseCursors` (no renderer reports
+  hover), `FadeTransition` (the animation's value when built),
+  `ModalRoute.buildTransitions` (never called),
+  `ThemeData.estimateBrightnessForColor`, and `cursorColor`,
+  `enableInteractiveSelection` and the other caret parameters of `TextField`
+  and `TextFormField` (accepted and not carried).
+- **`flutter build web` is a build.** `run_app.dart` picked the DOM renderer
+  whenever the program ran in a browser, Flutter's bootstrap or not. A
+  program with `dart:ui_web` - a Flutter web build - now takes the Flutter
+  entry point and is painted by the Flutter renderer, with its Flutter
+  plugins working as in any Flutter web app. `dart compile js` is the DOM
+  build, as before. This is the web target for an app whose plugins plain
+  dart2js cannot link.
+- **`InputDecoration.icon` is drawn.** It was dropped, and with it whatever
+  it did when tapped - a search field's scan button. It is laid out before
+  the field, as any widget, with the field taking the rest of the row.
+- **Android: a `Padding` around a row or a text field fills its column.** In
+  a column that does not stretch, the padding hugged its content, which gave
+  the row inside no width to fill and the `Expanded` in it none to take: a
+  field beside a button was drawn a few dp wide. Found on the emulator; the
+  iOS and DOM renderers were not checked for the same.
 
 ### Known limits
 

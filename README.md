@@ -1,193 +1,247 @@
-# dart_not_native - Unified Cross-Platform Framework
+# dart_not_native
 
-A complete framework for building cross-platform apps (Android, iOS, Web) from a single Dart codebase. One dependency, one import, automatic platform detection.
+Write a screen once, in Dart, with Flutter's widget API - and have each
+platform draw it with its own UI: Android Views, iOS UIViews, real DOM in the
+browser. Flutter's engine hosts Dart and the plugins on mobile and is absent
+on web; it does not paint the screen.
 
 ## TL;DR
 
 ```dart
-import 'package:dart_not_native/material.dart';
+import 'package:dart_not_native/widgets.dart';
 
-void main() {
-  runApp(const MyApp());
-}
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(title: Text('Hello')),
-        body: Center(child: Text('Works everywhere!')),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp(
+    home: Scaffold(
+      appBar: AppBar(title: const Text('Hello')),
+      body: const Center(child: Text('Drawn by the platform')),
+    ),
+  );
 }
 ```
 
-**That's it.** Same code, three platforms, two rendering engines:
+That is a Flutter app with one line changed - the import. The widgets are not
+Flutter's: `widgets.dart` is a pure-Dart layer with Flutter's names,
+signatures and semantics that builds a serialisable tree, and a renderer per
+platform turns the tree into views.
 
 ```bash
-flutter run                        # Android (Flutter native, 50MB)
-flutter run                        # iOS (Flutter native, 80MB)
-maestro/web/build_examples.sh      # Web (DOM + Material CSS, ~150KB of JS) ✨
+flutter run --no-tree-shake-icons          # Android: MaterialToolbar, TextView, EditText…
+flutter run --no-tree-shake-icons          # iOS: UIKit (see the status below)
+dart compile js -O2 -o build/web/main.dart.js lib/main.dart   # web: DOM + CSS, no Flutter engine
 ```
 
-On web the UI is real HTML styled by a Material CSS framework - Material
-Design Lite or Materialize, picked by a *style kit* - rendered by
-`WebUIRenderer`, with no Flutter engine and no canvas. See
-[Web (DOM + Material CSS)](#web-dom--material-css).
+The same tree can also be painted by Flutter's own widgets
+(`runApp(..., nativeViews: false)`, or one screen at a time inside an existing
+Flutter app), which is the renderer the test suite covers most heavily.
 
 ---
 
-## What's Included
+## Status
 
-Status in one line: the four renderers draw the whole vocabulary, Android is
-proven on a phone, iOS is proven on a simulator and thin on one, and nothing
-is published yet. [TODO.md](TODO.md) and
-[the changelog](packages/native_bridge/CHANGELOG.md) carry the detail; this
-list is deliberately short so it does not drift out of step with them.
+In one paragraph: **web and the Flutter renderer are tested; Android is run on
+a phone and an emulator, including three migrated production apps; the iOS
+renderer as it stands has never been compiled; nothing is on pub.dev.**
+[TODO.md](TODO.md) and [the changelog](packages/native_bridge/CHANGELOG.md)
+carry the detail, and this list is kept short so it does not drift out of step
+with them.
 
-### ✅ Today
-- **One screen, four renderers** - real Android Views, real UIKit views, real
-  DOM, or Flutter's own canvas, from the same widget tree. The native two are
-  patched rather than rebuilt, so a field keeps its focus and caret.
-- **A Flutter-shaped API** - `StatelessWidget`, `setState`, `Scaffold`,
-  `TextField`, `showDialog`, a routed `MaterialApp`. A screen differs from a
-  Flutter one only in its import.
-- **The things an app hits early** - forms with validation, routing, i18n, a
-  theme with a dark appearance, dialogs/sheets/snackbars, windowed long lists,
-  swipe actions, secure storage on every platform.
-- **Run on real hardware** - all five device flows and the integration suite
-  pass on a physical Android phone; the iOS half passes on a simulator and the app
-  runs on an iPad.
-- **Optional native code** - FFI bridge and a plugin architecture.
+### Today
+- **One screen, four renderers** - Android Views, UIKit views, real DOM, or
+  Flutter's own canvas, from the same tree. The native two patch their views
+  rather than rebuild them, so a field keeps its focus and caret.
+- **A Flutter-shaped widget layer wide enough to migrate onto** - layout and
+  boxes (`Container`, `Stack`, `Positioned`, `Wrap`, `SafeArea`), scrolling
+  (`ListView`, `GridView`, `SingleChildScrollView`, `RefreshIndicator`),
+  Material controls and chrome, `Navigator.push` and named routes, Flutter's
+  `Form`, `Theme.of` returning a `ThemeData`, `GestureDetector`, drag and
+  drop, `CustomPaint`, `MediaQuery`/`LayoutBuilder`, implicit animations,
+  tickers, right-to-left through `Directionality`, and all 8,825 Material
+  icons. Each widget's doc comment says where it stops short of Flutter's.
+- **Companions for the two packages most apps route and hold state with** -
+  `package:dart_not_native/router.dart` is go_router's API, and
+  `packages/dart_not_native_bloc` is flutter_bloc's over pure `bloc`.
+- **A way to keep what only exists as a Flutter widget** - a `FlutterSlot`
+  leaves a hole in the natively drawn screen for the engine underneath to
+  paint an ad banner into. On the Android emulator an AdMob test banner
+  showed through it at its 320×50dp and stayed put while the screen behind
+  scrolled.
+- **Three real apps migrated** and walked screen by screen on an Android
+  emulator (Pixel 8, Android 15, debug builds): eighteen games each opened
+  and played, a reminders app through its permission flow, tabs, charts,
+  Arabic and dark mode, a planner's forms, dialogs and navigation rail. About
+  thirty renderer bugs that only showed there were fixed. An emulator, not a
+  phone. [INTEGRATION.md](INTEGRATION.md) §8 is the migration guide that
+  came out of it, including the table of what looks or behaves differently.
+- **Earlier, on hardware** - the example apps, 15 integration tests and five
+  device flows on a physical Android phone; the iOS half on a simulator and an
+  iPad. That iOS evidence predates the work above.
 
-### ⏳ Not there yet
-- **Offline-first sync** - not here at all, and deliberately so (see
-  *Offline-First* below). It belongs in its own package.
-- **Published packages** - nothing is on pub.dev yet. The repository itself is
-  public and its lanes run on every push; a git dependency works today.
-- **iOS screens on a phone** - six example apps have been looked at on a
-  simulator and three on an iPad; the rest are drawn-without-error rather than
-  seen.
+### Not there
+- **iOS for anything recent.** The Swift for the twelve node types added
+  since the last iOS run, for right-to-left, the image cache, the
+  `FlutterSlot` hole, scroll reporting and the event build number is written
+  and has never been compiled. Assume it needs
+  work before it builds.
+- **Animation you drive yourself.** No `AnimationController`, no page
+  transitions; a `Hero` compiles and does not fly. Implicit animations of size, colour, opacity and
+  transform are done by the renderer; a `Ticker` is a 16 ms timer.
+- **Published packages.** Apps depend on the repository by path or git.
+- **CI that boots a device.** The lanes compile and run the Dart suites; the
+  device checks are run by hand (`tool/device_check.sh`).
+- **Offline-first sync** - not here at all, deliberately (see below).
+- **A screen-reader pass.** Labels, roles and states are set and asserted
+  through the accessibility tree; nobody has listened to it.
 
 ---
 
-## Quick Start
+## Quick start
 
-### Pure Flutter App (No Native Code)
+### Run an example
+
 ```bash
-flutter run lib/examples/todo_example.dart              # Android/iOS
-maestro/web/build_examples.sh todo_example              # Web (DOM build)
+flutter pub get
+flutter run -t lib/main_native_todo.dart -d <device> --no-tree-shake-icons   # native views
+
+maestro/web/build_examples.sh todo_example                                    # the web build
+python3 -m http.server 8080 --directory build/web_examples
+# open http://localhost:8080/todo_example/   (?kit=materialize for the other kit)
 ```
 
-Works identically on all platforms with **zero platform-specific code**.
+### Start an app
 
-### With Optional Native Code
-```bash
-flutter run lib/main.dart    # Counter with FFI demo
+```yaml
+# pubspec.yaml
+dependencies:
+  dart_not_native:
+    git:
+      url: https://github.com/tomavelev/dart_not_native.git
+      path: packages/native_bridge
 ```
 
-Shows how to add native C code for performance when needed.
+Write `lib/main.dart` as in the TL;DR, then:
+
+- make `MainActivity` extend `FlutterFragmentActivity` (the system back
+  gesture depends on it);
+- pass `--no-tree-shake-icons` to every `flutter run` and `flutter build`
+  (icons are made from codepoints at run time, and a release build fails
+  without it);
+- for web, compile the entry with `dart compile js` and copy
+  `packages/native_bridge/web_shell/` next to the output.
+
+[INTEGRATION.md](INTEGRATION.md) has each of those in full, and §8 of it is
+the path for an app that already exists in Flutter.
+
+### A theme, a route, some state
+
+```dart
+import 'package:dart_not_native/widgets.dart';
+
+final light = ThemeData(colorSchemeSeed: Colors.teal);
+final dark = ThemeData(
+  colorSchemeSeed: Colors.teal,
+  brightness: Brightness.dark,
+);
+
+Future<void> main() => runApp(
+  MaterialApp(theme: light, darkTheme: dark, home: const Home()),
+  title: 'My app',
+  // The renderers colour their own chrome - app bar, platform buttons,
+  // dialogs - from this, and need it before the first widget is built.
+  appTheme: light.toAppTheme(dark: dark),
+);
+
+class Home extends StatefulWidget {
+  const Home({super.key});
+
+  @override
+  State<Home> createState() => _HomeState();
+}
+
+class _HomeState extends State<Home> {
+  int _taps = 0;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Home')),
+    body: Center(
+      child: Text(
+        '$_taps taps',
+        style: Theme.of(context).textTheme.headlineMedium,
+      ),
+    ),
+    floatingActionButton: FloatingActionButton(
+      onPressed: () => setState(() => _taps++),
+      child: const Icon(Icons.add),
+    ),
+  );
+}
+```
 
 ---
 
-## Project Structure
+## How it is put together
+
+```
+your screens  ──  package:dart_not_native/widgets.dart      Flutter's API, pure Dart
+                         │  builds
+                  WidgetNode tree  (59 node types, JSON-serialisable)
+                         │  rendered by one of
+   ┌─────────────┬───────┴────────┬──────────────────┐
+ Android Views   iOS UIViews     DOM + CSS kit     Flutter widgets
+ (Kotlin plugin) (Swift plugin)  (dart2js)         (FlutterUIRenderer)
+```
+
+| Target | Drawn by | Flutter engine | Evidence |
+|---|---|---|---|
+| **Android** | `NativeUIRenderer.kt`: Material and platform views | hosts Dart and plugins | a phone and an emulator; three migrated apps on the emulator |
+| **iOS** | `NativeUIRenderer.swift`: UIKit | hosts Dart and plugins | simulator and iPad for the earlier vocabulary; **current Swift uncompiled** |
+| **Web** | `WebUIRenderer`: DOM, styled by a CSS kit | none | browser test suite, markup goldens, Maestro flows |
+| **Any Flutter host** | `FlutterUIRenderer`: Flutter widgets | paints | widget tests; every example rendered and checked for overflow |
+
+A change rebuilds the widget tree from the root and the renderer patches what
+moved. That is the cost model, and it has consequences worth reading before
+writing a large screen - INTEGRATION.md §10.
+
+### Repository layout
 
 ```
 dart_not_native/
-├── lib/
-│   ├── main.dart                       # Demo counter (with FFI)
-│   ├── examples/
-│   │   ├── todo_example.dart          # Pure Flutter - no native
-│   │   └── calculator_example.dart    # Pure Flutter - no native
-│   ├── screens/                        # Demo screens
-│   └── native/                         # App-specific native code
-│
-├── packages/native_bridge/             # Reusable framework (publish to pub.dev)
-│   ├── lib/
-│   │   ├── native_bridge.dart         # Platform detection
-│   │   ├── platforms/
-│   │   │   ├── mobile_bridge.dart     # FFI (Android/iOS)
-│   │   │   └── web_bridge.dart        # In-memory (Web)
-│   │   └── plugins/
-│   └── README.md
-│
-├── android/app/
-│   ├── src/main/cpp/bridge.c          # Optional native code
-│   ├── CMakeLists.txt                 # Native build config
-│   └── build.gradle.kts               # Android config
-│
-├── web/
-│   └── index.html                     # Material Design Lite CSS
-│
-├── Documentation/
-│   ├── README.md (this file)
-│   ├── INTEGRATION.md                # Adding the framework to an app
-│   ├── EXAMPLES_DIRECTORY.md         # Every example, and how to run it
-│   ├── TESTING.md                    # The test layers
-│   └── TODO.md                       # What's left before production
+├── packages/
+│   ├── native_bridge/               the framework (package name: dart_not_native)
+│   │   ├── lib/
+│   │   │   ├── widgets.dart         the Flutter-shaped widget layer
+│   │   │   ├── src/widgets/         its parts, by family
+│   │   │   ├── router.dart          go_router's API
+│   │   │   ├── core.dart            the protocol: NativeUIApp, UIBuilder, WidgetNode
+│   │   │   ├── web.dart             runWebApp, the DOM renderer, style kits
+│   │   │   ├── material.dart        the Flutter host: NativeUIAppHost
+│   │   │   ├── flutter_slot.dart    a Flutter widget inside a native screen
+│   │   │   └── platforms/           the Dart side of each renderer
+│   │   ├── android/                 Kotlin renderer and plugin
+│   │   ├── ios/                     Swift renderer and plugin
+│   │   └── web_shell/               index.html, CSS, self-hosted fonts
+│   ├── dart_not_native_bloc/        flutter_bloc's widgets over pure bloc
+│   └── dart_not_native_local_auth/  BiometricsService on local_auth
+├── lib/examples/apps/               twelve example apps, platform-neutral
+├── lib/examples/web/                their web entry points
+├── lib/main_native_*.dart           dev entries: one example on native views
+├── test/, integration_test/         example, golden, Flutter and device suites
+├── maestro/native/, maestro/web/    device and browser flows
+└── tool/                            device checks, test counting, icon generation
 ```
 
 ---
 
-## Key Features
-
-### 1. Single Codebase, Three Platforms
-
-| Platform | How It Works | When to Use |
-|----------|--------------|------------|
-| **Android** | Flutter + optional FFI | All apps |
-| **iOS** | Flutter + optional FFI | All apps |
-| **Web** | Flutter Web + Material CSS | PWAs, dashboards |
-
-**Same UI code everywhere. Platform detection is automatic.**
-
-### 2. No Native Code Required
-
-```dart
-// Most apps: Pure Flutter
-void main() {
-  runApp(MyApp()); // Works on all platforms
-}
-
-// Advanced apps: Optional native code
-void main() {
-  NativeBridge.initialize('liboptimized.so');
-  runApp(MyApp()); // Same app, with native performance
-}
-```
-
-### 3. Offline-First (not here)
-
-There is no sync in this package, and no types for one either. There used to
-be a sketch - a pending-operation queue, a retry policy, a sync status - with
-nothing behind it: every method threw `UnimplementedError`, and nothing in the
-project ever called them. Publishing that would have turned a guess into
-public API, and a shape fixed before any real backend argued with it is a bad
-thing to owe compatibility to.
-
-An app that has to work offline today keeps its own state with
-`StorageService` and talks to its own backend. When sync is built it belongs in
-its own package, designed against something real rather than in advance.
-
-### 4. Plugin System
-
-Add features without changing app code:
-
-```dart
-void main() {
-  NativeBridge.use(BackendSyncPlugin(...));
-  NativeBridge.use(LocalStoragePlugin(...));
-  runApp(MyApp()); // Same app, enhanced
-}
-```
-
-### 5. State that outlives a screen
+## State that outlives a screen
 
 `setState` holds what one screen owns. Anything two screens share - a signed-in
-user, a cart, a favourites list - cannot live there: routing away rebuilds the
-screen and disposes its `State`. Put it in a store outside the tree and read it
+user, a cart, a favourites list - lives in a store outside the tree and is read
 where it is needed:
 
 ```dart
@@ -195,7 +249,7 @@ final favourites = ValueNotifier<Set<String>>({});
 
 // The screen that writes it:
 ElevatedButton(
-  onPressed: () => favourites.update((ids) => {...ids, user.id}),
+  onPressed: () => favourites.value = {...favourites.value, user.id},
   child: const Text('Add favourite'),
 )
 
@@ -206,40 +260,43 @@ ValueListenableBuilder<Set<String>>(
 )
 ```
 
-The app follows a store while it is on screen and lets go when it is not, so a
-route left behind stops redrawing. `ChangeNotifier` is there for state with
-behaviour of its own, and a hand-written `NativeUIApp` uses `watch(store)`
-instead of the builder. These are Flutter's own names and signatures, so this
-code compiles unchanged against Flutter - like the rest of the widget layer.
+The app follows a store while it is on screen and lets go when it is not.
+`ChangeNotifier`, `ListenableBuilder` and `InheritedWidget` are there too, with
+Flutter's own names and signatures. An app that used flutter_bloc keeps its
+blocs: `dart_not_native_bloc` has `BlocProvider`, `BlocBuilder`,
+`BlocListener` and `context.read`.
 
 See `lib/examples/apps/routing_example_app.dart`, where a user is favourited on
 their own page and counted on the home page.
 
 ---
 
-## Web (DOM + Material CSS)
+## Web (DOM + CSS)
 
-Web builds do not ship the Flutter engine. An app's state, widget tree and
-event handlers live in a pure-Dart `NativeUIApp`; on web `runWebApp()` mounts
-it on `WebUIRenderer`, which builds real DOM and patches it in place on every
-re-render (so a focused text field keeps its caret).
+Web builds do not ship the Flutter engine. The entry point is compiled with
+plain dart2js, and `WebUIRenderer` builds real DOM and patches it in place on
+every re-render (so a focused text field keeps its caret).
 
 ```dart
 // lib/examples/web/calculator_example.dart
 import 'package:dart_not_native/web.dart';
+import 'package:dart_not_native/widgets.dart' show hostApp;
+
 import '../apps/calculator_app.dart';
 
-void main() => runWebApp(CalculatorApp());
+void main() => runWebApp(hostApp(const CalculatorApp()));
 ```
 
 ```bash
 maestro/web/build_examples.sh          # dart compile js + web shell, per example
 ```
 
+Nothing reachable from a web entry may import Flutter or a Flutter plugin;
+platform seams sit behind conditional imports. INTEGRATION.md §4 and §8.7.
+
 ### Style kits
 
-How the Material components look is a *style kit*. Two ship with the
-framework, and the door is open for more:
+How the Material components look is a *style kit*:
 
 | Kit | `?kit=` | CSS framework |
 |-----|---------|---------------|
@@ -256,6 +313,8 @@ what its framework styles - see
 
 Stylesheets and fonts are vendored under
 `packages/native_bridge/web_shell/vendor/` - nothing is fetched from a CDN.
+The icon font there is Flutter's own `MaterialIcons` family, so
+`Icons.home_outlined` is the same glyph on every renderer.
 
 ### Tests
 
@@ -265,41 +324,34 @@ See [maestro/web/README.md](maestro/web/README.md).
 
 ---
 
-## Examples Included
+## Examples
 
 Eleven, under `lib/examples/apps/` - counter, calculator, todo, inbox,
 sign-up form, text input, routing, storage, i18n, the design system and the
-components showcase. [EXAMPLES_DIRECTORY.md](EXAMPLES_DIRECTORY.md) walks
-through each. Three quick ones:
+components showcase. All are written against `widgets.dart`.
+[EXAMPLES_DIRECTORY.md](EXAMPLES_DIRECTORY.md) walks through each.
 
-### 1. Todo App (Pure Flutter)
 ```bash
-flutter run lib/examples/todo_example.dart
+flutter run -t lib/main_native_inbox.dart -d <device> --no-tree-shake-icons
 ```
-Add/delete todos. Works identically on Android, iOS, Web. Zero native code.
 
-### 2. Calculator (Pure Flutter)
-```bash
-flutter run lib/examples/calculator_example.dart
-```
-Simple calculator. Works everywhere.
-
-### 3. Counter with FFI (Optional Native)
-```bash
-flutter run lib/main.dart
-```
-Demonstrates optional native code. Shows both Platform Channels and FFI.
+The three migrated apps live in repositories of their own and are the larger
+worked examples; INTEGRATION.md §8 quotes from them.
 
 ---
 
-## Philosophy
+## Offline-first (not here)
 
-1. **Start simple** - Pure Flutter for most apps
-2. **Add complexity gradually** - Plugins for persistence/sync, native for performance
-3. **Same code everywhere** - Android, iOS, Web identical
-4. **No lock-in** - Mix with your own code anytime
+There is no sync in this package, and no types for one either. There used to
+be a sketch - a pending-operation queue, a retry policy, a sync status - with
+nothing behind it: every method threw `UnimplementedError`, and nothing in the
+project ever called them. Publishing that would have turned a guess into
+public API, and a shape fixed before any real backend argued with it is a bad
+thing to owe compatibility to.
 
-**Build fast. Optimize later.**
+An app that has to work offline today keeps its own state with
+`StorageService` and talks to its own backend. When sync is built it belongs in
+its own package, designed against something real rather than in advance.
 
 ---
 
@@ -307,97 +359,100 @@ Demonstrates optional native code. Shows both Platform Channels and FFI.
 
 | Document | Purpose |
 |----------|---------|
-| **[INTEGRATION.md](INTEGRATION.md)** | Adding the framework to an app: web, Android, iOS |
-| **[EXAMPLES_DIRECTORY.md](EXAMPLES_DIRECTORY.md)** | Every example app and how it is wired |
-| **[COMPONENTS_SHOWCASE.md](COMPONENTS_SHOWCASE.md)** | The widget reference (the `widgets.dart` facade) |
-| **[ROUTING_GUIDE.md](ROUTING_GUIDE.md)** | Named routes, route parameters and the history stack |
+| **[INTEGRATION.md](INTEGRATION.md)** | Adding the framework to an app; **§8 is the migration guide for an existing Flutter app** |
+| **[TODO.md](TODO.md)** | What is left before this is production ready, with the evidence behind each status |
+| **[packages/native_bridge/CHANGELOG.md](packages/native_bridge/CHANGELOG.md)** | What changed, including what broke |
+| **[packages/native_bridge/API_REFERENCE.md](packages/native_bridge/API_REFERENCE.md)** | Entry points, theming, the node vocabulary, the widget layer by family, router, bloc, storage, i18n, plugins |
+| **[COMPONENTS_SHOWCASE.md](COMPONENTS_SHOWCASE.md)** | The widgets most screens use, with examples |
+| **[ROUTING_GUIDE.md](ROUTING_GUIDE.md)** | `Navigator.push`, named routes, `GoRouter`, the back gesture |
 | **[TEXTINPUT_GUIDE.md](TEXTINPUT_GUIDE.md)** | Text fields, and forms with validation |
+| **[I18N_GUIDE.md](I18N_GUIDE.md)** | The `I18n` table and `Tr`; locale and right-to-left |
+| **[EXAMPLES_DIRECTORY.md](EXAMPLES_DIRECTORY.md)** | Every example app and how it is wired |
 | **[TESTING.md](TESTING.md)** | The test layers and how to run them |
-| **[TODO.md](TODO.md)** | What is left before this is production ready |
-| **[I18N_GUIDE.md](I18N_GUIDE.md)** | Internationalization |
+| **[RELEASING.md](RELEASING.md)** | Versions, tags and the release checklist |
 | **[packages/native_bridge/README.md](packages/native_bridge/README.md)** | The framework package |
-| **[packages/native_bridge/API_REFERENCE.md](packages/native_bridge/API_REFERENCE.md)** | The programmatic API: entry points, theming, storage, i18n, plugins |
 | **[LICENSE](LICENSE)** / **[NOTICE](NOTICE)** | Apache 2.0, and the attribution to carry with it |
 
 ---
 
 ## Development
 
-### Run Examples
 ```bash
-# Pure Flutter examples
-flutter run lib/examples/todo_example.dart
-flutter run lib/examples/calculator_example.dart
+flutter test                                                # examples, goldens, Flutter widgets
+cd packages/native_bridge && flutter test                   # framework unit tests
+cd packages/native_bridge && flutter test --platform chrome test/web_ui   # DOM
+cd packages/dart_not_native_bloc && flutter test            # the bloc companion
 
-# With native code (Android/iOS only)
-flutter run lib/main.dart
-
-# Web (DOM + Material CSS)
-maestro/web/build_examples.sh todo_example
-python3 -m http.server 8080 --directory build/web_examples
-# open http://localhost:8080/todo_example/  (?kit=materialize for the other kit)
+tool/device_check.sh android        # flows + integration tests on a device
+tool/device_check.sh ios            # needs a Mac; see the iOS status above
 ```
 
-### Add Dependencies
+[TESTING.md](TESTING.md) explains each layer.
+
+### Build for production
+
 ```bash
-flutter pub get
+flutter build apk --release --no-tree-shake-icons
+flutter build appbundle --no-tree-shake-icons
+flutter build ios --no-tree-shake-icons
+dart compile js -O2 -o build/web/main.dart.js lib/main_web.dart   # then copy web_shell/
 ```
 
-### Build for Production
-```bash
-# Android
-flutter build apk
-flutter build appbundle
-
-# iOS
-flutter build ios
-
-# Web
-flutter build web
-```
-
----
-
-## Next Steps
-
-1. **See the examples** - browse `EXAMPLES_DIRECTORY.md`, then run `lib/examples/todo_example.dart`
-2. **Add it to an app** - `INTEGRATION.md`
-3. **Keep state across screens** - the `ValueNotifier` section above
-4. **What's left for production** - `TODO.md`
+`flutter build web` builds something else: a Flutter web app, in which the
+same tree is painted by Flutter's canvas instead of the DOM. It is the web
+build for an app whose plugins plain dart2js cannot link
+([INTEGRATION.md](INTEGRATION.md) §8.7).
 
 ---
 
 ## FAQ
 
-**Q: Do I need native code?**  
-A: No. Pure Flutter works great. Native is optional.
+**Q: Is this Flutter?**
+A: The API is; the pixels are not. On mobile a Flutter engine runs your Dart
+and your plugins while the platform's own views draw the screen. On web there
+is no Flutter at all.
 
-**Q: Will my code work on all platforms?**  
-A: Yes. Same code on Android, iOS, Web (if you don't use platform-specific APIs).
+**Q: Can I use it with an existing Flutter app?**
+A: Three ways: migrate the app (INTEGRATION.md §8), host one framework screen
+inside it with `NativeUIAppHost` (§7), or keep one Flutter widget inside a
+migrated screen with `FlutterSlot` (§8.6).
 
-**Q: How does offline-first work?**  
-A: It does not. There is no sync here and no types for one; an app that must
-work offline keeps its own state through `StorageService` and talks to its own
-backend. Sync, when it exists, will be its own package.
+**Q: Do Flutter plugins work?**
+A: On Android and iOS, yes - they talk to the engine, not to the widget tree.
+A plugin whose product is a widget (an ad banner, a chart) needs a
+`FlutterSlot` or redrawing. On web no Flutter plugin compiles; use a pure-Dart
+package or the browser API through `package:web`.
 
-**Q: Can I use this framework with existing Flutter apps?**  
-A: Yes. It's additive—use what you need.
+**Q: Will a third-party widget package work?**
+A: No - its widgets extend Flutter's. Redraw it with `CustomPaint` and boxes,
+whose API is Flutter's, or put it in a `FlutterSlot`.
 
-**Q: When should I use native code?**  
-A: Only for performance-critical code (ML, heavy computation, existing C libraries).
+**Q: What looks different from the Flutter version of my app?**
+A: The controls are the platform's own, so they look like the platform. Beyond
+that there is a list: no page transitions, `Dismissible` reveals an action
+instead of sliding away, snackbars are not queued, and more - the table in
+INTEGRATION.md §8.9.
+
+**Q: How does offline-first work?**
+A: It does not; see above.
+
+**Q: Is the FFI bridge still here?**
+A: Yes - `NativeBridge.initialize` / `callMethod`, for calling into C. It is
+separate from the renderers, optional, and documented in
+`packages/native_bridge/README.md`.
 
 ---
 
 ## Roadmap
 
-- ✅ Cross-platform Flutter support
-- ✅ Optional FFI bridge (Android/iOS)
-- ✅ Web support with Material CSS
-- ✅ Native UI renderers (Android Views, UIKit), proven on a device
+- ✅ Four renderers over one tree; native views patched, not rebuilt
+- ✅ A Flutter-shaped widget layer, with go_router and flutter_bloc companions
+- ✅ Three production apps migrated and run on an Android emulator
 - ✅ Storage, including secure storage on web with key rotation
-- ✅ State beyond one screen - `ValueNotifier` stores, `InheritedWidget`, `Theme`
+- ⏳ iOS: compile the current Swift, then run it
+- ⏳ Explicit animation and page transitions
+- ⏳ Publishing to pub.dev; CI for apps that consume the framework
 - ⏳ Offline-first sync, as a package of its own
-- ⏳ Publishing to pub.dev, and CI that has actually run
 
 What is left, in order and with the reasoning, is [TODO.md](TODO.md).
 
@@ -414,15 +469,3 @@ a product built on it, carry the [NOTICE](NOTICE) file with it.
 The web target self-hosts Roboto, Material Icons, Material Design Lite and
 Materialize; their licences travel with them in
 `packages/native_bridge/web_shell/vendor/` and are listed in NOTICE.
-
----
-
-## Support
-
-- Read the docs above
-- Check examples in `lib/examples/`
-- See `packages/native_bridge/README.md` for framework details
-
----
-
-**Build once. Run everywhere.**

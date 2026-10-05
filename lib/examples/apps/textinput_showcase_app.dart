@@ -111,7 +111,7 @@ class _TextInputShowcaseAppState extends State<TextInputShowcaseApp> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const AppBar(title: Text('TextInput Showcase')),
-      body: Column(
+      body: SingleChildScrollView(child: Column(
         children: [
           _section('🏷️ Floating Label Input', [
             TextField(
@@ -264,7 +264,7 @@ class _TextInputShowcaseAppState extends State<TextInputShowcaseApp> {
           ]),
           const SizedBox(height: 32),
         ],
-      ),
+      )),
     );
   }
 

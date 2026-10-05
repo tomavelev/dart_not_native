@@ -30,7 +30,43 @@ class EventBindings {
   static EventBindings? current;
 
   /// Callbacks of the current build, by full event id.
-  final Map<String, void Function(Map<String, dynamic>)> _callbacks = {};
+  Map<String, void Function(Map<String, dynamic>)> _callbacks = {};
+
+  /// The callbacks of the last few builds, by the build's number.
+  ///
+  /// An id allocated by order names a different callback once a build
+  /// allocates a different number of ids before it - a list whose window of
+  /// rows moved, say. A renderer in another thread of control (the Android
+  /// views, behind a platform channel) may still be showing the tree of an
+  /// earlier build when its event arrives, and that event is for the callback
+  /// the id named *then*: a size report sent as the list scrolled was landing
+  /// on whichever row's tap had since been given its number. A renderer that
+  /// says which build its event belongs to ([eventBuild]) is answered from
+  /// that build's callbacks; one that does not is answered from the latest,
+  /// as it always was.
+  final Map<int, Map<String, void Function(Map<String, dynamic>)>> _builds = {};
+
+  /// How many builds' callbacks are kept: more than a renderer can fall
+  /// behind by, and few enough that their closures are not held for long.
+  static const int _keptBuilds = 16;
+
+  int _build = 0;
+
+  static final Expando<int> _buildOf = Expando<int>('dart_not_native build');
+
+  /// The build an event being delivered right now was raised against, set by
+  /// a renderer that knows it for the length of the delivery; null otherwise.
+  static int? eventBuild;
+
+  /// The number of the build that produced [tree], for a renderer to send
+  /// along with it and name again in its events; null for a tree this did not
+  /// build.
+  static int? buildOf(WidgetNode tree) => _buildOf[tree];
+
+  /// Marks [tree] as the root the latest build is rendered as. The app calls
+  /// it with whatever it finally hands the renderer, which is not always the
+  /// node [runBuild] returned.
+  void tag(WidgetNode tree) => _buildOf[tree] = _build;
 
   /// Event ids already registered with the renderer. The registered function
   /// looks the callback up on each event, so a rebuild replaces behaviour
@@ -61,7 +97,12 @@ class EventBindings {
     _renderer = renderer;
     _invalidate = invalidate;
     _counter = 0;
-    _callbacks.clear();
+    // A map of its own rather than the last one cleared: the last build's
+    // callbacks are still what an event from the tree on screen is for.
+    _callbacks = {};
+    _build++;
+    _builds[_build] = _callbacks;
+    if (_builds.length > _keptBuilds) _builds.remove(_builds.keys.first);
     _touched.clear();
     try {
       return build();
@@ -105,7 +146,14 @@ class EventBindings {
   void on(String eventId, void Function(Map<String, dynamic>) handler) {
     _callbacks[eventId] = handler;
     if (_registered.add(eventId)) {
-      _renderer!.onEvent(eventId, (data) => _callbacks[eventId]?.call(data));
+      _renderer!.onEvent(
+        eventId,
+        // An id the named build never bound cannot have been raised by it
+        // (a caller firing an event at a tree not yet drawn), so the latest
+        // answers that too.
+        (data) =>
+            (_builds[eventBuild]?[eventId] ?? _callbacks[eventId])?.call(data),
+      );
     }
   }
 

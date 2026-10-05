@@ -18,11 +18,16 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
 import '../src/app_theme.dart';
 import '../src/contrast.dart' as contrast;
+import '../src/event_binding.dart';
+import '../src/flutter_slots.dart';
 import '../src/frame_probe.dart';
 import '../src/render_error.dart';
 import 'flutter_frame_probe.dart';
@@ -97,6 +102,9 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   final Map<String, (int, int)> _reportedRanges = {};
   final Map<String, (double, double)> _reportedOffsets = {};
 
+  /// The `scrollVersion` last obeyed for each lazy list, by list id.
+  final Map<String, int?> _appliedScrollVersions = {};
+
   /// The node types the last build could not paint.
   ///
   /// Flutter builds the widgets *after* a render returns - the host rebuilds on
@@ -112,6 +120,9 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // field's value twice before then (typing, then a submit that clears it)
     // must still end up with the value it asked for.
     _syncTextFields(tree);
+    // A FlutterSlot this renderer drew and the tree no longer holds is done
+    // with; its builder goes with it.
+    FlutterSlots.instance.sync(this, tree);
     onTreeChanged?.call();
     if (_unknownTypes.isEmpty) return null;
     final reported = {..._unknownTypes};
@@ -152,9 +163,22 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     if (handler == null) {
       return {'success': false, 'error': 'Handler not found for $eventId'};
     }
-    handler(data);
+    // The widgets are built from a tree a frame after it is rendered, so a
+    // tap can arrive from the widgets of the build before: it is answered by
+    // the build they were made from - see EventBindings.
+    final outer = EventBindings.eventBuild;
+    EventBindings.eventBuild = _shownBuild;
+    try {
+      handler(data);
+    } finally {
+      EventBindings.eventBuild = outer;
+    }
     return {'success': true};
   }
+
+  /// The number of the build the widgets on screen were made from; null
+  /// before the first frame and for a tree no build produced.
+  int? _shownBuild;
 
   @override
   void onEvent(String eventId, Function(Map<String, dynamic>) handler) {
@@ -174,6 +198,9 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     _appliedVersions.clear();
     _scrollControllers.clear();
     _reportedRanges.clear();
+    _reportedOffsets.clear();
+    _appliedScrollVersions.clear();
+    FlutterSlots.instance.release(this);
   }
 
   /// Builds the current tree, or nothing before the first render.
@@ -186,14 +213,29 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   Widget build(BuildContext context) {
     final tree = this.tree;
     if (tree == null) return const SizedBox.shrink();
+    _shownBuild = EventBindings.buildOf(tree);
     // Read once, at the root, so every node below paints one appearance even
     // if the device flips mid-build.
     _platformIsDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
-    final widget = buildNode(tree, context);
-    if (tree.type == 'Scaffold' || tree.type == 'NavigationStack') {
-      return widget;
-    }
-    return Material(type: MaterialType.transparency, child: widget);
+    // The direction is the tree's to say, not the host's: a tree that states
+    // none reads left to right on every renderer, so it does here too, even
+    // inside a Flutter app whose own locale is Arabic. Everything Flutter
+    // draws below - a row's order, an app bar's ends, a list tile, a text
+    // field's icons, the back arrow - follows this one widget.
+    return Directionality(
+      textDirection: tree.props[RootProps.textDirection] == 'rtl'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
+      child: Builder(
+        builder: (context) {
+          final widget = buildNode(tree, context);
+          if (tree.type == 'Scaffold' || tree.type == 'NavigationStack') {
+            return widget;
+          }
+          return Material(type: MaterialType.transparency, child: widget);
+        },
+      ),
+    );
   }
 
   /// Builds one node. Public so a host can render a subtree of its own.
@@ -207,9 +249,9 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // node-types:begin
     switch (node.type) {
       case 'Scaffold':
-        return _scaffold(children, context);
+        return _scaffold(p, children, context);
       case 'NavigationStack':
-        return _scaffold(children, context);
+        return _scaffold(p, children, context);
       case 'AppBar':
       case 'NavigationBar':
         return _appBarBody(p);
@@ -219,8 +261,14 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
           crossAxisAlignment: _crossAxis(p['crossAxisAlignment']),
           mainAxisAlignment: _mainAxis(p['mainAxisAlignment']),
           // A column hugs its children unless it was asked to distribute them,
-          // and there is nothing to distribute inside a column that hugs.
-          mainAxisSize: distributes ? MainAxisSize.max : MainAxisSize.min,
+          // and there is nothing to distribute inside a column that hugs -
+          // unless the tree says outright which it wants.
+          mainAxisSize: switch (p['mainAxisSize']) {
+            'max' => MainAxisSize.max,
+            'min' => MainAxisSize.min,
+            _ => distributes ? MainAxisSize.max : MainAxisSize.min,
+          },
+          spacing: _double(p['spacing']) ?? 0,
           children: build(children),
         );
       case 'VStack':
@@ -239,6 +287,12 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
           context,
           spacing: _double(p['spacing']),
           mainAxisAlignment: _mainAxis(p['mainAxisAlignment']),
+          crossAxisAlignment: _crossAxis(p['crossAxisAlignment']),
+          mainAxisSize: _optString(p['mainAxisSize']),
+          distributes: switch (p['mainAxisAlignment']) {
+            null || 'start' => false,
+            _ => true,
+          },
         );
       case 'HStack':
         return _row(
@@ -251,13 +305,21 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         return Wrap(
           spacing: _double(p['spacing']) ?? 0,
           runSpacing: _double(p['runSpacing']) ?? 0,
+          alignment: _wrapAlignment(_mainAxis(p['alignment'])),
+          crossAxisAlignment: switch (p['crossAxisAlignment']) {
+            'center' => WrapCrossAlignment.center,
+            'end' => WrapCrossAlignment.end,
+            _ => WrapCrossAlignment.start,
+          },
           children: build(children),
         );
       case 'Expanded':
-        return Expanded(
-          flex: (_double(p['flex']) ?? 1).toInt(),
-          child: _single(children, context),
-        );
+        final flex = (_double(p['flex']) ?? 1).toInt();
+        // Loose lets the child be smaller than its share, which is Flutter's
+        // Flexible; an Expanded is the same thing with a tight fit.
+        return p['fit'] == 'loose'
+            ? Flexible(flex: flex, child: _single(children, context))
+            : Expanded(flex: flex, child: _single(children, context));
       case 'Center':
         return Center(child: _single(children, context));
       case 'SwipeActions':
@@ -285,7 +347,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       case 'Text':
         return _text(p);
       case 'Image':
-        return _image(p);
+        return _image(p, children, context);
       case 'Divider':
         return _divider(p);
       case 'Loading':
@@ -294,25 +356,9 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       case 'MaterialButton':
         return _button(p);
       case 'IconButton':
-        return Tooltip(
-          message: _string(p['tooltip']),
-          child: IconButton(
-            icon: Icon(_icon(_string(p['icon'], 'more_vert'))),
-            onPressed: _tap(p),
-          ),
-        );
+        return _iconButton(p);
       case 'FloatingActionButton':
-        // With a brand theme, the FAB matches the other renderers' primary;
-        // with none, Flutter's own Material 3 default is left to shine.
-        final themed = theme != AppTheme.fallback;
-        return FloatingActionButton(
-          tooltip: _optString(p['tooltip']),
-          onPressed: _tap(p),
-          backgroundColor: _color(p['backgroundColor']) ??
-              (themed ? _primaryColor : null),
-          foregroundColor: themed ? _onPrimaryColor : null,
-          child: Icon(_icon(_string(p['icon'], 'add'))),
-        );
+        return _fab(p);
       case 'TextField':
         return _NodeTextField(renderer: this, props: p);
       case 'GridView':
@@ -410,6 +456,45 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
           renderer: this,
           props: p,
         );
+      case 'Box':
+        return _box(p, children, context);
+      case 'Stack':
+        return _stack(p, children, context);
+      case 'Positioned':
+        // Pinning is the Stack's doing - see _stack. Outside one, a
+        // Positioned is its child.
+        return _single(children, context);
+      case 'Scroll':
+        final id = _optString(p['id']);
+        return _NodeScroll(
+          key: id == null ? null : ValueKey('scroll:$id'),
+          renderer: this,
+          props: p,
+          child: _single(children, context),
+        );
+      case 'Icon':
+        return _iconNode(p);
+      case 'Canvas':
+        return _box(p, children, context, canvas: true);
+      case 'Dropdown':
+        return _dropdown(p);
+      case 'DatePicker':
+      case 'TimePicker':
+        // Keyed by the picker, so the same one rendered again keeps its
+        // dialog - and whatever the user has scrolled to in it.
+        return _NodePicker(
+          key: ValueKey('picker:${_string(p['id'])}'),
+          renderer: this,
+          props: p,
+          time: node.type == 'TimePicker',
+        );
+      case 'BottomBar':
+        // Pinned by the Scaffold that finds it; anywhere else it is its child.
+        return _single(children, context);
+      case 'BottomNavigation':
+        return _bottomNavigation(p);
+      case 'FlutterSlot':
+        return _flutterSlot(p, children, context);
       default:
         _unknownTypes.add(node.type);
         return Text('Unknown widget: ${node.type}');
@@ -421,11 +506,17 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   // Structure
   // ---------------------------------------------------------------------------
 
-  /// A Scaffold's children are, in order, an optional app bar, the body and an
-  /// optional floating action button - the shape [UIBuilder.scaffold] builds.
-  Widget _scaffold(List<WidgetNode> children, BuildContext context) {
+  /// A Scaffold's children are told apart by type - the shape
+  /// [UIBuilder.scaffold] builds: the app bar, the bar along the bottom, the
+  /// floating action button, and the body, which is whatever is none of those.
+  Widget _scaffold(
+    Map<String, dynamic> p,
+    List<WidgetNode> children,
+    BuildContext context,
+  ) {
     WidgetNode? appBar;
     WidgetNode? fab;
+    WidgetNode? bottomBar;
     final body = <WidgetNode>[];
     for (final child in children) {
       switch (child.type) {
@@ -434,6 +525,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
           appBar ??= child;
         case 'FloatingActionButton':
           fab ??= child;
+        case 'BottomBar':
+          bottomBar ??= child;
         default:
           body.add(child);
       }
@@ -457,9 +550,12 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       }
     }
 
-    // A body holding a lazy list scrolls itself, and needs the bounded height
-    // a SingleChildScrollView would take away.
-    final scrollsItself = body.any(_holdsLazyList);
+    // `bodyScrolls: false` is the tree saying the body lays itself out against
+    // the screen. A body holding a lazy list says the same without being
+    // asked: the list scrolls itself, and needs the bounded height a
+    // SingleChildScrollView would take away.
+    final fixed = p['bodyScrolls'] == false;
+    final scrollsItself = fixed || body.any(_holdsLazyList);
     final content = body.length == 1
         ? buildNode(body.single, context)
         : Column(
@@ -468,40 +564,145 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             children: [for (final child in body) buildNode(child, context)],
           );
 
-    return Scaffold(
-      appBar: appBar == null
-          ? null
-          : AppBar(
-              title: Text(_string(appBar.props['title'])),
-              backgroundColor: _color(appBar.props['backgroundColor']),
-              foregroundColor: switch (_color(
-                appBar.props['backgroundColor'],
-              )) {
-                final Color stated => _textOn(stated),
-                _ => null,
-              },
-            ),
-      body: body.isEmpty
-          ? null
-          : scrollsItself
-          ? content
-          : body.any(_fillsViewport)
-          // A body that places its children in the space it is given - a
-          // Center, or a Column distributing down its main axis - has no space
-          // inside a scroll view, which is unbounded. Give it the viewport as
-          // a floor and it still scrolls when the content is taller.
-          ? LayoutBuilder(
-              builder: (context, constraints) => SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight,
-                  ),
-                  child: content,
-                ),
+    Widget? bodyWidget = body.isEmpty
+        ? null
+        : fixed
+        // Exactly the room that is left, not merely at most it: an Expanded,
+        // a Scroll or a Stack inside has a height to divide.
+        ? SizedBox.expand(child: content)
+        : scrollsItself
+        ? content
+        : body.any(_fillsViewport)
+        // A body that places its children in the space it is given - a
+        // Center, or a Column distributing down its main axis - has no space
+        // inside a scroll view, which is unbounded. Give it the viewport as
+        // a floor and it still scrolls when the content is taller.
+        ? LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: content,
               ),
-            )
-          : SingleChildScrollView(child: content),
-      floatingActionButton: fab == null ? null : buildNode(fab, context),
+            ),
+          )
+        : SingleChildScrollView(child: content);
+    // The Scaffold has already taken the app bar and the bottom bar out of
+    // the insets the body sees, so this only adds what is still uncovered.
+    if (bodyWidget != null && p['safeArea'] != false) {
+      bodyWidget = SafeArea(child: bodyWidget);
+    }
+
+    // What the scaffold keeps along its bottom edge is measured, for a
+    // snackbar - drawn beside the scaffold, not in it - to sit above. A
+    // scaffold without one of them says so once this frame is done.
+    if (fab == null || bottomBar == null) {
+      final noFab = fab == null;
+      final noBar = bottomBar == null;
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        _bottomTaken.value = (
+          bar: noBar ? 0 : _bottomTaken.value.bar,
+          fab: noFab ? 0 : _bottomTaken.value.fab,
+        );
+      });
+    }
+    return Scaffold(
+      backgroundColor: _color(p['backgroundColor']),
+      appBar: appBar == null ? null : _appBar(appBar, context),
+      body: bodyWidget,
+      floatingActionButton: fab == null
+          ? null
+          : _FromBottom(
+              onChanged: (taken) => _bottomTaken.value = (
+                bar: _bottomTaken.value.bar,
+                fab: taken,
+              ),
+              child: buildNode(fab, context),
+            ),
+      bottomNavigationBar: bottomBar == null
+          ? null
+          : _FromBottom(
+              onChanged: (taken) => _bottomTaken.value = (
+                bar: taken,
+                fab: _bottomTaken.value.fab,
+              ),
+              child: _bottomBar(bottomBar, context),
+            ),
+    );
+  }
+
+  /// How far up from the scaffold's bottom edge its bottom bar and its
+  /// floating button reach, as last painted; zero for one it does not have.
+  final ValueNotifier<({double bar, double fab})> _bottomTaken = ValueNotifier(
+    (bar: 0, fab: 0),
+  );
+
+  /// The bar across the top of a Scaffold.
+  PreferredSizeWidget _appBar(WidgetNode node, BuildContext context) {
+    final p = node.props;
+    final children = node.children ?? const <WidgetNode>[];
+    final background = _color(p['backgroundColor']);
+    // The colour the app stated, else one that reads over the background it
+    // stated, else Material's own.
+    final foreground =
+        _color(p['foregroundColor']) ??
+        (background == null ? null : _textOn(background));
+    // The title subtree, when there is one, is the first child; the rest are
+    // the actions.
+    final hasTitleNode = p['hasTitleNode'] == true && children.isNotEmpty;
+    final actions = hasTitleNode ? children.sublist(1) : children;
+    final centerTitle = p['centerTitle'];
+    // Text and icons in the bar take its foreground unless they state a
+    // colour of their own.
+    return _withText(
+      foreground,
+      () => AppBar(
+        leading: _appBarLeading(p, context),
+        title: hasTitleNode
+            ? buildNode(children.first, context)
+            : Text(_string(p['title'])),
+        actions: actions.isEmpty
+            ? null
+            : [for (final action in actions) buildNode(action, context)],
+        centerTitle: centerTitle is bool ? centerTitle : null,
+        backgroundColor: background,
+        foregroundColor: foreground,
+        elevation: _double(p['elevation']),
+      ),
+    );
+  }
+
+  /// The button at the start of an app bar: 'back', 'close' or 'menu', drawn
+  /// and announced the way Material does each.
+  Widget? _appBarLeading(Map<String, dynamic> p, BuildContext context) {
+    final kind = p['leading'];
+    if (kind is! String) return null;
+    final l10n = MaterialLocalizations.of(context);
+    final (Widget icon, String tooltip) = switch (kind) {
+      'close' => (const Icon(Icons.close), l10n.closeButtonTooltip),
+      'menu' => (const Icon(Icons.menu), l10n.openAppDrawerTooltip),
+      _ => (const BackButtonIcon(), l10n.backButtonTooltip),
+    };
+    final eventId = p['leadingEventId'];
+    return IconButton(
+      icon: icon,
+      tooltip: tooltip,
+      onPressed: eventId is String
+          ? () => handleEvent(eventId, const {})
+          : null,
+    );
+  }
+
+  /// What a Scaffold pins along its bottom edge.
+  Widget _bottomBar(WidgetNode node, BuildContext context) {
+    final children = node.children ?? const <WidgetNode>[];
+    final child = _single(children, context);
+    // A NavigationBar paints under the system's inset and keeps its
+    // destinations above it by itself; anything else is given a surface that
+    // does the same.
+    if (children.firstOrNull?.type == 'BottomNavigation') return child;
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(top: false, child: child),
     );
   }
 
@@ -510,7 +711,11 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   static bool _fillsViewport(WidgetNode node) =>
       node.type == 'Center' ||
       ((node.type == 'Column' || node.type == 'VStack') &&
-          node.props['mainAxisAlignment'] != null);
+          switch (node.props['mainAxisSize']) {
+            'max' => true,
+            'min' => false,
+            _ => node.props['mainAxisAlignment'] != null,
+          });
 
   static bool _holdsLazyList(WidgetNode node) =>
       node.type == 'LazyList' ||
@@ -518,28 +723,48 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
   /// A horizontal run of children.
   ///
-  /// A row holding an [Expanded] needs real flex semantics, so it stays a Row.
-  /// Any other row becomes a Wrap: the web renderer lets a long row shrink and
-  /// spill quietly, where a Flutter Row would overflow and paint a stripe, so
-  /// the content reflows instead.
+  /// A row that says how it uses its width is Flutter's `Row`: one that asks
+  /// for `mainAxisSize: 'max'`, or whose alignment distributes ([distributes]:
+  /// anything but the start), is as wide as it is offered and places its
+  /// children along that - which is the only way `spaceBetween` has anything
+  /// to share out, or a trailing child reaches the far edge. So is one holding
+  /// an [Expanded], which needs real flex semantics.
+  ///
+  /// A row that asks for neither - the hand-written `UIBuilder.row(children:)`
+  /// - becomes a Wrap: the web renderer lets a long row shrink and spill
+  /// quietly, where a Flutter Row would overflow and paint a stripe, so the
+  /// content reflows instead. It used to be every row without an `Expanded`,
+  /// which shrink-wrapped the ones that had asked to fill.
   Widget _row(
     List<WidgetNode> children,
     BuildContext context, {
     double? spacing,
     MainAxisAlignment mainAxisAlignment = MainAxisAlignment.start,
     CrossAxisAlignment crossAxisAlignment = CrossAxisAlignment.center,
+    String? mainAxisSize,
+    bool distributes = false,
   }) {
     final built = [for (final child in children) buildNode(child, context)];
     final hasFlexChild = children.any((c) => c.type == 'Expanded');
 
-    if (hasFlexChild) {
+    // Stretching is a Row's too: a Wrap has no cross axis to stretch across.
+    if (hasFlexChild ||
+        distributes ||
+        mainAxisSize == 'max' ||
+        crossAxisAlignment == CrossAxisAlignment.stretch) {
       return Row(
         mainAxisAlignment: mainAxisAlignment,
         crossAxisAlignment: crossAxisAlignment,
-        children: _spaced(built, spacing, vertical: false),
+        mainAxisSize: mainAxisSize == 'min'
+            ? MainAxisSize.min
+            : MainAxisSize.max,
+        spacing: spacing ?? 0,
+        children: built,
       );
     }
 
+    // A Wrap is as wide as its longest line, which is what a row that asked
+    // for nothing, or for 'min', has always been here.
     return Wrap(
       spacing: spacing ?? 0,
       runSpacing: spacing ?? 0,
@@ -554,6 +779,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         MainAxisAlignment.center => WrapAlignment.center,
         MainAxisAlignment.end => WrapAlignment.end,
         MainAxisAlignment.spaceBetween => WrapAlignment.spaceBetween,
+        MainAxisAlignment.spaceAround => WrapAlignment.spaceAround,
+        MainAxisAlignment.spaceEvenly => WrapAlignment.spaceEvenly,
         _ => WrapAlignment.start,
       };
 
@@ -574,10 +801,12 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         child: Text(
           _string(p['title']),
           style: TextStyle(
-            color: switch (_color(p['backgroundColor'])) {
-              final Color stated => _textOn(stated),
-              _ => _onPrimaryColor,
-            },
+            color:
+                _color(p['foregroundColor']) ??
+                switch (_color(p['backgroundColor'])) {
+                  final Color stated => _textOn(stated),
+                  _ => _onPrimaryColor,
+                },
             fontSize: 20,
             fontWeight: FontWeight.w500,
           ),
@@ -595,32 +824,134 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   // Leaves
   // ---------------------------------------------------------------------------
 
-  Widget _text(Map<String, dynamic> p) => Text(
-    _string(p['content']),
-    maxLines: _double(p['maxLines'])?.toInt(),
-    overflow: switch (p['overflow']) {
-      'ellipsis' => TextOverflow.ellipsis,
-      'clip' => TextOverflow.clip,
-      _ => null,
-    },
-    style: TextStyle(
+  Widget _text(Map<String, dynamic> p) {
+    final content = _string(p['content']);
+    final maxLines = _double(p['maxLines'])?.toInt();
+    final family = _fontFamily(p['fontFamily']);
+    final style = TextStyle(
       fontSize: _double(p['fontSize']),
       fontWeight: _fontWeight(p['fontWeight']),
       color: _color(p['color']) ?? _textInForce ?? _textColor,
-      decoration: switch (p['decoration']) {
-        'lineThrough' => TextDecoration.lineThrough,
-        'underline' => TextDecoration.underline,
-        _ => null,
-      },
-    ),
-  );
+      decoration: _decoration(p['decoration']),
+      letterSpacing: _double(p['letterSpacing']),
+      // A multiple of the font size, which is how Flutter spells it too.
+      height: _double(p['lineHeight']),
+      fontFamily: family.$1,
+      fontFamilyFallback: family.$2,
+      fontStyle: p['italic'] == true ? FontStyle.italic : null,
+    );
+    final textAlign = _textAlign(p['textAlign']);
+    // Runs with their own style, each inheriting the rest from the node.
+    final rawSpans = p['spans'];
+    final spans = rawSpans is List && rawSpans.isNotEmpty
+        ? TextSpan(
+            children: [
+              for (final span in rawSpans)
+                if (span is Map)
+                  TextSpan(
+                    text: _string(span['text']),
+                    style: TextStyle(
+                      color: _color(span['color']),
+                      fontSize: _double(span['fontSize']),
+                      fontWeight: _fontWeight(span['fontWeight']),
+                      decoration: _decoration(span['decoration']),
+                      fontStyle: span['italic'] == true
+                          ? FontStyle.italic
+                          : null,
+                    ),
+                  ),
+            ],
+          )
+        : null;
+
+    if (p['selectable'] == true) {
+      // SelectableText has no overflow of its own: it scrolls what does not
+      // fit, which is the only thing a selection could reach anyway.
+      return spans == null
+          ? SelectableText(
+              content,
+              maxLines: maxLines,
+              textAlign: textAlign,
+              style: style,
+            )
+          : SelectableText.rich(
+              spans,
+              maxLines: maxLines,
+              textAlign: textAlign,
+              style: style,
+            );
+    }
+    final overflow = switch (p['overflow']) {
+      'ellipsis' => TextOverflow.ellipsis,
+      'clip' => TextOverflow.clip,
+      _ => null,
+    };
+    return spans == null
+        ? Text(
+            content,
+            maxLines: maxLines,
+            overflow: overflow,
+            textAlign: textAlign,
+            style: style,
+          )
+        : Text.rich(
+            spans,
+            maxLines: maxLines,
+            overflow: overflow,
+            textAlign: textAlign,
+            style: style,
+          );
+  }
+
+  static TextDecoration? _decoration(Object? value) => switch (value) {
+    'lineThrough' => TextDecoration.lineThrough,
+    'underline' => TextDecoration.underline,
+    _ => null,
+  };
+
+  static TextAlign? _textAlign(Object? value) => switch (value) {
+    'left' => TextAlign.left,
+    'center' => TextAlign.center,
+    'right' => TextAlign.right,
+    'justify' => TextAlign.justify,
+    'start' => TextAlign.start,
+    'end' => TextAlign.end,
+    _ => null,
+  };
+
+  /// A font family and what to fall back to.
+  ///
+  /// 'monospace' and 'serif' are generic names, which Android resolves and
+  /// iOS does not, so each comes with the faces that are that kind of font on
+  /// the platforms that need telling.
+  static (String?, List<String>?) _fontFamily(Object? value) =>
+      switch (value) {
+        'monospace' => (
+          'monospace',
+          const ['Menlo', 'Consolas', 'Courier New', 'Courier'],
+        ),
+        'serif' => ('serif', const ['Times New Roman', 'Times', 'Georgia']),
+        final String family => (family, null),
+        _ => (null, null),
+      };
 
   /// An image, from the network when [src] names one and from the app's
   /// assets otherwise.
   ///
   /// A load that fails shows the alt text rather than an exception or a blank
   /// space, which is what the other renderers do too.
-  Widget _image(Map<String, dynamic> p) {
+  /// An image, fetched and decoded by Flutter and kept in its `ImageCache` -
+  /// so a rebuild draws it again without a request, and one already decoded is
+  /// painted in the same frame, with nothing shown in its place first.
+  ///
+  /// The node's child, if it has one, is the fallback: drawn where the alt
+  /// text would have been if loading fails, and while the first frame is still
+  /// on its way.
+  Widget _image(
+    Map<String, dynamic> p,
+    List<WidgetNode> children,
+    BuildContext context,
+  ) {
     final src = _string(p['src']);
     final alt = _string(p['alt']);
     final width = _double(p['width']);
@@ -633,7 +964,20 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       _ => BoxFit.cover,
     };
 
+    final fallback = children.isEmpty
+        ? null
+        : SizedBox(
+            width: width,
+            height: height,
+            // The alt text below is the image's name whichever of the two is
+            // showing, so the stand-in is not announced as well.
+            child: ExcludeSemantics(
+              child: Center(child: buildNode(children.first, context)),
+            ),
+          );
+
     Widget onError(BuildContext context, Object error, StackTrace? stack) =>
+        fallback ??
         SizedBox(
           width: width,
           height: height,
@@ -641,6 +985,13 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             child: Text(alt, style: TextStyle(color: _textSecondaryColor)),
           ),
         );
+
+    // Only an image with a fallback has anything to show before its first
+    // frame; one without stays an empty box of its size, as it always was.
+    final ImageFrameBuilder? whileLoading = fallback == null
+        ? null
+        : (context, child, frame, wasSynchronouslyLoaded) =>
+              wasSynchronouslyLoaded || frame != null ? child : fallback;
 
     final image =
         src.startsWith('http://') ||
@@ -651,6 +1002,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             width: width,
             height: height,
             fit: fit,
+            frameBuilder: whileLoading,
             errorBuilder: onError,
           )
         : Image.asset(
@@ -658,6 +1010,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             width: width,
             height: height,
             fit: fit,
+            frameBuilder: whileLoading,
             errorBuilder: onError,
           );
 
@@ -730,10 +1083,11 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   // ---------------------------------------------------------------------------
 
   Widget _button(Map<String, dynamic> p) {
-    final label = Text(_string(p['label']));
+    final variant = _string(p['variant'], 'primary');
     final onPressed = p['disabled'] == true ? null : _tap(p);
-    final color =
-        _color(p['color']) ?? _variantColor(_string(p['variant'], 'primary'));
+    final stated = _color(p['color']);
+    final color = stated ?? _variantColor(variant);
+    final foreground = _color(p['foregroundColor']);
     final scale = _buttonSize(p['size']);
     // The scale, then whatever the app stated instead of it.
     final height = _double(p['minHeight']) ?? scale.height;
@@ -746,11 +1100,28 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final minimumSize = Size(width, height);
     final textStyle = TextStyle(fontSize: fontSize);
 
-    return switch (_string(p['variant'], 'primary')) {
-      'secondary' => OutlinedButton(
+    final text = Text(_string(p['label']));
+    final codepoint = _double(p['iconCodepoint'])?.toInt();
+    // The glyph takes the button's foreground through its IconTheme, and its
+    // size from the text it sits beside.
+    final label = codepoint == null
+        ? text
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_iconData(codepoint), size: fontSize + 4),
+              const SizedBox(width: 8),
+              Flexible(child: text),
+            ],
+          );
+
+    final Widget button = switch (variant) {
+      // 'outlined' is Material's name for the shape 'secondary' already had;
+      // what differs is the colour, which is the primary's.
+      'secondary' || 'outlined' => OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          foregroundColor: color,
+          foregroundColor: foreground ?? color,
           minimumSize: minimumSize,
           padding: padding,
           textStyle: textStyle,
@@ -760,7 +1131,21 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       'tertiary' => TextButton(
         onPressed: onPressed,
         style: TextButton.styleFrom(
-          foregroundColor: color,
+          foregroundColor: foreground ?? color,
+          minimumSize: minimumSize,
+          padding: padding,
+          textStyle: textStyle,
+        ),
+        child: label,
+      ),
+      // A quiet fill of the primary, with the primary itself for the label -
+      // or the fill the app stated, with text that reads over it.
+      'tonal' => FilledButton.tonal(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: stated ?? color.withValues(alpha: 0.12),
+          foregroundColor:
+              foreground ?? (stated == null ? color : _textOn(stated)),
           minimumSize: minimumSize,
           padding: padding,
           textStyle: textStyle,
@@ -771,7 +1156,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
-          foregroundColor: _textOn(color),
+          foregroundColor: foreground ?? _textOn(color),
           minimumSize: minimumSize,
           padding: padding,
           textStyle: textStyle,
@@ -779,6 +1164,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         child: label,
       ),
     };
+    return p['expand'] == true ? _Expand(width: true, child: button) : button;
   }
 
   /// The one button scale, shared by every renderer - see [UIBuilder.button].
@@ -858,9 +1244,19 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     if (label == null) return checkbox;
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [checkbox, Text(label)],
+      children: [checkbox, _controlLabel(label, p)],
     );
   }
+
+  /// The text beside a checkbox, radio or switch, greyed with the control when
+  /// the tree says it is disabled - Flutter dims the control itself, and a
+  /// label left at full strength reads as something that can still be tapped.
+  Widget _controlLabel(String label, Map<String, dynamic> p) => Text(
+    label,
+    style: p['disabled'] == true
+        ? TextStyle(color: _textSecondaryColor.withValues(alpha: 0.6))
+        : null,
+  );
 
   Widget _radio(Map<String, dynamic> p) {
     // Drawn rather than built from Flutter's Radio: the selection lives in the
@@ -878,9 +1274,14 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             selected
                 ? Icons.radio_button_checked
                 : Icons.radio_button_unchecked,
-            color: disabled ? _textSecondaryColor : _variantColor('primary'),
+            color: disabled
+                ? _textSecondaryColor.withValues(alpha: 0.6)
+                : _variantColor('primary'),
           ),
-          if (label != null) ...[const SizedBox(width: 8), Text(label)],
+          if (label != null) ...[
+            const SizedBox(width: 8),
+            _controlLabel(label, p),
+          ],
         ],
       ),
     );
@@ -897,7 +1298,10 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     );
     final label = _optString(p['label']);
     if (label == null) return toggle;
-    return Row(mainAxisSize: MainAxisSize.min, children: [toggle, Text(label)]);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [toggle, _controlLabel(label, p)],
+    );
   }
 
   /// The colour text takes when the tree does not state one, while a
@@ -1280,6 +1684,620 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       );
 
   // ---------------------------------------------------------------------------
+  // Free-form composition
+  // ---------------------------------------------------------------------------
+
+  /// Builds with [color] as the colour text and icons take when they state
+  /// none - see [_textInForce]. Null leaves whatever is in force alone.
+  T _withText<T>(Color? color, T Function() build) {
+    if (color == null) return build();
+    final saved = _textInForce;
+    _textInForce = color;
+    try {
+      return build();
+    } finally {
+      _textInForce = saved;
+    }
+  }
+
+  /// A Box, and the frame of a Canvas, which carries the same props.
+  ///
+  /// Each prop becomes the Flutter widget that does that one thing, wrapped
+  /// from the child outwards in the order the protocol describes the box:
+  /// alignment and padding inside the paint, then size, then touch, and
+  /// around all of it what applies to the box as a whole - opacity, transform,
+  /// margin. A prop the node does not carry adds no widget.
+  Widget _box(
+    Map<String, dynamic> p,
+    List<WidgetNode> children,
+    BuildContext context, {
+    bool canvas = false,
+  }) {
+    final ms = _double(p['animateMs'])?.toInt() ?? 0;
+    final duration = ms > 0 ? Duration(milliseconds: ms) : null;
+    final curve = _curve(p);
+
+    final circle = p['shape'] == 'circle';
+    final fill = _color(p['color']);
+    final gradient = _gradient(p['gradient']);
+    final borderWidth =
+        _double(p['borderWidth']) ?? (p['borderColor'] == null ? 0.0 : 1.0);
+    final shadow = _shadow(p['shadow']);
+    final radius = circle ? null : _radii(p);
+    final clip = p['clip'] == true;
+    final painted =
+        fill != null ||
+        gradient != null ||
+        shadow != null ||
+        radius != null ||
+        borderWidth > 0 ||
+        circle ||
+        // Container only clips to a decoration, so a box that clips has one
+        // even when it paints nothing.
+        clip;
+
+    // Text over a fill the app chose is made legible against it, as it is in
+    // a card. A see-through fill is left alone: what the text is read against
+    // is then mostly whatever lies under the box.
+    final legible = fill != null && fill.a >= 0.5 ? _textOn(fill) : null;
+    Widget? content = children.isEmpty
+        ? null
+        : _withText(legible, () => buildNode(children.first, context));
+    if (canvas) {
+      // Its own layer: a game sending a frame per tick repaints the surface
+      // and nothing around it.
+      content = RepaintBoundary(
+        child: CustomPaint(
+          painter: _CommandPainter(
+            commands: p['commands'] is List ? p['commands'] as List : const [],
+            paints: p['paints'] is List ? p['paints'] as List : const [],
+            textColor: _textInForce ?? _textColor,
+          ),
+          child: content,
+        ),
+      );
+    }
+    final alignment = _alignment(p['alignment']);
+    if (alignment != null && content != null) {
+      // The factors keep a box with no size of its own hugging its child;
+      // Align alone would grow to fill whatever it is offered.
+      content = Align(
+        alignment: alignment,
+        widthFactor: 1,
+        heightFactor: 1,
+        child: content,
+      );
+    }
+    final padding = _edges(p['padding']);
+    if (padding != null) content = Padding(padding: padding, child: content);
+    // A Container with no child grows to fill its parent, and a box with none
+    // hugs nothing instead.
+    content ??= const SizedBox.shrink();
+
+    final ratio = _double(p['aspectRatio']);
+    final frame = _BoxFrame(
+      decoration: painted
+          ? BoxDecoration(
+              color: fill,
+              gradient: gradient,
+              border: borderWidth > 0
+                  ? Border.all(
+                      color: _color(p['borderColor']) ?? _dividerColor,
+                      width: borderWidth,
+                    )
+                  : null,
+              borderRadius: radius,
+              shape: circle ? BoxShape.circle : BoxShape.rectangle,
+              boxShadow: shadow == null ? null : [shadow],
+            )
+          : null,
+      clip: clip,
+      constraints: _boxConstraints(p),
+      aspectRatio: ratio != null && ratio > 0 && ratio.isFinite ? ratio : null,
+      duration: duration,
+      curve: curve,
+    );
+
+    final touched =
+        p['ripple'] == true ||
+        p['tapEventId'] is String ||
+        p['doubleTapEventId'] is String ||
+        p['longPressEventId'] is String ||
+        p['panEventId'] is String;
+    Widget box = touched
+        ? _NodeBox(
+            renderer: this,
+            props: p,
+            frame: frame,
+            inkShape: circle
+                ? const CircleBorder()
+                : radius == null
+                ? null
+                : RoundedRectangleBorder(borderRadius: radius),
+            child: content,
+          )
+        : frame.wrap(content);
+
+    final sizeEventId = p['sizeEventId'];
+    if (sizeEventId is String) {
+      box = _SizeReporter(
+        onSize: (size) => handleEvent(sizeEventId, {
+          'width': size.width,
+          'height': size.height,
+        }),
+        child: box,
+      );
+    }
+
+    final dropEventId = p['dropEventId'];
+    if (dropEventId is String) {
+      final target = box;
+      void hover(bool over) =>
+          handleEvent('${dropEventId}_hover', {'over': over});
+      box = DragTarget<String>(
+        onWillAcceptWithDetails: (_) {
+          hover(true);
+          return true;
+        },
+        onLeave: (_) => hover(false),
+        onAcceptWithDetails: (details) {
+          // A drop is also the drag leaving, and Flutter says only the first.
+          hover(false);
+          handleEvent(dropEventId, {'data': details.data});
+        },
+        builder: (_, _, _) => target,
+      );
+    }
+    final dragData = _optString(p['dragData']);
+    if (dragData != null) box = _NodeDraggable(data: dragData, child: box);
+
+    final opacity = _double(p['opacity'])?.clamp(0.0, 1.0);
+    if (opacity != null) {
+      box = duration == null
+          ? Opacity(opacity: opacity, child: box)
+          : AnimatedOpacity(
+              opacity: opacity,
+              duration: duration,
+              curve: curve,
+              child: box,
+            );
+    }
+    final transform = _BoxTransform.from(p['transform']);
+    if (transform != null) {
+      box = duration == null
+          ? Transform(
+              transform: transform.matrix,
+              alignment: Alignment.center,
+              child: box,
+            )
+          // Each of the four numbers moves on its own, which a Matrix4 tween
+          // would not do: it takes a rotation the short way round.
+          : TweenAnimationBuilder<_BoxTransform>(
+              tween: _BoxTransformTween(end: transform),
+              duration: duration,
+              curve: curve,
+              builder: (_, value, child) => Transform(
+                transform: value.matrix,
+                alignment: Alignment.center,
+                child: child,
+              ),
+              child: box,
+            );
+    }
+
+    if (p['ignorePointer'] == true) box = IgnorePointer(child: box);
+    final semanticLabel = _optString(p['semanticLabel']);
+    if (semanticLabel != null) {
+      box = Semantics(label: semanticLabel, container: true, child: box);
+    }
+    final tooltip = _optString(p['tooltip']);
+    if (tooltip != null) box = Tooltip(message: tooltip, child: box);
+
+    final margin = _edges(p['margin']);
+    if (margin != null) {
+      box = duration == null
+          ? Padding(padding: margin, child: box)
+          : AnimatedPadding(
+              padding: margin,
+              duration: duration,
+              curve: curve,
+              child: box,
+            );
+    }
+    final expand = p['expand'];
+    if (expand == 'width' || expand == 'height' || expand == 'both') {
+      box = _Expand(
+        width: expand != 'height',
+        height: expand != 'width',
+        child: box,
+      );
+    }
+    return box;
+  }
+
+  /// The size a box states: [width]/[height] fix an axis, the min/max pairs
+  /// bound it. Null when it states none, and the box then hugs its child.
+  static BoxConstraints? _boxConstraints(Map<String, dynamic> p) {
+    final width = _double(p['width']);
+    final height = _double(p['height']);
+    final minW = _double(p['minWidth']);
+    final maxW = _double(p['maxWidth']);
+    final minH = _double(p['minHeight']);
+    final maxH = _double(p['maxHeight']);
+    if ((width ?? height ?? minW ?? maxW ?? minH ?? maxH) == null) return null;
+    // A minimum above its maximum is an assertion in Flutter; the minimum
+    // wins, as it does in CSS.
+    final minWidth = math.max(0.0, width ?? minW ?? 0);
+    final minHeight = math.max(0.0, height ?? minH ?? 0);
+    return BoxConstraints(
+      minWidth: minWidth,
+      maxWidth: math.max(minWidth, width ?? maxW ?? double.infinity),
+      minHeight: minHeight,
+      maxHeight: math.max(minHeight, height ?? maxH ?? double.infinity),
+    );
+  }
+
+  /// `[left, top, right, bottom]`, or one number for every edge.
+  static EdgeInsets? _edges(Object? value) {
+    if (value is num) return EdgeInsets.all(math.max(0, value.toDouble()));
+    if (value is! List || value.length != 4) return null;
+    double edge(int i) => math.max(0.0, _double(value[i]) ?? 0);
+    return EdgeInsets.fromLTRB(edge(0), edge(1), edge(2), edge(3));
+  }
+
+  /// An `[x, y]` pair from -1 (left/top) to 1 (right/bottom).
+  static Alignment? _alignment(Object? value) {
+    if (value is! List || value.length != 2) return null;
+    return Alignment(_double(value[0]) ?? 0, _double(value[1]) ?? 0);
+  }
+
+  /// A box's corners: `borderRadii` as `[topLeft, topRight, bottomRight,
+  /// bottomLeft]`, or `borderRadius` for all four.
+  static BorderRadius? _radii(Map<String, dynamic> p) {
+    final each = p['borderRadii'];
+    if (each is List && each.length == 4) {
+      Radius corner(int i) =>
+          Radius.circular(math.max(0.0, _double(each[i]) ?? 0));
+      return BorderRadius.only(
+        topLeft: corner(0),
+        topRight: corner(1),
+        bottomRight: corner(2),
+        bottomLeft: corner(3),
+      );
+    }
+    final all = _double(p['borderRadius']);
+    return all == null || all <= 0 ? null : BorderRadius.circular(all);
+  }
+
+  /// `{type, colors, stops?, begin, end}` as a Flutter gradient.
+  ///
+  /// A radial one is centred on `begin` and reaches `end`: the two points say
+  /// where the first colour is and where the last one lands, which is what
+  /// they say for a linear one too.
+  static Gradient? _gradient(Object? value) {
+    if (value is! Map) return null;
+    final rawColors = value['colors'];
+    if (rawColors is! List) return null;
+    final colors = [for (final c in rawColors) ?_color(c)];
+    if (colors.length != rawColors.length || colors.isEmpty) return null;
+    // Flutter wants two colours; one is a flat fill said the long way.
+    if (colors.length == 1) colors.add(colors.first);
+    final rawStops = value['stops'];
+    final stops = rawStops is List && rawStops.length == rawColors.length
+        ? [for (final s in rawStops) (_double(s) ?? 0).clamp(0.0, 1.0)]
+        : null;
+    if (stops != null && stops.length < colors.length) stops.add(1);
+    final begin = _alignment(value['begin']);
+    final end = _alignment(value['end']);
+    if (value['type'] == 'radial') {
+      final center = begin ?? Alignment.center;
+      // Alignment units span the box in two; a radius is a fraction of its
+      // shorter side, so half the distance between the points.
+      final reach = end == null
+          ? 0.5
+          : math.sqrt(
+                  math.pow(end.x - center.x, 2) + math.pow(end.y - center.y, 2),
+                ) /
+                2;
+      return RadialGradient(
+        center: center,
+        radius: reach > 0 ? reach : 0.5,
+        colors: colors,
+        stops: stops,
+      );
+    }
+    return LinearGradient(
+      begin: begin ?? Alignment.centerLeft,
+      end: end ?? Alignment.centerRight,
+      colors: colors,
+      stops: stops,
+    );
+  }
+
+  /// `{color, blur, dx, dy}` as a shadow.
+  static BoxShadow? _shadow(Object? value) {
+    if (value is! Map) return null;
+    return BoxShadow(
+      color: _color(value['color']) ?? const Color(0x33000000),
+      blurRadius: math.max(0.0, _double(value['blur']) ?? 0),
+      offset: Offset(_double(value['dx']) ?? 0, _double(value['dy']) ?? 0),
+    );
+  }
+
+  /// Children drawn over one another. A `Positioned` child is pinned here,
+  /// where its parent data can reach the Stack; met anywhere else it is just
+  /// its child.
+  Widget _stack(
+    Map<String, dynamic> p,
+    List<WidgetNode> children,
+    BuildContext context,
+  ) => Stack(
+    // Stated, it names a side; unstated it is Flutter's own default, the top
+    // *start*, which follows the reading direction.
+    alignment: _alignment(p['alignment']) ?? AlignmentDirectional.topStart,
+    fit: p['fit'] == 'expand' ? StackFit.expand : StackFit.loose,
+    clipBehavior: p['clip'] == false ? Clip.none : Clip.hardEdge,
+    children: [
+      for (final child in children)
+        if (child.type == 'Positioned')
+          _positioned(child, context)
+        else
+          buildNode(child, context),
+    ],
+  );
+
+  Widget _positioned(WidgetNode node, BuildContext context) {
+    final p = node.props;
+    final left = _double(p['left']);
+    final top = _double(p['top']);
+    final right = _double(p['right']);
+    final bottom = _double(p['bottom']);
+    return Positioned(
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom,
+      // Two opposite edges already say how wide the child is; a width as well
+      // would be an assertion, so the edges win.
+      width: left != null && right != null ? null : _double(p['width']),
+      height: top != null && bottom != null ? null : _double(p['height']),
+      child: _single(node.children ?? const [], context),
+    );
+  }
+
+  /// One glyph of an icon font.
+  ///
+  /// The codepoint only exists at run time, so the [IconData] cannot be a
+  /// constant - and Flutter's release build strips an icon font down to the
+  /// constants it can see. An app that builds `Icon` nodes ships with
+  /// `--no-tree-shake-icons`; the build says so itself rather than dropping
+  /// glyphs quietly.
+  static IconData _iconData(int codepoint, [String? fontFamily]) =>
+      // ignore: non_const_argument_for_const_parameter
+      IconData(codepoint, fontFamily: fontFamily ?? 'MaterialIcons');
+
+  /// The icon a button node asks for: the named one where the name is known,
+  /// else the glyph at its codepoint, else a dot - visible, not absent.
+  static IconData _iconOf(Map<String, dynamic> p, String fallback) {
+    final name = _optString(p['icon']);
+    final named = _icons[name];
+    if (named != null) return named;
+    final codepoint = _double(p['iconCodepoint'])?.toInt();
+    if (codepoint != null) return _iconData(codepoint);
+    return name == null ? _icon(fallback) : Icons.circle;
+  }
+
+  Widget _iconNode(Map<String, dynamic> p) => Icon(
+    _iconData(
+      (_double(p['codepoint']) ?? 0).toInt(),
+      _optString(p['fontFamily']),
+    ),
+    size: _double(p['size']),
+    // No colour of its own: the colour in force over a fill the app chose,
+    // and otherwise the IconTheme's - an app bar's foreground, a button's.
+    color: _color(p['color']) ?? _textInForce,
+    semanticLabel: _optString(p['semanticLabel']),
+  );
+
+  Widget _iconButton(Map<String, dynamic> p) => Tooltip(
+    message: _string(p['tooltip']),
+    child: IconButton(
+      icon: Icon(_iconOf(p, 'more_vert')),
+      color: _color(p['color']) ?? _textInForce,
+      iconSize: _double(p['size']),
+      onPressed: p['disabled'] == true ? null : _tap(p),
+    ),
+  );
+
+  Widget _fab(Map<String, dynamic> p) {
+    // With a brand theme, the FAB matches the other renderers' primary;
+    // with none, Flutter's own Material 3 default is left to shine.
+    final themed = theme != AppTheme.fallback;
+    final background =
+        _color(p['backgroundColor']) ?? (themed ? _primaryColor : null);
+    final foreground = themed ? _onPrimaryColor : null;
+    final icon = Icon(_iconOf(p, 'add'));
+    final label = _optString(p['label']);
+    if (label != null) {
+      return FloatingActionButton.extended(
+        tooltip: _optString(p['tooltip']),
+        onPressed: _tap(p),
+        backgroundColor: background,
+        foregroundColor: foreground,
+        icon: icon,
+        label: Text(label),
+      );
+    }
+    return FloatingActionButton(
+      tooltip: _optString(p['tooltip']),
+      onPressed: _tap(p),
+      backgroundColor: background,
+      foregroundColor: foreground,
+      child: icon,
+    );
+  }
+
+  /// One of a list, chosen from Material's menu.
+  ///
+  /// A DropdownButton inside an InputDecorator - which is what Flutter's own
+  /// DropdownButtonFormField is made of - rather than the form field itself:
+  /// the form field keeps the selection in its State, and here the selection
+  /// is the tree's.
+  Widget _dropdown(Map<String, dynamic> p) {
+    final items = [for (final item in (p['items'] as List? ?? const [])) '$item'];
+    final index = _double(p['selectedIndex'])?.toInt();
+    // An index outside the list is no selection, not an assertion.
+    final selected = index != null && index >= 0 && index < items.length
+        ? index
+        : null;
+    final enabled = p['enabled'] != false;
+    return InputDecorator(
+      isEmpty: selected == null,
+      decoration: InputDecoration(
+        labelText: _optString(p['label']),
+        hintText: _optString(p['hint']),
+        errorText: _optString(p['error']),
+        enabled: enabled,
+        border: p['outlined'] == false
+            ? const UnderlineInputBorder()
+            : const OutlineInputBorder(),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int>(
+          value: selected,
+          isExpanded: true,
+          isDense: true,
+          items: [
+            for (final (i, item) in items.indexed)
+              DropdownMenuItem(
+                value: i,
+                child: Text(item, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: enabled
+              ? (i) {
+                  if (i != null) _emit(p, {'index': i});
+                }
+              : null,
+        ),
+      ),
+    );
+  }
+
+  /// The destinations of an app: a NavigationBar, or a NavigationRail down
+  /// the leading edge when the node asks for one.
+  Widget _bottomNavigation(Map<String, dynamic> p) {
+    final items = [
+      for (final item in (p['items'] as List? ?? const []))
+        if (item is Map) item,
+    ];
+    // Both of Flutter's widgets assert on fewer than two destinations, and a
+    // navigation between one place is no navigation.
+    if (items.length < 2) return const SizedBox.shrink();
+    final selected = (_double(p['selectedIndex']) ?? 0).toInt().clamp(
+      0,
+      items.length - 1,
+    );
+    Icon icon(Map item, {bool selected = false}) => Icon(
+      _iconData(
+        (_double(selected ? item['selectedIcon'] ?? item['icon'] : item['icon']) ??
+                0)
+            .toInt(),
+      ),
+    );
+    void select(int index) => _emit(p, {'index': index});
+
+    if (p['rail'] != true) {
+      return NavigationBar(
+        selectedIndex: selected,
+        onDestinationSelected: select,
+        destinations: [
+          for (final item in items)
+            NavigationDestination(
+              icon: icon(item),
+              selectedIcon: icon(item, selected: true),
+              label: _string(item['label']),
+            ),
+        ],
+      );
+    }
+    final rail = NavigationRail(
+      selectedIndex: selected,
+      onDestinationSelected: select,
+      labelType: NavigationRailLabelType.all,
+      destinations: [
+        for (final item in items)
+          NavigationRailDestination(
+            icon: icon(item),
+            selectedIcon: icon(item, selected: true),
+            label: Text(_string(item['label'])),
+          ),
+      ],
+    );
+    // A rail fills the height it is given and has none of its own, so where
+    // the height is unbounded - a scrolling body - it gets its destinations'.
+    // Where it is bounded, the rail scrolls once its destinations are taller
+    // than the room - seven of them on a phone held sideways - and is the
+    // full height otherwise, which is the arrangement Flutter documents for
+    // a rail in a scroll view.
+    return LayoutBuilder(
+      builder: (_, constraints) => constraints.hasBoundedHeight
+          ? SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(child: rail),
+              ),
+            )
+          : SizedBox(height: items.length * 72.0 + 16, child: rail),
+    );
+  }
+
+  /// The widget registered for a slot, at the slot's size; the fallback child
+  /// when nothing is registered under that id.
+  Widget _flutterSlot(
+    Map<String, dynamic> p,
+    List<WidgetNode> children,
+    BuildContext context,
+  ) {
+    final slotId = _string(p['slotId']);
+    final builder = FlutterSlots.instance.builderOf(slotId);
+    final width = _double(p['width']);
+    final slot = SizedBox(
+      width: width,
+      height: _double(p['height']),
+      child: builder is Widget Function(BuildContext)
+          // Keyed by the slot, like the layer the native renderers use, so
+          // the widget keeps its State when the nodes around it change.
+          ? KeyedSubtree(
+              key: ValueKey<String>('flutterSlot:$slotId'),
+              child: Builder(builder: builder),
+            )
+          : _single(children, context),
+    );
+    // No width means the width it is offered.
+    return width == null ? _Expand(width: true, child: slot) : slot;
+  }
+
+  /// A lazy list or scroller applies a `scrollOffset` once per
+  /// `scrollVersion`; this says whether [version] is new for [id], and
+  /// records it. Kept here because a list's State can be rebuilt while the
+  /// list, and where it is scrolled to, stays.
+  bool _takeScrollVersion(String id, int? version) {
+    if (_appliedScrollVersions.containsKey(id) &&
+        _appliedScrollVersions[id] == version) {
+      return false;
+    }
+    _appliedScrollVersions[id] = version;
+    return true;
+  }
+
+  /// Whether the app registered a handler for [eventId].
+  ///
+  /// The renderer's own events ([RendererEvents]) are only sent to an app that
+  /// asked for them: nobody listening is the ordinary case, not an error.
+  bool handles(String eventId) => _handlers.containsKey(eventId);
+
+  // ---------------------------------------------------------------------------
   // Prop conversion
   // ---------------------------------------------------------------------------
 
@@ -1304,15 +2322,18 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       value is num ? value.toDouble() : null;
 
   static FontWeight? _fontWeight(Object? value) => switch (value) {
+    100 => FontWeight.w100,
+    200 => FontWeight.w200,
     300 => FontWeight.w300,
     400 => FontWeight.w400,
     500 => FontWeight.w500,
     600 => FontWeight.w600,
     700 => FontWeight.w700,
+    800 => FontWeight.w800,
+    900 => FontWeight.w900,
     _ => null,
   };
 
-  /// Parses `#rgb`, `#rrggbb` and `#aarrggbb`.
   /// The `durationMs` a motion node carries.
   static Duration _duration(Map<String, dynamic> p) =>
       Duration(milliseconds: (_double(p['durationMs']) ?? 200).toInt());
@@ -1342,6 +2363,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     )!;
   }
 
+  /// Parses `#rgb`, `#rrggbb` and `#aarrggbb`. Every colour in a tree comes
+  /// through here, so each of them may carry an alpha.
   static Color? _color(Object? value) {
     if (value is! String || !value.startsWith('#')) return null;
     var hex = value.substring(1);
@@ -1385,6 +2408,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     'center' => MainAxisAlignment.center,
     'end' => MainAxisAlignment.end,
     'spaceBetween' => MainAxisAlignment.spaceBetween,
+    'spaceAround' => MainAxisAlignment.spaceAround,
+    'spaceEvenly' => MainAxisAlignment.spaceEvenly,
     _ => MainAxisAlignment.start,
   };
 
@@ -1509,6 +2534,11 @@ class _NodeTextFieldState extends State<_NodeTextField> {
     super.dispose();
   }
 
+  /// The Material Icons glyph at a codepoint prop, or null when there is none.
+  static Icon? _glyph(Object? codepoint) => codepoint is num
+      ? Icon(FlutterUIRenderer._iconData(codepoint.toInt()))
+      : null;
+
   @override
   Widget build(BuildContext context) {
     final p = widget.props;
@@ -1527,10 +2557,46 @@ class _NodeTextFieldState extends State<_NodeTextField> {
       obscureText: p['obscureText'] == true,
       maxLines: p['obscureText'] == true ? 1 : maxLines,
       textInputAction: advances ? TextInputAction.next : TextInputAction.done,
+      keyboardType: switch (p['keyboardType']) {
+        'number' => TextInputType.number,
+        'decimal' => const TextInputType.numberWithOptions(decimal: true),
+        'email' => TextInputType.emailAddress,
+        'phone' => TextInputType.phone,
+        'url' => TextInputType.url,
+        'multiline' => TextInputType.multiline,
+        // Null lets Flutter choose from maxLines, as it did before.
+        _ => null,
+      },
+      // Shows its value and takes focus but not typing: a field that opens a
+      // picker, which is what the tap event is for.
+      readOnly: p['readOnly'] == true,
+      onTap: p['tappable'] == true
+          ? () => widget.renderer.handleEvent('${_eventId}_tap', const {})
+          : null,
+      maxLength: FlutterUIRenderer._double(p['maxLength'])?.toInt(),
+      textCapitalization: switch (p['textCapitalization']) {
+        'words' => TextCapitalization.words,
+        'sentences' => TextCapitalization.sentences,
+        'characters' => TextCapitalization.characters,
+        _ => TextCapitalization.none,
+      },
+      textAlign: FlutterUIRenderer._textAlign(p['textAlign']) ?? TextAlign.start,
       decoration: InputDecoration(
         hintText: FlutterUIRenderer._optString(p['hint'] ?? p['placeholder']),
         labelText: floating ? label : null,
         errorText: FlutterUIRenderer._optString(p['error']),
+        helperText: FlutterUIRenderer._optString(p['helper']),
+        prefixIcon: _glyph(p['prefixIcon']),
+        suffixIcon: switch (_glyph(p['suffixIcon'])) {
+          // A glyph the app listens to is a button - a clear, a show-password;
+          // one it does not is decoration.
+          final Icon icon when p['suffixTappable'] == true => IconButton(
+            icon: icon,
+            onPressed: () =>
+                widget.renderer.handleEvent('${_eventId}_suffix', const {}),
+          ),
+          final icon => icon,
+        },
         border: const OutlineInputBorder(),
       ),
       onChanged: (value) =>
@@ -1598,7 +2664,9 @@ class _NodeAlertState extends State<_NodeAlert> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
-        border: Border(left: BorderSide(color: color, width: 4)),
+        // The bar marks where the message starts, so it changes sides with
+        // the reading direction.
+        border: BorderDirectional(start: BorderSide(color: color, width: 4)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1779,8 +2847,24 @@ class _NodeSnackbarState extends State<_NodeSnackbar> {
     return Align(
       alignment: Alignment.bottomCenter,
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+        child: ValueListenableBuilder(
+          valueListenable: widget.renderer._bottomTaken,
+          // Above the bottom bar and the floating button, not over them, as
+          // Material has it: lifted by however far they reach past where the
+          // snackbar would otherwise end.
+          builder: (context, taken, child) {
+            final reach = math.max(taken.bar, taken.fab);
+            final own = 16 + MediaQuery.paddingOf(context).bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                reach == 0 ? 16 : 16 + math.max(0, reach + 8 - own),
+              ),
+              child: child,
+            );
+          },
           child: Semantics(
             container: true,
             liveRegion: true,
@@ -1790,7 +2874,7 @@ class _NodeSnackbarState extends State<_NodeSnackbar> {
               elevation: 6,
               borderRadius: BorderRadius.circular(4),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 8, 4),
                 child: Row(
                   children: [
                     Expanded(
@@ -1831,6 +2915,47 @@ class _NodeSnackbarState extends State<_NodeSnackbar> {
   }
 }
 
+/// Reports how far up from the bottom of the scaffold it is in its child
+/// reaches - the bottom bar's height, or the floating button's top edge.
+class _FromBottom extends SingleChildRenderObjectWidget {
+  const _FromBottom({required this.onChanged, super.child});
+
+  final ValueChanged<double> onChanged;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderFromBottom(onChanged);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderFromBottom renderObject) {
+    renderObject.onChanged = onChanged;
+  }
+}
+
+class _RenderFromBottom extends RenderProxyBox {
+  _RenderFromBottom(this.onChanged);
+
+  ValueChanged<double> onChanged;
+  double? _reported;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    super.paint(context, offset);
+    // The scaffold lays its parts out in one box; that box is the frame.
+    RenderObject? frame = parent;
+    while (frame != null && frame is! RenderCustomMultiChildLayoutBox) {
+      frame = frame.parent;
+    }
+    if (frame is! RenderBox || !frame.hasSize) return;
+    final taken =
+        frame.size.height - localToGlobal(Offset.zero, ancestor: frame).dy;
+    if (taken == _reported) return;
+    _reported = taken;
+    // Not now: whoever listens rebuilds, and this is the middle of a frame.
+    SchedulerBinding.instance.addPostFrameCallback((_) => onChanged(taken));
+  }
+}
+
 /// A scroll controller that starts a new scroll position where the last one
 /// left off, so a list rebuilt from scratch keeps its offset.
 class _LazyListController extends ScrollController {
@@ -1846,6 +2971,19 @@ class _LazyListController extends ScrollController {
 
   @override
   double get initialScrollOffset => _lastOffset;
+
+  /// Moves the list to [offset]: where it starts, when it is not on screen
+  /// yet, and a jump once the frame is laid out when it is - by then the rows
+  /// that came with the ask are there, and the offset can be held to them.
+  void moveTo(double offset) {
+    _lastOffset = math.max(0, offset);
+    if (!hasClients) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!hasClients) return;
+      final position = positions.last;
+      jumpTo(offset.clamp(position.minScrollExtent, position.maxScrollExtent));
+    });
+  }
 }
 
 /// A long list of fixed-height rows, of which the tree carries a window.
@@ -1896,7 +3034,27 @@ class _NodeLazyListState extends State<_NodeLazyList> {
     super.initState();
     _controller = widget.renderer._scrollControllerFor(_listId)
       ..addListener(_report);
+    _applyScrollRequest();
     WidgetsBinding.instance.addPostFrameCallback((_) => _report());
+  }
+
+  @override
+  void didUpdateWidget(_NodeLazyList old) {
+    super.didUpdateWidget(old);
+    _applyScrollRequest();
+  }
+
+  /// Moves to `scrollOffset` the first time the list is drawn with one, and
+  /// again whenever `scrollVersion` is one not yet obeyed.
+  void _applyScrollRequest() {
+    final offset = FlutterUIRenderer._double(widget.props['scrollOffset']);
+    if (offset == null) return;
+    final version = FlutterUIRenderer._double(
+      widget.props['scrollVersion'],
+    )?.toInt();
+    if (widget.renderer._takeScrollVersion(_listId, version)) {
+      _controller.moveTo(offset);
+    }
   }
 
   void _report() {
@@ -2020,14 +3178,32 @@ class NativeUIAppHost extends StatefulWidget {
   State<NativeUIAppHost> createState() => NativeUIAppHostState();
 }
 
-class NativeUIAppHostState extends State<NativeUIAppHost> {
+class NativeUIAppHostState extends State<NativeUIAppHost>
+    with WidgetsBindingObserver {
   late final FlutterUIRenderer renderer;
+
+  /// The viewport and the lifecycle state last sent, so each is sent when it
+  /// changes rather than on every build.
+  String? _sentViewport;
+  String? _sentLifecycle;
+
+  /// The route the host is on, when it is on one: a host under another
+  /// screen does not report the keys pressed on the screen above it.
+  ModalRoute<Object?>? _route;
 
   @override
   void initState() {
     super.initState();
     renderer = FlutterUIRenderer(onTreeChanged: _rebuild, theme: widget.theme);
     widget.app.mount(renderer);
+    WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
   }
 
   @override
@@ -2056,14 +3232,122 @@ class NativeUIAppHostState extends State<NativeUIAppHost> {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // The renderer's own events - see [RendererEvents]. Each is sent only to an
+  // app that registered for it: most apps listen to none of them, and an event
+  // with no handler is otherwise reported as a failure.
+  // ---------------------------------------------------------------------------
+
+  /// Sends [RendererEvents.viewport] once the size is known, and again when
+  /// anything it carries changes. Called from build, which a `MediaQuery`
+  /// change and a change of the host's own constraints both run.
+  void _reportViewport(BuildContext context, BoxConstraints constraints) {
+    if (!renderer.handles(RendererEvents.viewport)) return;
+    final media = MediaQuery.of(context);
+    // The room the host was given, which inside another app's layout is not
+    // the whole screen; the screen where the host is not bounded.
+    final size = Size(
+      constraints.hasBoundedWidth ? constraints.maxWidth : media.size.width,
+      constraints.hasBoundedHeight ? constraints.maxHeight : media.size.height,
+    );
+    final viewport = <String, dynamic>{
+      'width': size.width,
+      'height': size.height,
+      'paddingTop': media.padding.top,
+      'paddingBottom': media.padding.bottom,
+      'paddingLeft': media.padding.left,
+      'paddingRight': media.padding.right,
+      'keyboardInset': media.viewInsets.bottom,
+      'devicePixelRatio': media.devicePixelRatio,
+      'textScale': media.textScaler.scale(1),
+      'dark': media.platformBrightness == Brightness.dark,
+    };
+    final signature = viewport.values.join('|');
+    if (signature == _sentViewport) return;
+    // After the frame: the app re-renders in answer, and this is a build.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || signature == _sentViewport) return;
+      _sentViewport = signature;
+      renderer.handleEvent(RendererEvents.viewport, viewport);
+    });
+  }
+
+  /// Sends [RendererEvents.key] for a hardware key going down or coming up.
+  ///
+  /// Answers false - "not handled" - every time: the app hears about the key,
+  /// and the text field or shortcut it was meant for still gets it.
+  bool _onKey(KeyEvent event) {
+    if (!mounted ||
+        !renderer.handles(RendererEvents.key) ||
+        _route?.isCurrent == false) {
+      return false;
+    }
+    renderer.handleEvent(RendererEvents.key, {
+      'key': _keyName(event),
+      'down': event is! KeyUpEvent,
+      if (event is KeyRepeatEvent) 'repeat': true,
+    });
+    return false;
+  }
+
+  /// The key's name as a browser's `KeyboardEvent.key` spells it: the
+  /// character for a key that types one ('a', 'A', ' '), and a name for one
+  /// that does not ('Enter', 'ArrowUp', 'Shift').
+  static String _keyName(KeyEvent event) {
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.space) return ' ';
+    if (key == LogicalKeyboardKey.numpadEnter) return 'Enter';
+    final label = key.keyLabel;
+    if (label.length == 1) {
+      // A key-up carries no character, so the case comes from Shift; a
+      // key-down's character already has it, and the layout's own symbols.
+      final character = event.character;
+      if (character != null && character.length == 1) return character;
+      return HardwareKeyboard.instance.isShiftPressed
+          ? label
+          : label.toLowerCase();
+    }
+    // Flutter's labels are the browser's names with spaces in them ('Arrow
+    // Up', 'Page Down'), plus a side for the modifiers, which the browser
+    // leaves to `code`.
+    return label
+        .replaceFirst(RegExp(r' (Left|Right)$'), '')
+        .replaceFirst(RegExp(r'^Numpad '), '')
+        .replaceAll(' ', '');
+  }
+
+  /// Sends [RendererEvents.lifecycle] as the app comes and goes.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!renderer.handles(RendererEvents.lifecycle)) return;
+    final name = switch (state) {
+      AppLifecycleState.resumed => 'resumed',
+      AppLifecycleState.inactive => 'inactive',
+      // Flutter's 'hidden' sits between inactive and paused and the protocol
+      // has no word for it; to an app, not being shown is being paused.
+      AppLifecycleState.hidden || AppLifecycleState.paused => 'paused',
+      AppLifecycleState.detached => 'detached',
+    };
+    if (name == _sentLifecycle) return;
+    _sentLifecycle = name;
+    renderer.handleEvent(RendererEvents.lifecycle, {'state': name});
+  }
+
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    WidgetsBinding.instance.removeObserver(this);
     renderer.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => renderer.build(context);
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      _reportViewport(context, constraints);
+      return renderer.build(context);
+    },
+  );
 }
 
 /// A row that slides [child] left to reveal trailing action buttons: a partial
@@ -2183,5 +3467,974 @@ class _SwipeActionsRowState extends State<_SwipeActionsRow> {
         ],
       ),
     );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Boxes
+// -----------------------------------------------------------------------------
+
+/// The paint and the size of a box, around whatever is inside it.
+///
+/// Separate from the box's touch handling because a ripple has to be drawn
+/// *inside* the paint - over the fill, under the child - while the gestures
+/// are measured around it.
+class _BoxFrame {
+  const _BoxFrame({
+    required this.decoration,
+    required this.clip,
+    required this.constraints,
+    required this.aspectRatio,
+    required this.duration,
+    required this.curve,
+  });
+
+  final BoxDecoration? decoration;
+  final bool clip;
+  final BoxConstraints? constraints;
+  final double? aspectRatio;
+
+  /// How long a change takes to land; null for at once.
+  final Duration? duration;
+  final Curve curve;
+
+  Widget wrap(Widget child) {
+    final duration = this.duration;
+    final ratio = aspectRatio;
+    // With an aspect ratio the stated size bounds the ratio's box rather than
+    // the painted one, so the ratio decides the axis the size left free.
+    final own = ratio == null ? constraints : null;
+    final clipBehavior = clip ? Clip.antiAlias : Clip.none;
+    Widget box = duration == null
+        ? Container(
+            constraints: own,
+            decoration: decoration,
+            clipBehavior: clipBehavior,
+            child: child,
+          )
+        : AnimatedContainer(
+            duration: duration,
+            curve: curve,
+            constraints: own,
+            decoration: decoration,
+            clipBehavior: clipBehavior,
+            child: child,
+          );
+    if (ratio == null) return box;
+    box = AspectRatio(aspectRatio: ratio, child: box);
+    final outer = constraints;
+    if (outer == null) return box;
+    return duration == null
+        ? ConstrainedBox(constraints: outer, child: box)
+        : AnimatedContainer(
+            duration: duration,
+            curve: curve,
+            constraints: outer,
+            child: box,
+          );
+  }
+}
+
+/// A box's `{rotate, scale, dx, dy}`, applied about its centre.
+class _BoxTransform {
+  const _BoxTransform(this.rotate, this.scale, this.dx, this.dy);
+
+  static _BoxTransform? from(Object? value) {
+    if (value is! Map) return null;
+    double read(String key, double fallback) =>
+        FlutterUIRenderer._double(value[key]) ?? fallback;
+    return _BoxTransform(
+      read('rotate', 0),
+      read('scale', 1),
+      read('dx', 0),
+      read('dy', 0),
+    );
+  }
+
+  final double rotate;
+  final double scale;
+  final double dx;
+  final double dy;
+
+  /// Scaled, then turned, then moved - so `dx`/`dy` are screen pixels
+  /// whatever the scale and the angle.
+  Matrix4 get matrix => Matrix4.translationValues(dx, dy, 0)
+    ..multiply(Matrix4.rotationZ(rotate))
+    ..multiply(Matrix4.diagonal3Values(scale, scale, 1));
+}
+
+class _BoxTransformTween extends Tween<_BoxTransform> {
+  _BoxTransformTween({super.end});
+
+  @override
+  _BoxTransform lerp(double t) {
+    final a = begin!;
+    final b = end!;
+    double mix(double from, double to) => from + (to - from) * t;
+    return _BoxTransform(
+      mix(a.rotate, b.rotate),
+      mix(a.scale, b.scale),
+      mix(a.dx, b.dx),
+      mix(a.dy, b.dy),
+    );
+  }
+}
+
+/// A box that is touched: taps, a pan, a ripple.
+///
+/// Stateful for two reasons. A position is reported in the box's own pixels,
+/// which means converting it with the box's render object; and a pan reports
+/// how far it moved since the last event, which someone has to remember.
+class _NodeBox extends StatefulWidget {
+  const _NodeBox({
+    required this.renderer,
+    required this.props,
+    required this.frame,
+    required this.inkShape,
+    required this.child,
+  });
+
+  final FlutterUIRenderer renderer;
+  final Map<String, dynamic> props;
+  final _BoxFrame frame;
+
+  /// The shape a ripple is clipped to: the box's own.
+  final ShapeBorder? inkShape;
+  final Widget child;
+
+  @override
+  State<_NodeBox> createState() => _NodeBoxState();
+}
+
+class _NodeBoxState extends State<_NodeBox> {
+  /// Where the pointer last went down, in global coordinates. A double tap
+  /// and a long press, and every callback of an InkWell, arrive without a
+  /// position; this is the one they happened at.
+  Offset? _down;
+
+  /// Where a pan was at its last event, in the box's coordinates.
+  Offset _pan = Offset.zero;
+
+  String? _id(String key) => FlutterUIRenderer._optString(widget.props[key]);
+
+  /// [global] in the box's own logical pixels - through the box's transform,
+  /// if it has one, so a rotated box still reports where *it* was touched.
+  Offset _local(Offset? global) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return Offset.zero;
+    return global == null
+        ? box.size.center(Offset.zero)
+        : box.globalToLocal(global);
+  }
+
+  void _point(String? eventId, Offset? global) {
+    if (eventId == null) return;
+    final at = _local(global);
+    widget.renderer.handleEvent(eventId, {'x': at.dx, 'y': at.dy});
+  }
+
+  void _panned(String phase, Offset? global, {Offset velocity = Offset.zero}) {
+    final eventId = _id('panEventId');
+    if (eventId == null) return;
+    // The end of a pan has no position of its own; it ends where it last was.
+    final at = global == null ? _pan : _local(global);
+    final moved = phase == '_update' ? at - _pan : Offset.zero;
+    _pan = at;
+    widget.renderer.handleEvent('$eventId$phase', {
+      'x': at.dx,
+      'y': at.dy,
+      'dx': moved.dx,
+      'dy': moved.dy,
+      'vx': velocity.dx,
+      'vy': velocity.dy,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tap = _id('tapEventId');
+    final doubleTap = _id('doubleTapEventId');
+    final longPress = _id('longPressEventId');
+    final pan = _id('panEventId');
+    final ripple = widget.props['ripple'] == true;
+
+    var content = widget.child;
+    if (ripple) {
+      // The Material is inside the box's paint, so the splash lands on the
+      // fill rather than under it; the InkWell then has to be the one that
+      // hears the taps, or the splash would never start.
+      content = Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          customBorder: widget.inkShape,
+          onTapDown: (details) => _down = details.globalPosition,
+          onTapUp: (details) => _down = details.globalPosition,
+          onTap: () => _point(tap, _down),
+          onDoubleTap: doubleTap == null
+              ? null
+              : () => _point(doubleTap, _down),
+          onLongPress: longPress == null
+              ? null
+              : () => _point(longPress, _down),
+          child: content,
+        ),
+      );
+    }
+    final box = widget.frame.wrap(content);
+    final tapsHere = !ripple;
+    if (ripple && pan == null) return box;
+    return GestureDetector(
+      // A box takes touches over all of itself, painted or not.
+      behavior: HitTestBehavior.opaque,
+      onTapUp: tapsHere && tap != null
+          ? (details) => _point(tap, details.globalPosition)
+          : null,
+      onDoubleTapDown: tapsHere && doubleTap != null
+          ? (details) => _down = details.globalPosition
+          : null,
+      onDoubleTap: tapsHere && doubleTap != null
+          ? () => _point(doubleTap, _down)
+          : null,
+      onLongPressStart: tapsHere && longPress != null
+          ? (details) => _point(longPress, details.globalPosition)
+          : null,
+      onPanStart: pan == null
+          ? null
+          : (details) => _panned('_start', details.globalPosition),
+      onPanUpdate: pan == null
+          ? null
+          : (details) => _panned('_update', details.globalPosition),
+      onPanEnd: pan == null
+          ? null
+          : (details) => _panned(
+              '_end',
+              null,
+              velocity: details.velocity.pixelsPerSecond,
+            ),
+      child: box,
+    );
+  }
+}
+
+/// A box that can be picked up, carrying a string.
+///
+/// After a long press where the pointer is a finger, so a drag can still
+/// scroll the list the box is in; at once where it is a mouse, which has a
+/// wheel for that.
+class _NodeDraggable extends StatefulWidget {
+  const _NodeDraggable({required this.data, required this.child});
+
+  final String data;
+  final Widget child;
+
+  @override
+  State<_NodeDraggable> createState() => _NodeDraggableState();
+}
+
+class _NodeDraggableState extends State<_NodeDraggable> {
+  /// The box's size when the pointer went down. What follows the pointer is
+  /// built in the app's overlay, where nothing would give it a size.
+  Size? _size;
+
+  static bool get _touch =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.fuchsia);
+
+  @override
+  Widget build(BuildContext context) {
+    final feedback = Builder(
+      builder: (_) => Opacity(
+        opacity: 0.85,
+        child: SizedBox.fromSize(
+          size: _size,
+          child: Material(
+            type: MaterialType.transparency,
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+    return Listener(
+      onPointerDown: (_) => _size = context.size,
+      child: _touch
+          ? LongPressDraggable<String>(
+              data: widget.data,
+              feedback: feedback,
+              child: widget.child,
+            )
+          : Draggable<String>(
+              data: widget.data,
+              feedback: feedback,
+              child: widget.child,
+            ),
+    );
+  }
+}
+
+/// Reports its child's size once it is laid out, and again when it changes.
+class _SizeReporter extends SingleChildRenderObjectWidget {
+  const _SizeReporter({required this.onSize, super.child});
+
+  final ValueChanged<Size> onSize;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderSizeReporter(onSize);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSizeReporter renderObject,
+  ) => renderObject.onSize = onSize;
+}
+
+class _RenderSizeReporter extends RenderProxyBox {
+  _RenderSizeReporter(this.onSize);
+
+  ValueChanged<Size> onSize;
+
+  /// The size last sent. A layout that arrives at the same size - and most
+  /// re-renders do - sends nothing.
+  Size? _reported;
+  bool _scheduled = false;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (size == _reported || _scheduled) return;
+    _scheduled = true;
+    // After the frame: the app re-renders in answer, which it may not do in
+    // the middle of a layout.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      if (!attached || !hasSize || size == _reported) return;
+      _reported = size;
+      onSize(size);
+    });
+  }
+}
+
+/// Makes its child fill what the parent offers on an axis - where the parent
+/// offers something. In an unbounded parent (a row's main axis, a scroller's)
+/// there is nothing to fill and the child keeps its own size, where
+/// `double.infinity` would be a layout error.
+class _Expand extends SingleChildRenderObjectWidget {
+  const _Expand({this.width = false, this.height = false, super.child});
+
+  final bool width;
+  final bool height;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderExpand(width, height);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderExpand renderObject) =>
+      renderObject
+        ..width = width
+        ..height = height;
+}
+
+class _RenderExpand extends RenderProxyBox {
+  _RenderExpand(this._width, this._height);
+
+  bool _width;
+  set width(bool value) {
+    if (_width == value) return;
+    _width = value;
+    markNeedsLayout();
+  }
+
+  bool _height;
+  set height(bool value) {
+    if (_height == value) return;
+    _height = value;
+    markNeedsLayout();
+  }
+
+  BoxConstraints _filled(BoxConstraints from) => from.copyWith(
+    minWidth: _width && from.hasBoundedWidth ? from.maxWidth : null,
+    minHeight: _height && from.hasBoundedHeight ? from.maxHeight : null,
+  );
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final inner = _filled(constraints);
+    return child?.getDryLayout(inner) ?? inner.smallest;
+  }
+
+  @override
+  void performLayout() {
+    final inner = _filled(constraints);
+    final child = this.child;
+    if (child == null) {
+      size = inner.smallest;
+      return;
+    }
+    child.layout(inner, parentUsesSize: true);
+    size = child.size;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Canvas
+// -----------------------------------------------------------------------------
+
+/// Replays a Canvas node's command list - see [UIBuilder.canvas], which is
+/// the specification this follows command by command.
+///
+/// A command it cannot make sense of - an unknown name, an argument missing -
+/// is skipped, so one bad command costs that shape and not the frame.
+class _CommandPainter extends CustomPainter {
+  _CommandPainter({
+    required this.commands,
+    required this.paints,
+    required this.textColor,
+  });
+
+  final List<Object?> commands;
+  final List<Object?> paints;
+
+  /// What `text` is drawn in when the command names no colour.
+  final Color textColor;
+
+  /// The paints, converted once per frame of commands rather than once per
+  /// command that uses them.
+  late final List<Paint> _paints = [for (final paint in paints) _paint(paint)];
+
+  static double _n(List<Object?> args, int index, [double fallback = 0]) =>
+      index < args.length
+      ? FlutterUIRenderer._double(args[index]) ?? fallback
+      : fallback;
+
+  static Rect _rect(List<Object?> args, int at) =>
+      Rect.fromLTWH(_n(args, at), _n(args, at + 1), _n(args, at + 2), _n(args, at + 3));
+
+  Paint _paint(Object? spec) {
+    final paint = Paint()..isAntiAlias = true;
+    if (spec is! Map) return paint..color = textColor;
+    return paint
+      ..color = FlutterUIRenderer._color(spec['color']) ?? textColor
+      ..style = spec['style'] == 'stroke'
+          ? PaintingStyle.stroke
+          : PaintingStyle.fill
+      ..strokeWidth = FlutterUIRenderer._double(spec['strokeWidth']) ?? 1
+      ..strokeCap = switch (spec['cap']) {
+        'round' => StrokeCap.round,
+        'square' => StrokeCap.square,
+        _ => StrokeCap.butt,
+      }
+      ..strokeJoin = switch (spec['join']) {
+        'round' => StrokeJoin.round,
+        'bevel' => StrokeJoin.bevel,
+        _ => StrokeJoin.miter,
+      };
+  }
+
+  /// The paint a command names: `p` is the index at [at] of its arguments. One
+  /// that names none, or one that is not there, is a plain fill.
+  Paint _paintAt(List<Object?> args, int at) {
+    final index = at < args.length ? args[at] : null;
+    if (index is num && index >= 0 && index < _paints.length) {
+      return _paints[index.toInt()];
+    }
+    return Paint()
+      ..isAntiAlias = true
+      ..color = textColor;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final base = canvas.getSaveCount();
+    canvas.save();
+    // The surface ends at its edges, as a platform canvas does.
+    canvas.clipRect(Offset.zero & size);
+    final floor = canvas.getSaveCount();
+    for (final command in commands) {
+      if (command is! List || command.isEmpty) continue;
+      _draw(canvas, command, floor);
+    }
+    // Whatever the commands saved and never restored ends with the frame.
+    canvas.restoreToCount(base);
+  }
+
+  void _draw(Canvas canvas, List<Object?> c, int floor) {
+    switch (c.first) {
+      case 'rect':
+        canvas.drawRect(_rect(c, 1), _paintAt(c, 5));
+      case 'rrect':
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(_rect(c, 1), Radius.circular(_n(c, 5))),
+          _paintAt(c, 6),
+        );
+      case 'circle':
+        canvas.drawCircle(Offset(_n(c, 1), _n(c, 2)), _n(c, 3), _paintAt(c, 4));
+      case 'oval':
+        canvas.drawOval(_rect(c, 1), _paintAt(c, 5));
+      case 'line':
+        canvas.drawLine(
+          Offset(_n(c, 1), _n(c, 2)),
+          Offset(_n(c, 3), _n(c, 4)),
+          _paintAt(c, 5),
+        );
+      case 'arc':
+        canvas.drawArc(
+          _rect(c, 1),
+          _n(c, 5),
+          _n(c, 6),
+          c.length > 7 && c[7] == true,
+          _paintAt(c, 8),
+        );
+      case 'path':
+        final segments = c.length > 1 ? c[1] : null;
+        if (segments is List) canvas.drawPath(_path(segments), _paintAt(c, 2));
+      case 'text':
+        _text(canvas, c);
+      case 'save':
+        canvas.save();
+      case 'restore':
+        // A restore with no save to match would undo the surface's own clip.
+        if (canvas.getSaveCount() > floor) canvas.restore();
+      case 'translate':
+        canvas.translate(_n(c, 1), _n(c, 2));
+      case 'rotate':
+        canvas.rotate(_n(c, 1));
+      case 'scale':
+        final sx = _n(c, 1, 1);
+        canvas.scale(sx, _n(c, 2, sx));
+      case 'clipRect':
+        canvas.clipRect(_rect(c, 1));
+      case 'clipRRect':
+        canvas.clipRRect(
+          RRect.fromRectAndRadius(_rect(c, 1), Radius.circular(_n(c, 5))),
+        );
+    }
+  }
+
+  static Path _path(List<Object?> segments) {
+    final path = Path();
+    for (final s in segments) {
+      if (s is! List || s.isEmpty) continue;
+      switch (s.first) {
+        case 'M':
+          path.moveTo(_n(s, 1), _n(s, 2));
+        case 'L':
+          path.lineTo(_n(s, 1), _n(s, 2));
+        case 'Q':
+          path.quadraticBezierTo(_n(s, 1), _n(s, 2), _n(s, 3), _n(s, 4));
+        case 'C':
+          path.cubicTo(
+            _n(s, 1),
+            _n(s, 2),
+            _n(s, 3),
+            _n(s, 4),
+            _n(s, 5),
+            _n(s, 6),
+          );
+        case 'A':
+          // Joined to the path with a line, not started afresh.
+          path.arcTo(_rect(s, 1), _n(s, 5), _n(s, 6), false);
+        case 'R':
+          path.addRect(_rect(s, 1));
+        case 'O':
+          path.addOval(_rect(s, 1));
+        case 'Z':
+          path.close();
+      }
+    }
+    return path;
+  }
+
+  /// `text`: drawn from its top-left corner at (x, y). `align` is relative to
+  /// `maxWidth` when there is one - the text is laid out in a box that wide,
+  /// starting at x - and otherwise to x itself: centred on it, or ending at
+  /// it.
+  void _text(Canvas canvas, List<Object?> c) {
+    if (c.length < 4) return;
+    final options = c.length > 4 && c[4] is Map ? c[4] as Map : const {};
+    final maxWidth = FlutterUIRenderer._double(options['maxWidth']);
+    final align = options['align'];
+    final family = FlutterUIRenderer._fontFamily(options['family']);
+    final painter = TextPainter(
+      text: TextSpan(
+        text: '${c[1] ?? ''}',
+        style: TextStyle(
+          fontSize: FlutterUIRenderer._double(options['size']) ?? 14,
+          color: FlutterUIRenderer._color(options['color']) ?? textColor,
+          fontWeight: FlutterUIRenderer._fontWeight(options['weight']),
+          fontFamily: family.$1,
+          fontFamilyFallback: family.$2,
+        ),
+      ),
+      // Coordinates are from the left whatever the locale, so the text is
+      // laid out that way too.
+      textDirection: TextDirection.ltr,
+      textAlign: switch (align) {
+        'center' => TextAlign.center,
+        'right' => TextAlign.right,
+        _ => TextAlign.left,
+      },
+    );
+    if (maxWidth != null && maxWidth > 0) {
+      painter.layout(minWidth: maxWidth, maxWidth: maxWidth);
+    } else {
+      painter.layout();
+    }
+    final x = _n(c, 2);
+    final left = maxWidth != null && maxWidth > 0
+        ? x
+        : switch (align) {
+            'center' => x - painter.width / 2,
+            'right' => x - painter.width,
+            _ => x,
+          };
+    painter.paint(canvas, Offset(left, _n(c, 3)));
+    painter.dispose();
+  }
+
+  // A render makes a new tree, and with it new lists: the same lists mean
+  // the same picture, and anything else is repainted. Comparing them element
+  // by element would cost a frame's worth of work to save one.
+  @override
+  bool shouldRepaint(_CommandPainter old) =>
+      !identical(old.commands, commands) ||
+      !identical(old.paints, paints) ||
+      old.textColor != textColor;
+}
+
+// -----------------------------------------------------------------------------
+// Scrolling
+// -----------------------------------------------------------------------------
+
+/// A scroller, which keeps its offset while the app re-renders around it and
+/// runs the pull-to-refresh spinner for as long as the tree says.
+class _NodeScroll extends StatefulWidget {
+  const _NodeScroll({
+    super.key,
+    required this.renderer,
+    required this.props,
+    required this.child,
+  });
+
+  final FlutterUIRenderer renderer;
+  final Map<String, dynamic> props;
+  final Widget child;
+
+  @override
+  State<_NodeScroll> createState() => _NodeScrollState();
+}
+
+class _NodeScrollState extends State<_NodeScroll> {
+  late final ScrollController _controller;
+  final GlobalKey<RefreshIndicatorState> _indicator = GlobalKey();
+
+  /// Open while a refresh is under way; completing it puts the spinner away.
+  Completer<void>? _refresh;
+
+  /// The scroll ask already carried out, so one version moves the list once.
+  int? _scrollVersion;
+  bool _scrolled = false;
+
+  double? get _askedOffset =>
+      FlutterUIRenderer._double(widget.props['scrollOffset']);
+
+  @override
+  void initState() {
+    super.initState();
+    final offset = _askedOffset;
+    if (offset != null) {
+      _scrolled = true;
+      _scrollVersion = FlutterUIRenderer._double(
+        widget.props['scrollVersion'],
+      )?.toInt();
+    }
+    // The first ask is where the scroller starts, with no jump to see.
+    _controller = ScrollController(initialScrollOffset: offset ?? 0);
+    _followTree();
+  }
+
+  @override
+  void didUpdateWidget(_NodeScroll old) {
+    super.didUpdateWidget(old);
+    _applyScrollRequest();
+    _followTree();
+  }
+
+  /// Jumps to `scrollOffset` when `scrollVersion` is one not yet obeyed.
+  void _applyScrollRequest() {
+    final offset = _askedOffset;
+    if (offset == null) return;
+    final version = FlutterUIRenderer._double(
+      widget.props['scrollVersion'],
+    )?.toInt();
+    if (_scrolled && version == _scrollVersion) return;
+    _scrolled = true;
+    _scrollVersion = version;
+    // After the frame, when the content that came with the ask has been laid
+    // out and the offset can be held to what is really there.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      final position = _controller.position;
+      _controller.jumpTo(
+        offset.clamp(position.minScrollExtent, position.maxScrollExtent),
+      );
+    });
+  }
+
+  /// Brings the spinner in line with the tree's `refreshing`.
+  void _followTree() {
+    if (widget.props['refreshing'] != true) {
+      _refresh?.complete();
+      _refresh = null;
+      return;
+    }
+    if (_refresh != null) return;
+    // The tree says a refresh is running and nobody pulled: the app started
+    // it. The spinner is shown for it, and [_onRefresh] sends nothing.
+    _refresh = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _refresh != null) _indicator.currentState?.show();
+    });
+  }
+
+  Future<void> _onRefresh() {
+    final running = _refresh;
+    if (running != null) return running.future;
+    final started = _refresh = Completer<void>();
+    final eventId = widget.props['refreshEventId'];
+    if (eventId is String) widget.renderer.handleEvent(eventId, const {});
+    return started.future;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.props;
+    final horizontal = p['axis'] == 'horizontal';
+    final shrinkWrap = p['shrinkWrap'] == true;
+    final refreshes =
+        p['refreshEventId'] is String && !horizontal && !shrinkWrap;
+    final scroller = SingleChildScrollView(
+      controller: _controller,
+      scrollDirection: horizontal ? Axis.horizontal : Axis.vertical,
+      reverse: p['reverse'] == true,
+      padding: FlutterUIRenderer._edges(p['padding']),
+      physics: shrinkWrap
+          // As long as its child and going nowhere: the scroller around it
+          // gets the gesture.
+          ? const NeverScrollableScrollPhysics()
+          // Content shorter than the viewport must still be pullable.
+          : refreshes
+          ? const AlwaysScrollableScrollPhysics()
+          : null,
+      child: widget.child,
+    );
+    final reported = p['scrollEventId'] is! String
+        ? scroller
+        : NotificationListener<ScrollNotification>(
+            onNotification: _onScrolled,
+            child: scroller,
+          );
+    if (!refreshes) return reported;
+    return RefreshIndicator(
+      key: _indicator,
+      color: widget.renderer._primaryColor,
+      onRefresh: _onRefresh,
+      child: reported,
+    );
+  }
+
+  /// When the offset was last reported, and what it was.
+  final Stopwatch _sinceReport = Stopwatch();
+  double? _reportedOffset;
+
+  /// Tells the app where the scroller is: when it comes to rest, and at most
+  /// every 100 ms on the way - a report per frame would be a rebuild per
+  /// frame for an app that listens.
+  bool _onScrolled(ScrollNotification notification) {
+    // A scroller inside this one sends its own.
+    if (notification.depth != 0) return false;
+    final atRest = notification is ScrollEndNotification;
+    if (!atRest && notification is! ScrollUpdateNotification) return false;
+    if (!atRest &&
+        _sinceReport.isRunning &&
+        _sinceReport.elapsedMilliseconds < 100) {
+      return false;
+    }
+    final metrics = notification.metrics;
+    if (metrics.pixels == _reportedOffset) return false;
+    _reportedOffset = metrics.pixels;
+    _sinceReport
+      ..reset()
+      ..start();
+    final eventId = widget.props['scrollEventId'];
+    if (eventId is String) {
+      widget.renderer.handleEvent(eventId, {
+        'offset': metrics.pixels,
+        'maxExtent': metrics.maxScrollExtent,
+        'viewport': metrics.viewportDimension,
+      });
+    }
+    return false;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Pickers
+// -----------------------------------------------------------------------------
+
+/// Flutter's date or time picker dialog, shown for as long as the node is in
+/// the tree.
+///
+/// The dialogs close themselves with `Navigator.pop`, which here would pop
+/// the screen the app is on. So the dialog gets a Navigator of its own, whose
+/// one route answers a pop by sending the event and staying where it is: like
+/// every overlay, the picker goes when the app takes it out of the tree.
+class _NodePicker extends StatefulWidget {
+  const _NodePicker({
+    super.key,
+    required this.renderer,
+    required this.props,
+    required this.time,
+  });
+
+  final FlutterUIRenderer renderer;
+  final Map<String, dynamic> props;
+
+  /// A time picker rather than a date picker.
+  final bool time;
+
+  @override
+  State<_NodePicker> createState() => _NodePickerState();
+}
+
+class _NodePickerState extends State<_NodePicker> {
+  static String _two(int value) => value.toString().padLeft(2, '0');
+
+  /// What the dialog popped with: a date, a time, or nothing for Cancel and
+  /// for a tap on the scrim.
+  void _onResult(Object? result) {
+    final p = widget.props;
+    final eventId = p['eventId'];
+    final renderer = widget.renderer;
+    if (result is DateTime && eventId is String) {
+      renderer.handleEvent(eventId, {
+        'value': '${result.year.toString().padLeft(4, '0')}-'
+            '${_two(result.month)}-${_two(result.day)}',
+      });
+    } else if (result is TimeOfDay && eventId is String) {
+      renderer.handleEvent(eventId, {
+        'hour': result.hour,
+        'minute': result.minute,
+      });
+    } else {
+      final dismissEventId = p['dismissEventId'];
+      if (dismissEventId is String) {
+        renderer.handleEvent(dismissEventId, {'reason': 'cancel'});
+      }
+    }
+  }
+
+  static DateTime? _date(Object? value) =>
+      value is String ? DateTime.tryParse(value) : null;
+
+  Widget _dialog(BuildContext context) {
+    // Read when the dialog builds rather than when its route was made, so it
+    // shows what the tree says now.
+    final p = widget.props;
+    final title = FlutterUIRenderer._optString(p['title']);
+    final confirm = FlutterUIRenderer._optString(p['confirmLabel']);
+    final cancel = FlutterUIRenderer._optString(p['cancelLabel']);
+    if (widget.time) {
+      final hour = (FlutterUIRenderer._double(p['hour']) ?? 0).toInt();
+      final minute = (FlutterUIRenderer._double(p['minute']) ?? 0).toInt();
+      final dialog = TimePickerDialog(
+        initialTime: TimeOfDay(
+          hour: hour.clamp(0, 23),
+          minute: minute.clamp(0, 59),
+        ),
+        helpText: title,
+        confirmText: confirm,
+        cancelText: cancel,
+      );
+      final use24Hour = p['use24Hour'];
+      if (use24Hour is! bool) return dialog;
+      return MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: use24Hour),
+        child: dialog,
+      );
+    }
+    final today = DateUtils.dateOnly(DateTime.now());
+    var first = _date(p['first']) ?? DateTime(today.year - 100);
+    var last = _date(p['last']) ?? DateTime(today.year + 100);
+    // Flutter asserts on a range that runs backwards, and on an initial date
+    // outside it; a tree that says either still gets a picker.
+    if (last.isBefore(first)) (first, last) = (last, first);
+    var initial = _date(p['initial']) ?? today;
+    if (initial.isBefore(first)) initial = first;
+    if (initial.isAfter(last)) initial = last;
+    return DatePickerDialog(
+      initialDate: initial,
+      firstDate: first,
+      lastDate: last,
+      helpText: title,
+      confirmText: confirm,
+      cancelText: cancel,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final barrierLabel = MaterialLocalizations.of(
+      context,
+    ).modalBarrierDismissLabel;
+    return Navigator(
+      onGenerateInitialRoutes: (_, _) => [
+        // Something under the picker's route: the scrim asks the Navigator
+        // whether it *may* pop, and the first route of a Navigator may not.
+        PageRouteBuilder<void>(
+          opaque: false,
+          pageBuilder: (_, _, _) => const SizedBox.shrink(),
+        ),
+        _PickerRoute(
+          barrierLabel: barrierLabel,
+          onResult: _onResult,
+          pageBuilder: (context, _, _) => _dialog(context),
+        ),
+      ],
+    );
+  }
+}
+
+/// The route a picker dialog sits on: a scrim, no transition, and a pop that
+/// reports instead of leaving.
+class _PickerRoute extends RawDialogRoute<Object?> {
+  _PickerRoute({
+    required super.pageBuilder,
+    required super.barrierLabel,
+    required this.onResult,
+  }) : super(
+         barrierDismissible: true,
+         barrierColor: const Color(0x66000000),
+         transitionDuration: Duration.zero,
+       );
+
+  final ValueChanged<Object?> onResult;
+
+  /// False is the answer a route gives when it dealt with the pop itself and
+  /// is staying - what a route with local history says. Calling super is
+  /// what would take the route away, so it is not called.
+  @override
+  // ignore: must_call_super
+  bool didPop(Object? result) {
+    onResult(result);
+    return false;
   }
 }

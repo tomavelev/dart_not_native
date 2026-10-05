@@ -54,8 +54,31 @@ void main() {
 
   WidgetNode button(String id) => tester.get(id);
 
-  test('a button with no style says nothing about its shape', () {
+  test('a button with no style is Material 3\'s, as Flutter\'s is', () {
+    // 40 tall with 24 either side of the label - stated, because the
+    // protocol's own default is the smaller button of its scale.
     final props = button('plain').props;
+    expect(props['minHeight'], 40);
+    expect(props['paddingHorizontal'], 24);
+    // A text button has less beside its label, and keeps what it stated.
+    expect(button('flat').props['paddingHorizontal'], 12);
+    expect(button('flat').props['minHeight'], 44.0);
+
+    for (final key in ['minWidth', 'fontSize', 'paddingVertical']) {
+      expect(props.containsKey(key), isFalse, reason: key);
+    }
+  });
+
+  test('under a Material 2 theme it says nothing about its shape', () {
+    final tester = AppTester.mount(
+      hostApp(
+        Theme(
+          data: ThemeData(useMaterial3: false),
+          child: const _Screen(),
+        ),
+      ),
+    );
+    final props = tester.get('plain').props;
 
     for (final key in [
       'minHeight',

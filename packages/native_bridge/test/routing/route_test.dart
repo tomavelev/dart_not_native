@@ -1,7 +1,7 @@
 /// Unit tests for route matching, parameter extraction and history.
 library;
 
-import 'package:dart_not_native/core.dart' hide Route;
+import 'package:dart_not_native/core.dart';
 import 'package:dart_not_native/routing/route.dart';
 import 'package:flutter_test/flutter_test.dart';
 

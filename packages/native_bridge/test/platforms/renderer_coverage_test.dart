@@ -337,6 +337,296 @@ void main() {
     );
   });
 
+  // The four things below were added to both native renderers together and
+  // none of them can be run here, so each is pinned to the function that does
+  // it. A right-to-left screen, a disabled control and an image's fallback
+  // all fail the same quiet way when the line goes missing: the screen still
+  // draws, just not what the tree said.
+  group('the native renderers answer for', () {
+    const kotlin =
+        'android/src/main/kotlin/com/programtom/dart_not_native/'
+        'NativeUIRenderer.kt';
+    const swift = 'ios/Classes/NativeUIRenderer.swift';
+
+    /// What each renderer's function must still contain: a name for the
+    /// test, the file, the function's opening, and the lines that do the job.
+    const pinned = <(String, String, String, List<String>)>[
+      (
+        'Android (Kotlin) turns the root container for an rtl tree',
+        kotlin,
+        'private fun applyDirection(root: View, tree: Map<*, *>): Boolean {',
+        ['"textDirection"', 'LAYOUT_DIRECTION_RTL'],
+      ),
+      (
+        'Android (Kotlin) reads the direction on every render',
+        kotlin,
+        'private fun renderTree(tree: Map<*, *>?): Map<String, Any>? {',
+        ['applyDirection(root, next)'],
+      ),
+      (
+        'iOS (Swift) reads the direction on every render',
+        swift,
+        'private func renderTree(_ tree: [String: Any]) -> [String: Any]? {',
+        ['next["textDirection"]', 'applyDirection('],
+      ),
+      (
+        'iOS (Swift) turns every view for an rtl tree',
+        swift,
+        'private func applyDirection(_ view: UIView) {',
+        ['.forceRightToLeft'],
+      ),
+      (
+        'Android (Kotlin) disables a checkable control the tree disabled',
+        kotlin,
+        'private fun applyDisabled(button: CompoundButton, node: Map<*, *>) {',
+        ['node["disabled"] == true', 'isEnabled'],
+      ),
+      (
+        'Android (Kotlin) does so again when it patches one',
+        kotlin,
+        'private fun patchControl(view: View, node: Map<*, *>, '
+            'checkedKey: String): Boolean {',
+        ['applyDisabled'],
+      ),
+      (
+        'iOS (Swift) dims a disabled checkbox or radio',
+        swift,
+        'private func styleControlLabel(_ button: UIButton, '
+            '_ node: [String: Any]) {',
+        ['node["disabled"]', 'button.alpha'],
+      ),
+      (
+        'iOS (Swift) disables a switch the tree disabled',
+        swift,
+        'private func renderToggle(_ node: [String: Any]) -> UIView {',
+        ['node["disabled"]'],
+      ),
+      (
+        'Android (Kotlin) owns an HTTP cache on disk',
+        kotlin,
+        'private fun installHttpCache() {',
+        ['HttpResponseCache.getInstalled()', 'HttpResponseCache.install('],
+      ),
+      (
+        'Android (Kotlin) looks in memory before it fetches or shows a '
+            'fallback',
+        kotlin,
+        'private fun loadImage(src: String?, into: ImageView, hiding: View, '
+            'limit: Int) {',
+        ['imageCache.get(key)', 'imageWaiters[key]'],
+      ),
+      (
+        'iOS (Swift) looks in memory before it fetches or shows a fallback',
+        swift,
+        'private func load(_ src: String?, into view: UIImageView, '
+            'hiding fallback: UIView) {',
+        ['imageCache.object(forKey:', 'imageWaiters'],
+      ),
+      (
+        'Android (Kotlin) draws an image\'s child as its fallback',
+        kotlin,
+        'private fun renderImage(node: Map<*, *>): View {',
+        ['imageFallback(node)'],
+      ),
+      (
+        'iOS (Swift) draws an image\'s child as its fallback',
+        swift,
+        'private func renderImage(_ node: [String: Any]) -> UIView {',
+        ['ImageFallbackHost()', 'firstChild(node)'],
+      ),
+      // An event is answered by the build it was raised against (see
+      // EventBindings): each native half has to keep the number its tree
+      // came with and hand it back from the one place events leave by.
+      (
+        'Android (Kotlin) keeps the build number of the tree it shows',
+        kotlin,
+        'private fun renderTree(tree: Map<*, *>?): Map<String, Any>? {',
+        ['treeBuild = (tree["build"] as? Number)?.toInt()'],
+      ),
+      (
+        'Android (Kotlin) names the build with every event',
+        kotlin,
+        'private fun sendEvent(eventId: String, data: Map<String, Any?>) {',
+        ['"build" to treeBuild'],
+      ),
+      (
+        'iOS (Swift) keeps the build number of the tree it shows',
+        swift,
+        'private func renderTree(_ tree: [String: Any]) -> [String: Any]? {',
+        ['treeBuild = (tree["build"] as? NSNumber)?.intValue'],
+      ),
+      (
+        'iOS (Swift) names the build with every event',
+        swift,
+        'private func send(eventId: String, data: [String: Any]) {',
+        ['arguments["build"] = treeBuild', 'arguments: arguments'],
+      ),
+    ];
+
+    for (final (name, path, opening, lines) in pinned) {
+      test(name, () {
+        final body = handlerBody(path, opening);
+        for (final line in lines) {
+          expect(body, contains(line), reason: '$opening lost "$line"');
+        }
+      });
+    }
+
+    for (final control in const {
+      'renderCheckbox(node: Map<*, *>): View = '
+          'MaterialCheckBox(materialContext).apply {',
+      'renderRadio(node: Map<*, *>): View = '
+          'MaterialRadioButton(materialContext).apply {',
+      'renderToggle(node: Map<*, *>): View = '
+          'SwitchCompat(materialContext).apply {',
+    }) {
+      test(
+        'Android (Kotlin) applies disabled in ${control.split('(').first}',
+        () {
+          expect(
+            handlerBody(kotlin, 'private fun $control'),
+            contains('applyDisabled'),
+          );
+        },
+      );
+    }
+  });
+
+  // A device test - Maestro, agent-device - and a screen reader both go
+  // through the platform's accessibility tree, and two things have to be in
+  // it for either to work on a screen composed from boxes: the node's `id`,
+  // or nothing can be found whatever the language, and an activate action on
+  // a box that takes a tap, or it can be found and not pressed. Neither shows
+  // on screen, so a renderer that loses one looks exactly as it did.
+  group('what a device test finds a view by', () {
+    const kotlin =
+        'android/src/main/kotlin/com/programtom/dart_not_native/'
+        'NativeUIRenderer.kt';
+    const kotlinViews =
+        'android/src/main/kotlin/com/programtom/dart_not_native/'
+        'NativeUIViews.kt';
+    const swift = 'ios/Classes/NativeUIRenderer.swift';
+    const swiftViews = 'ios/Classes/NativeUIViews.swift';
+
+    test('Android (Kotlin) reports a node id as the resource name', () {
+      final identify = handlerBody(
+        kotlin,
+        'private fun identify(view: View, node: Map<*, *>) {',
+      );
+      expect(identify, contains('node["id"]'));
+      expect(identify, contains('access.resourceName = id'));
+      // The delegate is what puts it where uiautomator reads `resource-id`.
+      expect(
+        handlerBody(
+          kotlinViews,
+          'override fun onInitializeAccessibilityNodeInfo('
+          'host: View, info: AccessibilityNodeInfoCompat) {',
+        ),
+        contains('info.viewIdResourceName = it'),
+      );
+    });
+
+    test('Android (Kotlin) identifies a view when built and when patched', () {
+      final source = File(kotlin).readAsStringSync();
+      expect(source, contains('drawWidget(node)?.also { identify(it, node) }'));
+      expect(
+        handlerBody(
+          kotlin,
+          'private fun patchNode(view: View, oldNode: Map<*, *>, '
+          'newNode: Map<*, *>): Boolean {',
+        ),
+        contains('identify(view, newNode)'),
+      );
+    });
+
+    test('iOS (Swift) reports a node id as the accessibility identifier', () {
+      final identify = handlerBody(
+        swift,
+        'private func identify(_ view: UIView, _ node: [String: Any]) {',
+      );
+      expect(identify, contains('node["id"]'));
+      expect(identify, contains('target.accessibilityIdentifier = id'));
+    });
+
+    test('iOS (Swift) identifies a view when built and when patched', () {
+      final source = File(swift).readAsStringSync();
+      // Once from the build wrapper, and from the patch path for the node
+      // itself and for a lazy list that was reconciled.
+      expect(
+        'identify(view, '.allMatches(source).length,
+        greaterThanOrEqualTo(3),
+      );
+      expect(source, contains('identify(view, newNode)'));
+    });
+
+    test('Android (Kotlin) lets a tappable box be activated', () {
+      final views = File(kotlinViews).readAsStringSync();
+      // Clickable is what offers the action; performClick is what it does.
+      expect(views, contains('isClickable = value.tap != null'));
+      expect(views, contains('isLongClickable = value.longPress != null'));
+      expect(
+        handlerBody(kotlinViews, 'override fun performClick(): Boolean {'),
+        contains('activate(events.tap)'),
+      );
+      expect(
+        views,
+        contains(
+          'override fun performLongClick(): Boolean = '
+          'activate(events.longPress)',
+        ),
+      );
+      // Nothing is activated through a box that lets no touch through.
+      expect(
+        handlerBody(
+          kotlinViews,
+          'private fun activate(eventId: String?): Boolean {',
+        ),
+        allOf(contains('pointerIgnored(this)'), contains('host.send(')),
+      );
+    });
+
+    test('iOS (Swift) lets a tappable box be activated', () {
+      final activate = handlerBody(
+        swiftViews,
+        'override func accessibilityActivate() -> Bool {',
+      );
+      expect(activate, contains('style.tapEventId'));
+      expect(activate, contains('!pointerIgnored'));
+      expect(activate, contains('onEvent?(eventId'));
+    });
+  });
+
+  test('each native renderer sends its events from one place', () {
+    const kotlin =
+        'android/src/main/kotlin/com/programtom/dart_not_native/'
+        'NativeUIRenderer.kt';
+    const swift = 'ios/Classes/NativeUIRenderer.swift';
+    // The build number is added where an event leaves; a second call to the
+    // channel would be a way round it.
+    expect(
+      'methodChannel?.invokeMethod('.allMatches(File(swift).readAsStringSync()),
+      hasLength(1),
+    );
+    expect(
+      'channel?.invokeMethod('.allMatches(File(kotlin).readAsStringSync()),
+      hasLength(1),
+    );
+  });
+
+  for (final path in const [
+    'lib/platforms/android_renderer.dart',
+    'lib/platforms/ios_renderer.dart',
+  ]) {
+    test('$path sends the build number and reads it back', () {
+      final source = File(path).readAsStringSync();
+      expect(source, contains("json['build'] = build"));
+      expect(
+        source,
+        contains("EventBindings.eventBuild = (arguments['build']"),
+      );
+    });
+  }
+
   test('the vocabulary is not empty and has no duplicates by case', () {
     expect(nodeTypes, isNotEmpty);
     expect(

@@ -135,7 +135,7 @@ class _StorageExampleAppState extends State<StorageExampleApp> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const AppBar(title: Text('Storage Plugin Demo')),
-      body: Padding(
+      body: SingleChildScrollView(child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,7 +192,7 @@ class _StorageExampleAppState extends State<StorageExampleApp> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

@@ -50,22 +50,25 @@ class _Wrapper extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(body: child);
 }
 
-/// The node one [AnimatedContainer] renders to, on its own.
-WidgetNode boxOf(AnimatedContainer box) =>
-    AppTester.mount(hostApp(_Wrapper(box))).ofType('AnimatedContainer').single;
+/// The node one [AnimatedContainer] renders to, on its own: a box that says
+/// how long a change to it should take.
+WidgetNode boxOf(AnimatedContainer box) => AppTester.mount(
+  hostApp(_Wrapper(box)),
+).ofType('Box').singleWhere((node) => node.props.containsKey('animateMs'));
 
 void main() {
   late AppTester tester;
 
   setUp(() => tester = AppTester.mount(hostApp(const _Chip())));
 
-  WidgetNode box() => tester.ofType('AnimatedContainer').single;
+  WidgetNode box() => tester.get('chip');
 
   test('carries the size, the colour, the duration and the curve', () {
     expect(box().props['width'], 80.0);
     expect(box().props['height'], 64.0);
     expect(box().props['color'], '#9e9e9e');
-    expect(box().props['durationMs'], 300);
+    expect(box().type, 'Box');
+    expect(box().props['animateMs'], 300);
     expect(box().props['curve'], 'easeOut');
   });
 
@@ -85,25 +88,35 @@ void main() {
 
   test('a dimension left out is left out of the node', () {
     final node = boxOf(
-      const AnimatedContainer(height: 40, child: Text('x')),
+      AnimatedContainer(
+        height: 40,
+        duration: const Duration(milliseconds: 200),
+        child: const Text('x'),
+      ),
     );
 
     expect(node.props.containsKey('width'), isFalse);
     expect(node.props['height'], 40.0);
-    // The default curve is named, so a renderer never has to guess.
-    expect(node.props['curve'], 'easeInOut');
-    expect(node.props['durationMs'], 200);
+    // The default curve is Flutter's, and it is named, so a renderer never
+    // has to guess.
+    expect(node.props['curve'], 'linear');
+    expect(node.props['animateMs'], 200);
   });
 
   test('a fade carries a curve too', () {
     final node = AppTester.mount(
       hostApp(
         const _Wrapper(
-          AnimatedOpacity(opacity: 0.5, curve: Curves.linear, child: Text('x')),
+          AnimatedOpacity(
+            opacity: 0.5,
+            curve: Curves.easeIn,
+            duration: Duration(milliseconds: 200),
+            child: Text('x'),
+          ),
         ),
       ),
     ).ofType('AnimatedOpacity').single;
 
-    expect(node.props['curve'], 'linear');
+    expect(node.props['curve'], 'easeIn');
   });
 }

@@ -47,7 +47,7 @@ class I18nExampleApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Tr('navigation.settings')),
-      body: Padding(
+      body: SingleChildScrollView(child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -59,7 +59,9 @@ class I18nExampleApp extends StatelessWidget {
             const SizedBox(height: SPACING_MD),
             const Text('Select language:'),
             const SizedBox(height: SPACING_SM),
-            Row(
+            // A Wrap, not a Row: one button per language is wider than a
+            // phone, and a Row overflows where a Wrap takes a second line.
+            Wrap(
               children: [
                 for (final (code, label) in i18nLanguages)
                   _languageButton(code, label),
@@ -73,7 +75,7 @@ class I18nExampleApp extends StatelessWidget {
             ..._examples(),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -124,7 +126,9 @@ class I18nExampleApp extends StatelessWidget {
     int? count,
     String? defaultValue,
   }) =>
-      Row(
+      // A Wrap, not a Row: a long label and a long translation do not fit on
+      // one line of a phone, and the value belongs under its label then.
+      Wrap(
         spacing: SPACING_SM,
         children: [
           Text('$title:',

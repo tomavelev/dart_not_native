@@ -3,10 +3,13 @@
 /// `uses-material-design: true`) rather than an approximate system drawable.
 ///
 /// The values are the codepoints from Flutter's own `Icons` class, so an icon
-/// drawn here matches the one a Flutter-hosted screen would draw. The web
-/// renderer keeps addressing icons by name (the Material Icons web font renders
-/// the name as a ligature), so this table is additive - a builder sends both the
-/// name and, when it is a known one, the codepoint.
+/// drawn here matches the one a Flutter-hosted screen would draw - on the web
+/// too, whose shell ships the same font. A builder that is given a name sends
+/// it and, when it is a known one, the codepoint.
+///
+/// Base names only: the outlined, rounded and sharp variants are in `Icons`,
+/// where an unused one costs nothing, and not in this map, which is kept
+/// whole by any build that looks a name up.
 ///
 /// Pure Dart on purpose: this file is reachable from the web build, which has no
 /// Flutter engine, so it cannot import `package:flutter`.

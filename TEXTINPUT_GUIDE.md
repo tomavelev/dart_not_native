@@ -1,8 +1,20 @@
 # Text Input & Forms Guide
 
-Text entry in dart_not_native is a plain-Flutter `TextField`, and validated forms
-are a `FormBuilder` + `TextFormField`, all from
-`package:dart_not_native/widgets.dart`. This guide covers both.
+Text entry in dart_not_native is a plain-Flutter `TextField`, from
+`package:dart_not_native/widgets.dart`. Validated forms come two ways, and
+this guide covers both:
+
+- **Flutter's `Form`** - `GlobalKey<FormState>`, `TextFormField(validator:,
+  onSaved:)`. What an existing Flutter app already has; it moves over as it
+  is.
+- **The framework's form model** - a `FormBuilder` that declares fields and
+  validators in Dart, bound to the screen with `ModelTextFormField`. More
+  than Flutter's: async validators, cross-field rules, undo.
+
+The names changed on 2026-10-03, when the widget layer took Flutter's shape:
+`Form`, `FormField` and `TextFormField` are Flutter's widgets now, and the
+model that used to carry those names is `FormModel`, `FormFieldModel` and
+`ModelTextFormField(field:)`.
 
 The field itself is the platform's own editor - `UITextField` on iOS, `EditText`
 on Android, `<input>`/`<textarea>` on the web, a Flutter `TextField` under the
@@ -25,8 +37,15 @@ TextField(
 ```
 
 `TextField` takes `controller`, `decoration` (`labelText` / `hintText` /
-`errorText`), `obscureText` for passwords, `enabled`, `maxLines`, and the events
-`onChanged` / `onSubmitted` / `onFocus` / `onBlur`.
+`helperText` / `errorText`, a `prefixIcon` and a `suffixIcon`), `obscureText`
+for passwords, `keyboardType`, `textCapitalization`, `maxLength`, `readOnly`
+with `onTap` (the field that opens a date picker), `enabled`, `maxLines`, and
+the events `onChanged` / `onSubmitted` / `onEditingComplete`. `onFocus` and
+`onBlur` are the framework's own additions.
+
+The field is the platform's, in the platform's look: `style`, and the parts of
+`InputDecoration` about appearance (`border`, `filled`, `fillColor`,
+`contentPadding`), are accepted and not carried.
 
 ### Reading and setting the value
 
@@ -96,10 +115,58 @@ carries, and a renderer acts on a version it has not seen. That is deliberate -
 "focused" as a *state* would take the caret back every time the app re-rendered
 for an unrelated reason. A node nobody has called yet asks for nothing.
 
-## Validated forms
+## Flutter's `Form`
 
-For anything with validation, build a `Form` and bind each field to a
-`TextFormField`. Three steps.
+```dart
+class _LoginState extends State<Login> {
+  final _formKey = GlobalKey<FormState>();
+  String _email = '';
+
+  void _submit() {
+    final form = _formKey.currentState!;
+    if (!form.validate()) return;   // shows every field's error
+    form.save();                    // calls each onSaved
+    debugPrint('signing in $_email');
+  }
+
+  @override
+  Widget build(BuildContext context) => Form(
+        key: _formKey,
+        child: Column(children: [
+          TextFormField(
+            decoration: const InputDecoration(labelText: 'Email'),
+            keyboardType: TextInputType.emailAddress,
+            validator: (value) =>
+                value == null || !value.contains('@') ? 'Enter an email' : null,
+            onSaved: (value) => _email = value ?? '',
+          ),
+          DropdownButtonFormField<String>(
+            decoration: const InputDecoration(labelText: 'Role'),
+            items: const [
+              DropdownMenuItem(value: 'guest', child: Text('Guest')),
+              DropdownMenuItem(value: 'host', child: Text('Host')),
+            ],
+            onChanged: (value) {},
+            validator: (value) => value == null ? 'Choose one' : null,
+          ),
+          ElevatedButton(onPressed: _submit, child: const Text('Sign in')),
+        ]),
+      );
+}
+```
+
+`Form`, `FormState` (`validate`, `save`, `reset`), `FormField<T>` for a field
+of your own, `TextFormField`, `DropdownButtonFormField` and
+`AutovalidateMode` are Flutter's, with Flutter's signatures. A dropdown is the
+platform's own menu, and `showDatePicker` / `showTimePicker` open the
+platform's own pickers - in the device's language, whatever `locale` they are
+passed.
+
+## The framework's form model
+
+For validation that is more than a function per field - async checks, a field
+that depends on another, undo - build a `FormModel` and bind each field to a
+`ModelTextFormField`. Three steps.
 
 ### 1. Build the form
 
@@ -127,15 +194,15 @@ final form = (FormBuilder()
 
 ### 2. Bind the fields
 
-`TextFormField(field:)` renders the field's value, label, hint and validation
+`ModelTextFormField(field:)` renders the field's value, label, hint and validation
 error, reports edits back, and validates on submit (and on blur by default). It
 rebuilds itself when a validator reports an error, so you do not have to.
 
 ```dart
 Column(children: [
-  TextFormField(field: form.getField('name')!),
-  TextFormField(field: form.getField('email')!),
-  TextFormField(field: form.getField('password')!),
+  ModelTextFormField(field: form.getField('name')!),
+  ModelTextFormField(field: form.getField('email')!),
+  ModelTextFormField(field: form.getField('password')!),
   ElevatedButton(onPressed: _submit, child: const Text('Sign up')),
 ]);
 ```
@@ -148,13 +215,17 @@ Future<void> _submit() async {
     final data = form.values;          // { 'name': 'Ada', 'email': ... }
     await api.signUp(data);
   }
-  // On failure each field already shows its error - TextFormField saw it.
+  // On failure each field already shows its error - ModelTextFormField saw it.
 }
 ```
 
-Other `Form` members: `getField(name)`, `values`, `isValid`, `validate()`,
-`reset()`, and `onChange` (a stream of the whole value map). After `reset()`,
-rebuild so the bound fields pick the cleared values back up.
+`form.submit(onValid)` is the same in one call - validate everything, show
+every error, and run the work only if there is nothing to show - and
+`form.firstInvalid` names the field to send the user to.
+
+Other `FormModel` members: `getField(name)`, `values`, `isValid`,
+`validate()`, `reset()`, and `onChange` (a stream of the whole value map).
+After `reset()`, rebuild so the bound fields pick the cleared values back up.
 
 ## Validators
 
@@ -183,7 +254,7 @@ class SignUp extends StatefulWidget {
 }
 
 class _SignUpState extends State<SignUp> {
-  late final Form form = (FormBuilder()
+  late final FormModel form = (FormBuilder()
         ..addTextField(name: 'name', label: 'Name', required: true)
         ..addEmailField(name: 'email')
         ..addPasswordField(name: 'password'))
@@ -200,12 +271,15 @@ class _SignUpState extends State<SignUp> {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: const AppBar(title: Text('Sign up')),
-        body: Padding(
+        // A Scaffold's body does not scroll, so a form that may be taller
+        // than the window - or than what the keyboard leaves of it - goes in
+        // a scroller.
+        body: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(children: [
-            TextFormField(field: form.getField('name')!),
-            TextFormField(field: form.getField('email')!),
-            TextFormField(field: form.getField('password')!),
+            ModelTextFormField(field: form.getField('name')!),
+            ModelTextFormField(field: form.getField('email')!),
+            ModelTextFormField(field: form.getField('password')!),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: _submit, child: const Text('Sign up')),
             Text(status),
@@ -216,5 +290,7 @@ class _SignUpState extends State<SignUp> {
 ```
 
 The text-input showcase (`lib/examples/apps/textinput_showcase_app.dart`) shows
-the raw `TextField` variations; the pattern above shows the same fields wired
-through a form.
+the raw `TextField` variations, and the sign-up example
+(`lib/examples/apps/signup_form_app.dart`) is the form model on a whole
+screen: four fields that depend on each other, a submit, and the caret sent to
+the first field that needs attention.

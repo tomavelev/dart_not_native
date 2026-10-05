@@ -1,438 +1,464 @@
 {
   "type": "Scaffold",
-  "props": {},
+  "props": {
+    "bodyScrolls": false
+  },
   "children": [
     {
       "type": "AppBar",
       "props": {
-        "title": "Settings"
+        "title": "Settings",
+        "backgroundColor": "#ffffff",
+        "foregroundColor": "#212121"
       },
       "children": null
     },
     {
-      "type": "Padding",
+      "type": "Scroll",
       "props": {
-        "padding": 16.0
+        "scrollOffset": 0.0,
+        "scrollVersion": 0,
+        "scrollEventId": "cb:0"
       },
       "children": [
         {
-          "type": "Column",
+          "type": "Padding",
           "props": {
-            "crossAxisAlignment": "start"
+            "padding": 16.0
           },
           "children": [
             {
-              "type": "Text",
+              "type": "Column",
               "props": {
-                "content": "Language: en",
-                "fontSize": 20.0,
-                "fontWeight": 500,
-                "id": "current_locale"
-              },
-              "children": null
-            },
-            {
-              "type": "SizedBox",
-              "props": {
-                "height": 16.0
-              },
-              "children": null
-            },
-            {
-              "type": "Text",
-              "props": {
-                "content": "Select language:"
-              },
-              "children": null
-            },
-            {
-              "type": "SizedBox",
-              "props": {
-                "height": 8.0
-              },
-              "children": null
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 0.0
-              },
-              "children": [
-                {
-                  "type": "Button",
-                  "props": {
-                    "label": "English",
-                    "eventId": "cb:lang_en",
-                    "variant": "primary",
-                    "disabled": false,
-                    "id": "lang_en"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Button",
-                  "props": {
-                    "label": "Español",
-                    "eventId": "cb:lang_es",
-                    "variant": "tertiary",
-                    "disabled": false,
-                    "id": "lang_es"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Button",
-                  "props": {
-                    "label": "Français",
-                    "eventId": "cb:lang_fr",
-                    "variant": "tertiary",
-                    "disabled": false,
-                    "id": "lang_fr"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Button",
-                  "props": {
-                    "label": "Deutsch",
-                    "eventId": "cb:lang_de",
-                    "variant": "tertiary",
-                    "disabled": false,
-                    "id": "lang_de"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Button",
-                  "props": {
-                    "label": "日本語",
-                    "eventId": "cb:lang_ja",
-                    "variant": "tertiary",
-                    "disabled": false,
-                    "id": "lang_ja"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Button",
-                  "props": {
-                    "label": "中文",
-                    "eventId": "cb:lang_zh",
-                    "variant": "tertiary",
-                    "disabled": false,
-                    "id": "lang_zh"
-                  },
-                  "children": null
-                }
-              ]
-            },
-            {
-              "type": "SizedBox",
-              "props": {
-                "height": 24.0
-              },
-              "children": null
-            },
-            {
-              "type": "Text",
-              "props": {
-                "content": "Examples:",
-                "fontSize": 16.0,
-                "fontWeight": 700
-              },
-              "children": null
-            },
-            {
-              "type": "SizedBox",
-              "props": {
-                "height": 8.0
-              },
-              "children": null
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
+                "crossAxisAlignment": "start"
               },
               "children": [
                 {
                   "type": "Text",
                   "props": {
-                    "content": "Simple translation:",
-                    "color": "#757575"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "OK",
+                    "content": "Language: en",
+                    "fontSize": 20.0,
                     "fontWeight": 500,
-                    "id": "value_ok"
+                    "id": "current_locale"
                   },
                   "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
+                },
                 {
-                  "type": "Text",
+                  "type": "SizedBox",
                   "props": {
-                    "content": "Nested key (common.cancel):",
-                    "color": "#757575"
+                    "height": 16.0
                   },
                   "children": null
                 },
                 {
                   "type": "Text",
                   "props": {
-                    "content": "Cancel",
-                    "fontWeight": 500,
-                    "id": "value_cancel"
+                    "content": "Select language:"
                   },
                   "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
+                },
                 {
-                  "type": "Text",
+                  "type": "SizedBox",
                   "props": {
-                    "content": "Message:",
-                    "color": "#757575"
+                    "height": 8.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Wrap",
+                  "props": {
+                    "spacing": 0.0,
+                    "runSpacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Button",
+                      "props": {
+                        "label": "English",
+                        "eventId": "cb:lang_en",
+                        "variant": "primary",
+                        "minHeight": 40.0,
+                        "paddingHorizontal": 24.0,
+                        "disabled": false,
+                        "id": "lang_en"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Button",
+                      "props": {
+                        "label": "Español",
+                        "eventId": "cb:lang_es",
+                        "variant": "tertiary",
+                        "minHeight": 40.0,
+                        "paddingHorizontal": 12.0,
+                        "disabled": false,
+                        "id": "lang_es"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Button",
+                      "props": {
+                        "label": "Français",
+                        "eventId": "cb:lang_fr",
+                        "variant": "tertiary",
+                        "minHeight": 40.0,
+                        "paddingHorizontal": 12.0,
+                        "disabled": false,
+                        "id": "lang_fr"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Button",
+                      "props": {
+                        "label": "Deutsch",
+                        "eventId": "cb:lang_de",
+                        "variant": "tertiary",
+                        "minHeight": 40.0,
+                        "paddingHorizontal": 12.0,
+                        "disabled": false,
+                        "id": "lang_de"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Button",
+                      "props": {
+                        "label": "日本語",
+                        "eventId": "cb:lang_ja",
+                        "variant": "tertiary",
+                        "minHeight": 40.0,
+                        "paddingHorizontal": 12.0,
+                        "disabled": false,
+                        "id": "lang_ja"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Button",
+                      "props": {
+                        "label": "中文",
+                        "eventId": "cb:lang_zh",
+                        "variant": "tertiary",
+                        "minHeight": 40.0,
+                        "paddingHorizontal": 12.0,
+                        "disabled": false,
+                        "id": "lang_zh"
+                      },
+                      "children": null
+                    }
+                  ]
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 24.0
                   },
                   "children": null
                 },
                 {
                   "type": "Text",
                   "props": {
-                    "content": "Welcome!",
-                    "fontWeight": 500,
-                    "id": "value_welcome"
-                  },
-                  "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Form label (forms.email):",
-                    "color": "#757575"
+                    "content": "Examples:",
+                    "fontSize": 16.0,
+                    "fontWeight": 700
                   },
                   "children": null
                 },
                 {
-                  "type": "Text",
+                  "type": "SizedBox",
                   "props": {
-                    "content": "Email",
-                    "fontWeight": 500,
-                    "id": "value_email"
-                  },
-                  "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Validation error:",
-                    "color": "#757575"
+                    "height": 8.0
                   },
                   "children": null
                 },
                 {
-                  "type": "Text",
+                  "type": "Wrap",
                   "props": {
-                    "content": "This field is required",
-                    "fontWeight": 500,
-                    "id": "value_required"
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
                   },
-                  "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Plural, 3 items:",
-                    "color": "#757575"
-                  },
-                  "children": null
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Simple translation:",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "OK",
+                        "fontWeight": 500,
+                        "id": "value_ok"
+                      },
+                      "children": null
+                    }
+                  ]
                 },
                 {
-                  "type": "Text",
+                  "type": "Wrap",
                   "props": {
-                    "content": "3 items",
-                    "fontWeight": 500,
-                    "id": "value_items_3"
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
                   },
-                  "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Plural, 1 item:",
-                    "color": "#757575"
-                  },
-                  "children": null
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Nested key (common.cancel):",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Cancel",
+                        "fontWeight": 500,
+                        "id": "value_cancel"
+                      },
+                      "children": null
+                    }
+                  ]
                 },
                 {
-                  "type": "Text",
+                  "type": "Wrap",
                   "props": {
-                    "content": "1 item",
-                    "fontWeight": 500,
-                    "id": "value_items_1"
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
                   },
-                  "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Plural, 0 items:",
-                    "color": "#757575"
-                  },
-                  "children": null
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Message:",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Welcome!",
+                        "fontWeight": 500,
+                        "id": "value_welcome"
+                      },
+                      "children": null
+                    }
+                  ]
                 },
                 {
-                  "type": "Text",
+                  "type": "Wrap",
                   "props": {
-                    "content": "No items",
-                    "fontWeight": 500,
-                    "id": "value_items_0"
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
                   },
-                  "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Plural, 25 users:",
-                    "color": "#757575"
-                  },
-                  "children": null
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Form label (forms.email):",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Email",
+                        "fontWeight": 500,
+                        "id": "value_email"
+                      },
+                      "children": null
+                    }
+                  ]
                 },
                 {
-                  "type": "Text",
+                  "type": "Wrap",
                   "props": {
-                    "content": "25 users",
-                    "fontWeight": 500,
-                    "id": "value_users_25"
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
                   },
-                  "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Relative time:",
-                    "color": "#757575"
-                  },
-                  "children": null
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Validation error:",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "This field is required",
+                        "fontWeight": 500,
+                        "id": "value_required"
+                      },
+                      "children": null
+                    }
+                  ]
                 },
                 {
-                  "type": "Text",
+                  "type": "Wrap",
                   "props": {
-                    "content": "Just now",
-                    "fontWeight": 500,
-                    "id": "value_just_now"
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
                   },
-                  "children": null
-                }
-              ]
-            },
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
-              },
-              "children": [
-                {
-                  "type": "Text",
-                  "props": {
-                    "content": "Missing key with default:",
-                    "color": "#757575"
-                  },
-                  "children": null
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Plural, 3 items:",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "3 items",
+                        "fontWeight": 500,
+                        "id": "value_items_3"
+                      },
+                      "children": null
+                    }
+                  ]
                 },
                 {
-                  "type": "Text",
+                  "type": "Wrap",
                   "props": {
-                    "content": "Custom default",
-                    "fontWeight": 500,
-                    "id": "value_fallback"
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
                   },
-                  "children": null
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Plural, 1 item:",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "1 item",
+                        "fontWeight": 500,
+                        "id": "value_items_1"
+                      },
+                      "children": null
+                    }
+                  ]
+                },
+                {
+                  "type": "Wrap",
+                  "props": {
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Plural, 0 items:",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "No items",
+                        "fontWeight": 500,
+                        "id": "value_items_0"
+                      },
+                      "children": null
+                    }
+                  ]
+                },
+                {
+                  "type": "Wrap",
+                  "props": {
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Plural, 25 users:",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "25 users",
+                        "fontWeight": 500,
+                        "id": "value_users_25"
+                      },
+                      "children": null
+                    }
+                  ]
+                },
+                {
+                  "type": "Wrap",
+                  "props": {
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Relative time:",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Just now",
+                        "fontWeight": 500,
+                        "id": "value_just_now"
+                      },
+                      "children": null
+                    }
+                  ]
+                },
+                {
+                  "type": "Wrap",
+                  "props": {
+                    "spacing": 8.0,
+                    "runSpacing": 0.0
+                  },
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Missing key with default:",
+                        "color": "#757575"
+                      },
+                      "children": null
+                    },
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Custom default",
+                        "fontWeight": 500,
+                        "id": "value_fallback"
+                      },
+                      "children": null
+                    }
+                  ]
                 }
               ]
             }

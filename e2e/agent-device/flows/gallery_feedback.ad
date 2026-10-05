@@ -1,0 +1,40 @@
+# A field with an error, a dialog, a snackbar and a disabled button.
+#
+# entry: android=lib/main_native_gallery.dart
+context platform=android
+open "com.programtom.dart_not_native" --relaunch
+wait "label=\"Feedback\"" 30000
+press "label=\"Feedback\""
+wait "id=\"email\"" 5000
+
+# The field's error appears under it, and goes when the text is put right.
+press "id=\"check_email\""
+wait text "Enter a valid email" 5000
+wait "id=\"status\" label=\"Status: Email rejected\"" 5000
+fill "id=\"email\"" "someone@example.com"
+press "id=\"check_email\""
+wait "id=\"status\" label=\"Status: Email accepted\"" 5000
+wait absent "label=\"Enter a valid email\"" 5000
+
+# A dialog: Cancel keeps, Delete deletes; either way it closes.
+press "id=\"open_dialog\""
+wait text "Delete this item?" 5000
+press "id=\"dialog_cancel\""
+wait absent "id=\"dialog_cancel\"" 5000
+wait "id=\"status\" label=\"Status: Kept\"" 5000
+press "id=\"open_dialog\""
+wait "id=\"dialog_delete\"" 5000
+press "id=\"dialog_delete\""
+wait "id=\"status\" label=\"Status: Deleted\"" 5000
+
+# A snackbar with an action.
+press "id=\"show_snackbar\""
+wait text "Draft saved" 5000
+press "label=\"Undo\""
+wait "id=\"status\" label=\"Status: Save undone\"" 5000
+
+# A button with no handler is announced as disabled.
+wait "id=\"disabled\" enabled=false" 5000
+is visible "id=\"progress\""
+is visible "id=\"spinner\""
+close

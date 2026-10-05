@@ -101,7 +101,8 @@ class RoutingExampleApp extends StatelessWidget {
           const SizedBox(height: SPACING_LG),
           const Text('Quick navigation:',
               style: TextStyle(fontWeight: FontWeight.w500)),
-          Row(
+          // A Wrap, not a Row: three buttons are wider than a narrow phone.
+          Wrap(
             children: [
               _navButton(context, 'Users List', '/users', 'nav_users'),
               _navButton(context, 'Posts List', '/posts', 'nav_posts'),
@@ -131,7 +132,7 @@ class RoutingExampleApp extends StatelessWidget {
           const SizedBox(height: SPACING_MD),
           for (final user in routingUsers)
             Card.outlined(
-              child: Column(
+              child: Padding(padding: const EdgeInsets.all(16), child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(user['name']!,
@@ -145,7 +146,7 @@ class RoutingExampleApp extends StatelessWidget {
                     ],
                   ),
                 ],
-              ),
+              )),
             ),
           const SizedBox(height: SPACING_MD),
           _backButton(context),
@@ -202,7 +203,7 @@ class RoutingExampleApp extends StatelessWidget {
           const SizedBox(height: SPACING_MD),
           for (final post in routingPosts)
             Card.outlined(
-              child: Column(
+              child: Padding(padding: const EdgeInsets.all(16), child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(post['title']!,
@@ -216,7 +217,7 @@ class RoutingExampleApp extends StatelessWidget {
                     ],
                   ),
                 ],
-              ),
+              )),
             ),
           const SizedBox(height: SPACING_MD),
           _backButton(context),
@@ -279,11 +280,11 @@ class RoutingExampleApp extends StatelessWidget {
   Widget _page({required String title, required List<Widget> children}) =>
       Scaffold(
         appBar: AppBar(title: Text(title)),
-        body: Padding(
+        body: SingleChildScrollView(child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, children: children),
-        ),
+        )),
       );
 
   Widget _navButton(BuildContext context, String label, String path, String id) =>

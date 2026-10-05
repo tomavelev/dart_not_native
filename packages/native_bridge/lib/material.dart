@@ -1,21 +1,19 @@
-/// Material Design widgets for all platforms
+/// The Flutter host: Flutter's Material library plus what paints a
+/// `WidgetNode` tree with Flutter widgets.
 ///
-/// Import this for cross-platform Material Design:
-/// ```dart
-/// import 'package:dart_not_native/material.dart';
-/// ```
+/// Import this from a Flutter app that hosts a framework screen:
 ///
-/// On mobile (Android/iOS): Uses Flutter Material (native rendering)
-/// On web (browser): Uses Flutter Material (from framework)
-///
-/// For native UI rendering with widget tree protocol:
 /// ```dart
 /// import 'package:dart_not_native/material.dart';
 ///
-/// final tree = UIBuilder.scaffold(...);
-/// final renderer = WebUIRenderer();
-/// await renderer.render(tree);
+/// Widget settings(NativeUIApp app) => NativeUIAppHost(app: app);
 /// ```
+///
+/// It imports Flutter, so it is for Android, iOS and desktop hosts only. A
+/// screen that should also run on web is written against
+/// `package:dart_not_native/widgets.dart`, and a web entry point uses
+/// `package:dart_not_native/web.dart`.
+library;
 
 // Flutter names that the framework redefines are hidden so the framework's
 // versions win (Flutter's remain available via package:flutter/material.dart).

@@ -4,7 +4,7 @@
 /// out from under the keyboard, Android only does when the window is allowed to
 /// resize, and `100vh` on web does not shrink. Flutter gets it from `Scaffold`,
 /// whose `resizeToAvoidBottomInset` defaults to true, plus the
-/// `SingleChildScrollView` the renderer wraps a body in - which is exactly why
+/// scroller the screen puts its body in - which is exactly why
 /// it is worth a test: both are defaults a later change could quietly drop, and
 /// nothing else here would notice.
 library;
@@ -21,11 +21,14 @@ class _ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: const AppBar(title: Text('Profile')),
-    body: Column(
-      children: [
-        for (var i = 0; i < 12; i++) Text('Filler $i'),
-        const TextField(decoration: InputDecoration(hintText: 'Bio')),
-      ],
+    // A scaffold's body does not scroll, as in Flutter: the screen says so.
+    body: SingleChildScrollView(
+      child: Column(
+        children: [
+          for (var i = 0; i < 12; i++) Text('Filler $i'),
+          const TextField(decoration: InputDecoration(hintText: 'Bio')),
+        ],
+      ),
     ),
   );
 }

@@ -10,6 +10,11 @@ version. It is published from that directory; the repository root is the
 example app, whose `version:` (`1.0.0+1`) is a build number for the demo and
 means nothing to anyone consuming the package.
 
+`packages/dart_not_native_bloc` is a companion with a version of its own
+(0.1.0) and `publish_to: none`: it depends on the framework by path and
+cannot be published before the framework is. When it is, it follows the same
+rules, and its dependency becomes a version constraint.
+
 The framework's version appears in **three** files, which must agree:
 
 | File | Field |
@@ -30,7 +35,10 @@ the pubspec.
 - **0.x.0** - anything breaking. A node type that changes shape, a builder
   whose parameters change meaning, a renderer that stops accepting a tree it
   used to. The protocol in `nodeTypes` is the contract; widening it is a minor
-  too, since every renderer must then draw the new type.
+  too, since every renderer must then draw the new type. The widget layer
+  counts as well: a widget whose signature or behaviour moves to match
+  Flutter's breaks the apps written against the old one, which is what the
+  first section of the `Unreleased` changelog is.
 - **0.x.y** - additions that do not break a tree already written, and fixes.
 
 Past 1.0 this becomes ordinary semver, and the protocol's node vocabulary is
@@ -66,7 +74,13 @@ new heading, so `git show v0.2.0` shows the release itself.
 1. Every lane green: `flutter analyze --no-fatal-infos lib packages/native_bridge/lib`,
    the package suite, the example suite, the DOM suite in Chrome, and
    `flutter test integration_test` on an Android and an iOS device (see
-   `.github/workflows/ci.yml` for the exact commands).
+   `.github/workflows/ci.yml` for the exact commands). Also, by hand, since no
+   lane runs it: `flutter test` in `packages/dart_not_native_bloc`.
+
+   The iOS half of this cannot be met today. The Swift renderer has not been
+   compiled since it gained twelve node types (TODO.md §6.1), so a release
+   cut now would ship an iOS half nobody has built. Either compile and run it
+   first, or say so under **Known limits** in so many words.
 2. Move the CHANGELOG's `Unreleased` entries under a `## <version>` heading.
    Anything still true and unfinished belongs under **Known limits** rather
    than being dropped.
@@ -74,6 +88,7 @@ new heading, so `git show v0.2.0` shows the release itself.
 4. `git tag v<version>` on that commit, and push the tag.
 5. `dart pub publish --dry-run` from `packages/native_bridge`, then publish.
 
-Step 5 needs the repository to be hosted first: `repository:` in the pubspec
-and `s.source` in the podspec are still placeholders, and pub.dev expects them
-to point somewhere real. That is the open item in TODO.md §4.
+The repository is hosted, and `repository:` in the pubspec and `s.source` in
+the podspec point at it, so step 5 is a decision rather than a task. Until it
+is taken, the apps that use the framework depend on it by path or git, which
+pins them to a checkout rather than a version - TODO.md §6.5.

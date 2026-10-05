@@ -10,8 +10,8 @@ platform's own views instead of the Flutter engine.
 
 | Target | Command |
 | --- | --- |
-| Native (dev entry) | `flutter run -t lib/main_native_components_showcase.dart -d <device>` |
-| Native (mobile entry) | `flutter run -t lib/examples/components_showcase.dart -d <device>` |
+| Native (dev entry) | `flutter run -t lib/main_native_components_showcase.dart -d <device> --no-tree-shake-icons` |
+| Native (mobile entry) | `flutter run -t lib/examples/components_showcase.dart -d <device> --no-tree-shake-icons` |
 | Web | Built by `maestro/web/build_examples.sh`; driven by `maestro/web/flows/components_showcase.yaml`. |
 
 The same source drives all of them — Android Views, UIKit, the DOM, and the
@@ -45,8 +45,9 @@ what the framework does under the hood in a set of `ListTile`s:
 - One widget tree, every platform
 - Native performance
 
-This page is taller than the viewport, so on the web the Maestro flow scrolls to
-reach the navigation buttons.
+This page is taller than the viewport. A `Scaffold`'s body does not scroll -
+as in Flutter - so the showcase puts each page in a `SingleChildScrollView`,
+and on the web the Maestro flow scrolls to reach the navigation buttons.
 
 ## Navigation
 
@@ -55,7 +56,11 @@ reach the navigation buttons.
 
 ## Where to go next
 
-- `COMPONENTS_SHOWCASE.md` — the complete widget catalogue.
+- `COMPONENTS_SHOWCASE.md` — the widgets most screens use.
+- `packages/native_bridge/API_REFERENCE.md` — the whole widget layer by
+  family. The showcase predates most of it: there is no `Stack`, `Container`
+  decoration, `CustomPaint`, gesture or drag-and-drop page here.
+- `INTEGRATION.md` §8 — moving an existing Flutter app onto the framework.
 - `EXAMPLES_DIRECTORY.md` — every example and how it is wired.
 - The **Design System Showcase** — tokens plus `Card`, `Badge`, `Alert`,
   `Divider`, and the loading indicators.

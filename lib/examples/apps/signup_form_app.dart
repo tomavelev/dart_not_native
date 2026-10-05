@@ -5,8 +5,8 @@
 /// when someone leaves a field or presses the button, and a submit that only
 /// runs when everything passes.
 ///
-/// The form itself is `dart_not_native`'s `Form`/`FormField`: the widgets bind
-/// to it with [TextFormField], and the button hands the whole thing to
+/// The form itself is `dart_not_native`'s `FormModel`/`FormFieldModel`: the widgets bind
+/// to it with [ModelTextFormField], and the button hands the whole thing to
 /// `form.submit`, which validates every field and calls back only if they all
 /// pass.
 library;
@@ -19,7 +19,7 @@ import 'package:dart_not_native/widgets.dart';
 /// confirmation matches whatever the password field holds *now*.
 class SignupFormFields {
   SignupFormFields() {
-    password = FormField(
+    password = FormFieldModel(
       name: 'password',
       label: 'Password',
       hint: 'At least 8 characters, one capital and one number',
@@ -27,7 +27,7 @@ class SignupFormFields {
       obscured: true,
       validators: [PasswordValidator(minLength: 8)],
     );
-    confirm = FormField(
+    confirm = FormFieldModel(
       name: 'confirm',
       label: 'Confirm password',
       hint: 'Type it again',
@@ -44,9 +44,9 @@ class SignupFormFields {
       ..addField(confirm);
   }
 
-  final Form form = Form();
+  final FormModel form = FormModel();
 
-  final FormField name = FormField(
+  final FormFieldModel name = FormFieldModel(
     name: 'name',
     label: 'Full name',
     hint: 'Ada Lovelace',
@@ -54,7 +54,7 @@ class SignupFormFields {
     validators: [MinLengthValidator(2)],
   );
 
-  final FormField email = FormField(
+  final FormFieldModel email = FormFieldModel(
     name: 'email',
     label: 'Email',
     hint: 'you@example.com',
@@ -62,14 +62,14 @@ class SignupFormFields {
     validators: [EmailValidator()],
   );
 
-  late final FormField password;
-  late final FormField confirm;
+  late final FormFieldModel password;
+  late final FormFieldModel confirm;
 
   /// A focus handle per field, so a failed submit can send the user straight
   /// to the one that needs attention.
   final Map<String, FocusNode> _focus = {};
 
-  FocusNode focusOf(FormField field) =>
+  FocusNode focusOf(FormFieldModel field) =>
       _focus.putIfAbsent(field.name, FocusNode.new);
 }
 
@@ -120,13 +120,13 @@ class _SignupFormAppState extends State<SignupFormApp> {
     if (signedUpAs != null) {
       return Scaffold(
         appBar: const AppBar(title: Text('Sign up')),
-        body: Column(
+        body: SingleChildScrollView(child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
               child: Card(
-                child: Column(
+                child: Padding(padding: const EdgeInsets.all(16), child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
@@ -140,7 +140,7 @@ class _SignupFormAppState extends State<SignupFormApp> {
                     const SizedBox(height: 8),
                     Text('We sent a confirmation to $signedUpAs.'),
                   ],
-                ),
+                )),
               ),
             ),
             Padding(
@@ -152,13 +152,13 @@ class _SignupFormAppState extends State<SignupFormApp> {
               ),
             ),
           ],
-        ),
+        )),
       );
     }
 
     return Scaffold(
       appBar: const AppBar(title: Text('Sign up')),
-      body: Column(
+      body: SingleChildScrollView(child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
@@ -166,22 +166,22 @@ class _SignupFormAppState extends State<SignupFormApp> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextFormField(
+                ModelTextFormField(
                   field: fields.name,
                   focusNode: fields.focusOf(fields.name),
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                ModelTextFormField(
                   field: fields.email,
                   focusNode: fields.focusOf(fields.email),
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                ModelTextFormField(
                   field: fields.password,
                   focusNode: fields.focusOf(fields.password),
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                ModelTextFormField(
                   field: fields.confirm,
                   focusNode: fields.focusOf(fields.confirm),
                 ),
@@ -203,7 +203,7 @@ class _SignupFormAppState extends State<SignupFormApp> {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

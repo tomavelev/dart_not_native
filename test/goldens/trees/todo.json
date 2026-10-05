@@ -1,82 +1,97 @@
 {
   "type": "Scaffold",
-  "props": {},
+  "props": {
+    "bodyScrolls": false
+  },
   "children": [
     {
       "type": "AppBar",
       "props": {
-        "title": "My Todos"
+        "title": "My Todos",
+        "backgroundColor": "#ffffff",
+        "foregroundColor": "#212121"
       },
       "children": null
     },
     {
-      "type": "Column",
+      "type": "Scroll",
       "props": {
-        "crossAxisAlignment": "stretch"
+        "scrollOffset": 0.0,
+        "scrollVersion": 0,
+        "scrollEventId": "cb:0"
       },
       "children": [
         {
-          "type": "Padding",
+          "type": "Column",
           "props": {
-            "padding": 16.0
+            "crossAxisAlignment": "stretch"
           },
           "children": [
             {
-              "type": "Row",
+              "type": "Padding",
               "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 8.0
+                "padding": 16.0
               },
               "children": [
                 {
-                  "type": "Expanded",
+                  "type": "Row",
                   "props": {
-                    "flex": 1
+                    "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
+                    "spacing": 8.0
                   },
                   "children": [
                     {
-                      "type": "TextField",
+                      "type": "Expanded",
                       "props": {
-                        "hint": "Add a new todo...",
-                        "eventId": "cb:new_todo",
-                        "id": "new_todo",
-                        "obscureText": false,
-                        "enabled": true,
-                        "initialValue": "",
-                        "valueVersion": 0,
-                        "maxLines": 1,
-                        "textInputAction": "done"
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "TextField",
+                          "props": {
+                            "hint": "Add a new todo...",
+                            "eventId": "cb:new_todo",
+                            "id": "new_todo",
+                            "obscureText": false,
+                            "enabled": true,
+                            "initialValue": "",
+                            "valueVersion": 0,
+                            "maxLines": 1,
+                            "textInputAction": "done"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "IconButton",
+                      "props": {
+                        "icon": "add_task",
+                        "iconCodepoint": 57435,
+                        "eventId": "cb:add",
+                        "tooltip": "Add Todo",
+                        "id": "add"
                       },
                       "children": null
                     }
                   ]
-                },
+                }
+              ]
+            },
+            {
+              "type": "Center",
+              "props": {},
+              "children": [
                 {
-                  "type": "IconButton",
+                  "type": "Text",
                   "props": {
-                    "icon": "add_task",
-                    "iconCodepoint": 57435,
-                    "eventId": "cb:add",
-                    "tooltip": "Add Todo",
-                    "id": "add"
+                    "content": "No todos yet. Add one above!",
+                    "color": "#9e9e9e"
                   },
                   "children": null
                 }
               ]
-            }
-          ]
-        },
-        {
-          "type": "Center",
-          "props": {},
-          "children": [
-            {
-              "type": "Text",
-              "props": {
-                "content": "No todos yet. Add one above!",
-                "color": "#9e9e9e"
-              },
-              "children": null
             }
           ]
         }

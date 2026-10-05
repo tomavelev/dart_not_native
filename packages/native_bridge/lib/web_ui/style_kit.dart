@@ -31,6 +31,25 @@ import 'package:web/web.dart' as web;
 
 import '../src/contrast.dart';
 
+/// A protocol colour as CSS.
+///
+/// The protocol writes a translucent colour as `#aarrggbb`, alpha first, the
+/// way Android and Flutter do; CSS reads eight digits as `#rrggbbaa`, so
+/// handing one over as it stands would swap the channels round. Those become
+/// `rgba()`. Everything else - `#rgb`, `#rrggbb`, a CSS name an app passed
+/// before the protocol settled on hex - is already CSS and goes through as is.
+String cssColor(String color) {
+  final hex = color.trim();
+  if (hex.length != 9 || !hex.startsWith('#')) return color;
+  final value = int.tryParse(hex.substring(1), radix: 16);
+  if (value == null) return color;
+  final alpha = ((value >> 24) & 0xff) / 255;
+  // Three places is finer than the eight bits it came from.
+  final a = alpha == 1 ? '1' : alpha.toStringAsFixed(3);
+  return 'rgba(${(value >> 16) & 0xff}, ${(value >> 8) & 0xff}, '
+      '${value & 0xff}, $a)';
+}
+
 /// Elements of a text field the renderer updates in place.
 class TextFieldParts {
   final web.Element root;
@@ -93,7 +112,7 @@ abstract class WebStyleKit {
   web.Element appBar(String title, {String? backgroundColor}) {
     final bar = el('header', 'dnn-appbar');
     if (backgroundColor != null) {
-      style(bar, 'background', backgroundColor);
+      style(bar, 'background', cssColor(backgroundColor));
       // The stylesheet's title colour was chosen against the theme's primary,
       // not against whatever the app just asked for.
       style(bar, 'color', textOn(backgroundColor));
@@ -102,7 +121,17 @@ abstract class WebStyleKit {
     return bar;
   }
 
-  /// [variant]: primary, secondary, tertiary, success, error, warning.
+  /// The element of [bar] whose first child is the title.
+  ///
+  /// The renderer lays the rest of an app bar out around the title - a leading
+  /// button before it, the actions after - and that has to happen in whatever
+  /// element the kit put the title in. Most kits put it in the bar itself; one
+  /// that wraps it (Materialize's `nav-wrapper`) answers the wrapper.
+  web.Element appBarRow(web.Element bar) => bar;
+
+  /// [variant]: primary, secondary, tertiary, success, error, warning, and
+  /// Material's own outlined (a border, no fill) and tonal (a quiet fill of
+  /// the primary colour).
   /// [size]: sm, md, lg. [color] overrides the variant's background.
   web.Element button(
     String label, {
@@ -116,7 +145,7 @@ abstract class WebStyleKit {
       text: label,
     );
     if (color != null) {
-      style(button, 'background', color);
+      style(button, 'background', cssColor(color));
       style(button, 'color', textOn(color));
     }
     return button;
@@ -198,7 +227,7 @@ abstract class WebStyleKit {
     final card = el('div', 'dnn-card dnn-card--$variant');
     if (variant == 'elevated') style(card, 'box-shadow', shadow(elevation));
     if (backgroundColor != null) {
-      style(card, 'background', backgroundColor);
+      style(card, 'background', cssColor(backgroundColor));
       // Inherited by the title and by every child that did not state a colour
       // of its own, which is what makes a dark card readable.
       style(card, 'color', textOn(backgroundColor));
@@ -223,9 +252,9 @@ abstract class WebStyleKit {
       text: variant == 'dot' ? null : label,
     );
     if (variant == 'outlined') {
-      style(badge, 'color', color);
+      style(badge, 'color', cssColor(color));
     } else {
-      style(badge, 'background', color);
+      style(badge, 'background', cssColor(color));
       style(badge, 'color', textOn(color));
     }
     return badge;
@@ -255,7 +284,7 @@ abstract class WebStyleKit {
   /// [value] is 0..1.
   web.Element progressLinear(double value, String color) {
     final track = el('div', 'dnn-progress');
-    style(track, 'color', color);
+    style(track, 'color', cssColor(color));
     final bar = el('div', 'dnn-progress__bar');
     style(bar, 'width', '${(value * 100).clamp(0, 100)}%');
     track.appendChild(bar);
@@ -284,9 +313,10 @@ abstract class WebStyleKit {
     return element;
   }
 
-  /// A Material Icons ligature element.
-  web.Element materialIcon(String name) =>
-      el('i', 'material-icons', text: name);
+  /// A Material Icons element. [glyph] is the character at the icon's
+  /// codepoint in Flutter's font - the shell's font has no name ligatures.
+  web.Element materialIcon(String glyph) =>
+      el('i', 'material-icons', text: glyph);
 
   void style(web.Element element, String property, String value) {
     (element as web.HTMLElement).style.setProperty(property, value);

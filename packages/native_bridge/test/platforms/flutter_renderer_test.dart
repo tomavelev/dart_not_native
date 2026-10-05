@@ -139,16 +139,34 @@ void main() {
       await show(
         tester,
         UIBuilder.row(
-          mainAxisAlignment: 'spaceBetween',
           spacing: 12,
           children: [UIBuilder.text('a'), UIBuilder.text('b')],
         ),
       );
 
       final wrap = tester.widget<Wrap>(find.byType(Wrap));
-      expect(wrap.alignment, WrapAlignment.spaceBetween);
+      expect(wrap.alignment, WrapAlignment.start);
       expect(wrap.spacing, 12);
       expect(find.byType(Row), findsNothing);
+    });
+
+    // A row that distributes needs a width to distribute across, which a
+    // Wrap - as wide as its children - does not have.
+    testWidgets('a row that distributes is a real Row', (tester) async {
+      await show(
+        tester,
+        UIBuilder.row(
+          mainAxisAlignment: 'spaceBetween',
+          spacing: 12,
+          children: [UIBuilder.text('a'), UIBuilder.text('b')],
+        ),
+      );
+
+      final row = tester.widget<Row>(find.byType(Row));
+      expect(row.mainAxisAlignment, MainAxisAlignment.spaceBetween);
+      expect(row.mainAxisSize, MainAxisSize.max);
+      expect(row.spacing, 12);
+      expect(find.byType(Wrap), findsNothing);
     });
 
     testWidgets('a row holding an Expanded keeps real flex semantics', (
@@ -165,11 +183,10 @@ void main() {
         ),
       );
 
-      expect(find.byType(Row), findsOneWidget);
-      final gaps = tester
-          .widgetList<SizedBox>(find.byType(SizedBox))
-          .where((box) => box.width == 12);
-      expect(gaps, hasLength(1), reason: 'one gap between two children');
+      // The gap is the Row's own, so it holds under any distribution of the
+      // free space rather than being counted as a child of it.
+      expect(tester.widget<Row>(find.byType(Row)).spacing, 12);
+      expect(tester.getTopLeft(find.text('b')).dx, 12 + tester.getTopRight(find.text('a')).dx);
     });
 
     testWidgets('padding, sized box and expanded carry their measurements', (

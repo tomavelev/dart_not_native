@@ -58,7 +58,10 @@ abstract class ValueListenable<T> extends Listenable {
 ///   }
 /// }
 /// ```
-class ChangeNotifier implements Listenable {
+///
+/// It can be mixed in as well as extended - `class Cart with ChangeNotifier` -
+/// which is how Flutter code that already has a superclass spells it.
+mixin class ChangeNotifier implements Listenable {
   final List<VoidCallback> _listeners = [];
   bool _disposed = false;
 

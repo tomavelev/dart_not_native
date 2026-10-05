@@ -1,18 +1,23 @@
 {
   "type": "Scaffold",
-  "props": {},
+  "props": {
+    "bodyScrolls": false
+  },
   "children": [
     {
       "type": "AppBar",
       "props": {
-        "title": "Calculator"
+        "title": "Calculator",
+        "backgroundColor": "#ffffff",
+        "foregroundColor": "#212121"
       },
       "children": null
     },
     {
       "type": "Column",
       "props": {
-        "crossAxisAlignment": "stretch"
+        "crossAxisAlignment": "stretch",
+        "mainAxisSize": "max"
       },
       "children": [
         {
@@ -25,6 +30,7 @@
               "type": "Row",
               "props": {
                 "mainAxisAlignment": "end",
+                "mainAxisSize": "max",
                 "spacing": 0.0
               },
               "children": [
@@ -58,6 +64,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 0.0
                   },
                   "children": [
@@ -74,6 +81,8 @@
                             "eventId": "cb:key_clear",
                             "variant": "primary",
                             "color": "#f44336",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_clear"
                           },
@@ -94,6 +103,8 @@
                             "eventId": "cb:key_backspace",
                             "variant": "primary",
                             "color": "#f44336",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_backspace"
                           },
@@ -114,6 +125,8 @@
                             "eventId": "cb:key_divide",
                             "variant": "primary",
                             "color": "#ff9800",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_divide"
                           },
@@ -134,6 +147,8 @@
                             "eventId": "cb:key_multiply",
                             "variant": "primary",
                             "color": "#ff9800",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_multiply"
                           },
@@ -147,6 +162,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 0.0
                   },
                   "children": [
@@ -162,6 +178,8 @@
                             "label": "7",
                             "eventId": "cb:key_7",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_7"
                           },
@@ -181,6 +199,8 @@
                             "label": "8",
                             "eventId": "cb:key_8",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_8"
                           },
@@ -200,6 +220,8 @@
                             "label": "9",
                             "eventId": "cb:key_9",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_9"
                           },
@@ -220,6 +242,8 @@
                             "eventId": "cb:key_minus",
                             "variant": "primary",
                             "color": "#ff9800",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_minus"
                           },
@@ -233,6 +257,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 0.0
                   },
                   "children": [
@@ -248,6 +273,8 @@
                             "label": "4",
                             "eventId": "cb:key_4",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_4"
                           },
@@ -267,6 +294,8 @@
                             "label": "5",
                             "eventId": "cb:key_5",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_5"
                           },
@@ -286,6 +315,8 @@
                             "label": "6",
                             "eventId": "cb:key_6",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_6"
                           },
@@ -306,6 +337,8 @@
                             "eventId": "cb:key_plus",
                             "variant": "primary",
                             "color": "#ff9800",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_plus"
                           },
@@ -319,6 +352,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 0.0
                   },
                   "children": [
@@ -334,6 +368,8 @@
                             "label": "1",
                             "eventId": "cb:key_1",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_1"
                           },
@@ -353,6 +389,8 @@
                             "label": "2",
                             "eventId": "cb:key_2",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_2"
                           },
@@ -372,6 +410,8 @@
                             "label": "3",
                             "eventId": "cb:key_3",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_3"
                           },
@@ -392,6 +432,8 @@
                             "eventId": "cb:key_equals",
                             "variant": "primary",
                             "color": "#4caf50",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_equals"
                           },
@@ -405,6 +447,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 0.0
                   },
                   "children": [
@@ -420,6 +463,8 @@
                             "label": "0",
                             "eventId": "cb:key_0",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_0"
                           },
@@ -439,6 +484,8 @@
                             "label": ".",
                             "eventId": "cb:key_dot",
                             "variant": "primary",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_dot"
                           },
@@ -459,6 +506,8 @@
                             "eventId": "cb:key_equals_2",
                             "variant": "primary",
                             "color": "#4caf50",
+                            "minHeight": 40.0,
+                            "paddingHorizontal": 24.0,
                             "disabled": false,
                             "id": "key_equals_2"
                           },

@@ -4,15 +4,20 @@ An honest inventory, written from what the code and the test suite actually
 show. Each item says why it matters and what "done" looks like; the ordering
 inside each group is roughly the order I would do them in.
 
-The short version: **the web target is close to ready, the Flutter-hosted
-target is ready for internal use, and the native-view target is now proven on
-Android and partly on iOS.** The Android renderer is device-verified on a
-physical Android phone (Android 17, 2026-09-18): all seven native example apps run
-with events round-tripping, including every control (Checkbox/Radio/Toggle),
-overlays, the 10k-row lazy list, swipe actions, and typing into an event-bound
-field. iOS ran the counter/design-system/inbox on a physical iPad. Remaining
-native risk is concentrated on iOS (most example apps still unrun on a device)
-and on things nothing has built yet (map and camera).
+The short version, as of 2026-10-03: **the web target is close to ready, the
+Flutter-hosted target is ready for internal use, the native-view target is
+proven on Android, and iOS is behind its own source.** The Android renderer is
+device-verified on a physical Android phone (Android 17, 2026-09-18): all
+seven native example apps run with events round-tripping, including every
+control (Checkbox/Radio/Toggle), overlays, the 10k-row lazy list, swipe
+actions, and typing into an event-bound field. Since then the widget layer
+grew to most of what a Material app uses and three migrated production apps
+were walked screen by screen on a Pixel 8 emulator (API 35). iOS ran the
+counter/design-system/inbox on a physical iPad and five flows on a simulator
+- for the vocabulary as it was then. **The Swift for everything added since
+has been written and never compiled**, so the largest single risk is now
+iOS, ahead of the things nothing has built yet (map and camera on Android,
+explicit animation). §6 is the list of what is open after that work.
 
 ---
 
@@ -34,6 +39,40 @@ the android/ios/web and design-system showcases, both text-input showcases,
 routing, i18n, storage), verified by the golden, smoke and Flutter-render
 suites, and the counter is device-verified on both an emulator and a simulator.
 The three per-platform counter variants collapsed into one file.
+
+**The layer took Flutter's shape on 2026-10-03.** What had been ~90 widgets
+covering what the examples used became most of what a Material app uses, under
+Flutter's names, signatures and semantics, so that an existing Flutter app
+migrates by changing its imports rather than being rewritten: `Container`,
+`Stack`, `Positioned` and the clipping and transform widgets over a new `Box`
+node; `SingleChildScrollView`, a `ListView` and `GridView` that scroll
+themselves, `RefreshIndicator`; `Navigator.push` with routes that keep their
+`State`; Flutter's `Form`/`FormField`/`TextFormField`; `ThemeData`,
+`ColorScheme.fromSeed` and `TextTheme` behind `Theme.of`; `GestureDetector`,
+`Draggable`/`DragTarget`, `Dismissible`; `CustomPaint` with Flutter's
+`Canvas`, `Paint`, `Path` and `TextPainter`; `MediaQuery` and `LayoutBuilder`
+fed by a renderer's viewport event; `Ticker`; `KeyboardListener`;
+`Directionality` and the directional geometry classes; dropdowns, date and
+time pickers, bottom navigation and a rail, `TabBar`/`TabController`. The
+protocol gained twelve node types to carry it (`Box`, `Stack`, `Positioned`,
+`Scroll`, `Icon`, `Canvas`, `Dropdown`, `DatePicker`, `TimePicker`,
+`BottomBar`, `BottomNavigation`, `FlutterSlot`), a root-level text direction
+and renderer events. Two companions came with it: `router.dart`, which is
+go_router's API, and `packages/dart_not_native_bloc`, which is flutter_bloc's.
+
+Where the old layer disagreed with Flutter it now agrees, which broke existing
+code in the places the changelog lists first - a `Scaffold`'s body does not
+scroll, `ListView.builder` takes `(context, index)`, `Theme.of` returns a
+`ThemeData`, `Form` is Flutter's and the framework's model is `FormModel`.
+Each widget's doc comment says what it does not carry; INTEGRATION.md §8.9
+gathers the ones a user would see, and §6 below the ones worth closing.
+
+Proven by: the three suites, the tree goldens regenerated for every example,
+and three real apps - a reminders app in twelve locales, eighteen small games,
+a planner with a web build - migrated onto it and run on an Android emulator.
+Not proven on iOS at all.
+
+Entries below that this superseded are marked where they stand.
 
 Still to do here:
 - ~~Button `size` was best-effort~~ - fixed 2026-09-19. It was worse than
@@ -87,7 +126,9 @@ Still to do here:
   exactly the kind of change that passes its tests and looks wrong.
 - The facade covers what the examples use, and as of 2026-09-20 the list of
   missing widgets is empty - `GridView`, `Slider`, `Tabs`, `InheritedWidget`
-  and now **motion**, in the one form that fits the protocol.
+  and now **motion**, in the one form that fits the protocol. *(True of the
+  examples. Three real apps asked for a great deal more, which is the
+  2026-10-03 entry above; what is still missing after that is §6.)*
 
   **`AnimatedOpacity` landed 2026-09-20.** The protocol says what a screen
   *is*, not how it got there, so a renderer animates the difference it sees:
@@ -120,7 +161,10 @@ Still to do here:
   box on all four renderers, which is a deliberate difference from Flutter
   (a `Container` passes its own constraints down) - four layout systems
   disagreeing about a child that does not fill the space is worse than one
-  documented rule. And on iOS, `removeAllAnimations()` in the fade's patch was
+  documented rule. *(Superseded 2026-10-03: the `AnimatedContainer` widget
+  renders a `Box` node with `animateMs` and no longer centres its child, as
+  Flutter's does not. The `AnimatedContainer` node is still drawn, centring
+  and all, for a tree that builds it by hand.)* And on iOS, `removeAllAnimations()` in the fade's patch was
   tearing the *position* animation off a sibling that a growing box was moving,
   so the faded label snapped to where it was going while everything around it
   slid; it now removes only the fade's own `opacity` animation.
@@ -128,7 +172,10 @@ Still to do here:
   Left: motion is size, colour and opacity. A position that moves
   independently of layout, a rotation, and a padding or alignment that eases
   are all still jumps - each would need the same treatment in four layout
-  systems, and none of them is what an app reaches for first.
+  systems, and none of them is what an app reaches for first. *(Partly closed
+  2026-10-03: a `Box` animates its transform as well, which is what
+  `AnimatedScale`, `AnimatedRotation` and `AnimatedSlide` are built on.
+  Padding, margin, alignment and borders still land at once - §6.2.)*
   **`InheritedWidget` landed 2026-09-20**, with `Theme` on top of it: a value
   handed to a subtree and read back with
   `context.dependOnInheritedWidgetOfExactType<T>()`, Flutter's name and
@@ -143,6 +190,12 @@ Still to do here:
   dark from the platform at render time and the widget layer is never told
   which it chose; `Theme.of(context).dark` is there for an app that needs to
   pick deliberately.
+
+  *(Both superseded 2026-10-03. `Theme.of(context)` returns a `ThemeData`, as
+  in Flutter, and the palette is `Theme.of(context).appTheme`. And the widget
+  layer is told now: a renderer's viewport event carries `dark`, so
+  `MaterialApp(theme:, darkTheme:, themeMode: ThemeMode.system)` hands its
+  pages the theme for the appearance actually on screen.)*
   **`Tabs` landed 2026-09-20**: a strip of labels with one selected, drawn as
   each platform's own way of choosing one of a few things - Material tabs on
   Android and in Flutter (scrollable past three), a segmented control on iOS,
@@ -152,11 +205,16 @@ Still to do here:
   other piece of state - the bar reports a tap and the next tree says which tab
   is selected, so the bar can never disagree with the screen below it. The bar
   only; the content is the app's own tree. Tapped through on an Android
-  emulator and an iPhone simulator.
+  emulator and an iPhone simulator. *(2026-10-03: Flutter's own `TabBar`,
+  `TabBarView`, `TabController` and `DefaultTabController` exist beside it
+  now, over the same node. A tab change does not animate and there is no
+  swipe between pages.)*
   **`GridView` landed 2026-09-19**: `GridView.count(crossAxisCount:,
   mainAxisSpacing:, crossAxisSpacing:, childAspectRatio:)`, equal cells in
   equal columns. Web is a CSS grid; the Flutter host is `GridView.count`
-  shrink-wrapped, since the screen around it already scrolls; both natives get
+  shrink-wrapped, since the screen around it already scrolls *(until
+  2026-10-03: a `Scaffold`'s body no longer scrolls, and `GridView` - now
+  with `.builder`, `.extent` and the two delegates - scrolls itself)*; both natives get
   a frame-positioned view of their own (`GridLayoutView`, `GridView`), because
   a cell's size comes from the width available rather than from what is inside
   it and no stock container does that. Looked at on an Android emulator and an
@@ -197,7 +255,11 @@ should), but has never run there · ❌ missing, or a stub
 
 | Feature | Android | iOS | Web | Notes |
 |---|---|---|---|---|
-| UI renderer | ✅ | ✅ | ✅ | Android is device-verified on a physical Android phone (Android 17, 2026-09-18): all seven example apps run natively with events round-tripping (see 1.1). iOS caught up on 2026-09-21: six example apps driven by hand on a simulator, two layout bugs found and fixed - the screens have been *looked* at now, though on a simulator rather than a phone, and the iPad pass before it covered three of them on real hardware. Web is tested in Chrome with DOM goldens (1.1) |
+| UI renderer - the vocabulary as of 2026-09-24 (47 node types) | ✅ | ✅ | ✅ | Android is device-verified on a physical Android phone (Android 17, 2026-09-18): all seven example apps run natively with events round-tripping (see 1.1). iOS caught up on 2026-09-21: six example apps driven by hand on a simulator, two layout bugs found and fixed - the screens have been *looked* at now, though on a simulator rather than a phone, and the iPad pass before it covered three of them on real hardware. Web is tested in Chrome with DOM goldens (1.1) | **The iOS ✅ is for the Swift as it was then; the file has since grown by the rows below and has not been compiled (§6.1)**
+| The twelve node types added 2026-10-03: `Box`, `Stack`, `Positioned`, `Scroll`, `Icon`, `Canvas`, `Dropdown`, `DatePicker`, `TimePicker`, `BottomBar`, `BottomNavigation`, `FlutterSlot` | ✅ | 🟡 | ✅ | Android: on a Pixel 8 emulator (API 35, debug builds), by hand, through three migrated apps walked screen by screen - boxes, stacks, scrollers, icons and dropdowns throughout; `Canvas` as a timer-driven game, the other game boards and a donut chart; bottom navigation, and its rail in landscape; a long-press drag onto a drop target; an AdMob test banner through the `FlutterSlot` hole at its 320×50dp. **`DatePicker` and `TimePicker` were not exercised: no app opened one.** Not on a phone, and not in the device lane, whose "one of every node type" tree predates them (§6.3). iOS: **Swift written, never compiled**. Web: browser tests per family (`box_test`, `stack_scroll_test`, `canvas_test`, `choosing_test`, `app_chrome_test`); a `FlutterSlot` draws its fallback there. The Flutter renderer has widget tests for all of them |
+| Right-to-left (`RootProps.textDirection`) | ✅ | 🟡 | ✅ | Web and the Flutter host are tested (`text_direction_test`, `flutter_text_direction_test`). Android: looked at on the emulator under an Arabic locale (2026-10-03) - app bar, bottom-navigation order, list tiles, tabs, calendar and switch all mirrored; swipe actions are not (§6.3 item 6). The Swift is uncompiled |
+| Remote image cache, and an image's fallback child | 🟡 | 🟡 | ✅ | Tested on web and Flutter. Android: remote images loaded in list rows on the emulator; what the disk cache does offline or at expiry was not examined, which is why this stays 🟡. Uncompiled on iOS |
+| An event answered by the build it was raised against | ✅ | 🟡 | ✅ | Android sends the tree's build number back with each event (found on the emulator, where a list's size report was landing on a row's tap). The Swift to do the same is written and uncompiled. The web and Flutter renderers name the build they are showing too - the Flutter host builds its widgets a frame after a render |
 | System back | ✅ | 🟡 | ✅ | Native via `system_back` channel; web via browser history. Android Back verified closing an overlay on the Android phone (2026-09-18) |
 | Routing, forms, i18n, design system | ✅ | ✅ | ✅ | Pure Dart, unit tested; on a device they depend on the renderer row |
 | Dialogs, bottom sheets, snackbars | ✅ | ✅ | ✅ | `Overlay`/`Dialog`/`BottomSheet`/`Snackbar` nodes; Back closes the topmost one. Device-verified on iOS (iPad) and Android (2026-09-18): sheet → stacked confirm dialog → delete pops both → undo snackbar restores (1.3) |
@@ -449,6 +511,51 @@ asserted the same "TextInput Showcase" title that `focus` asserted and passed
 where `focus` failed. Both run the same entry point, so the two disagreed about
 one occluded title - Maestro's idea of "visible" is evidently marginal at that
 degree of overlap. It has not been chased, because the fix made it moot.)*
+
+*(Progress — three real apps on an emulator, 2026-10-03. Everything above is
+about the framework's own examples. Three migrated Flutter apps - reminders,
+games, a planner - were walked screen by screen on a Pixel 8 emulator (API
+35), which is the first time screens nobody here designed for the renderer
+went through it, and the first time the twelve new node types were on a
+screen at all. What it found in the Android renderer is in the changelog under
+"Three real apps on an Android emulator": an event landing on the wrong
+callback once a list's window had moved (fixed by sending the build number
+with the tree and back with each event), forced capitals on buttons, a hugging
+column collapsing to its narrowest child, a clipped box hiding its child
+behind an empty first outline, the status icons unreadable over a coloured
+bar, Material's purple showing through on five controls, and the rest of
+about thirty that only showed on a device.
+
+What was seen working, across two passes that day (Android 15, debug builds,
+software GPU): the games app's home grid and all eighteen games, each opened
+and played a few moves; the reminders app's first-run permission flow, its
+four bottom-navigation tabs, add, delete and undo, a dashboard with a canvas
+donut chart and a composed month calendar, a language switch and dark mode;
+the planner, over an in-memory backend - forms with validation, dropdowns,
+swipe-to-delete, checkbox tiles, dialogs, bottom navigation, and the
+navigation rail in landscape. Under an Arabic locale the app bar, the
+bottom navigation's order, list tiles, tabs, the calendar and a switch all
+mirrored. A long-press drag of a row onto a target delivered its data. A
+scheduled local notification was posted by an app running on the renderer, so
+plugins work under `FlutterFragmentActivity`. Remote images loaded in list
+rows. An AdMob *test* banner loaded and showed through the `FlutterSlot` hole
+at exactly its 320×50dp; it stayed put while the screen behind scrolled, was
+covered while a pushed page was open and came back on Back, and taps elsewhere
+kept working. A timer-driven game canvas ran at 506 frames in about 11 s, 17%
+janky, p50 16 ms, p90 29 ms, p99 34 ms - a debug build on a software-rendered
+emulator, so a sign that it runs and not a performance claim for hardware.
+
+What nobody did: tap the ad itself; put a slot inside a scroller, so the
+documented scroll lag was not exercised; open a date or time picker (no app
+uses one, so those two nodes are unverified on a device); press a hardware key
+(`dnn:key`); judge how pull-to-refresh feels; look at what the image disk
+cache does offline or at expiry.
+
+What that pass was not: a physical phone, an automated run, or iOS. The
+Maestro flows and the integration lane were not extended to the new screens,
+so nothing re-checks them. And the iOS half of all of it is uncompiled Swift -
+the "Done when" above was met for the examples on 2026-09-24 and is open again
+for the vocabulary as it stands. §6.1.)*
 
 ### 1.2 Diff the native view trees
 
@@ -911,6 +1018,56 @@ affordance, not a production error screen.
 
 ## 3. Gaps a real app will hit early
 
+- **What three real apps hit, closed (2026-10-03).** The entries below were
+  written from the examples. Migrating a reminders app, a games collection and
+  a planner asked for things none of the examples had, and these are the ones
+  that are closed - each on web and the Flutter renderer by test, on Android
+  by the emulator pass unless it says otherwise, and on iOS **not at all: the
+  Swift is uncompiled**.
+
+  - **Free-form composition.** `Container`, `Stack`, `Positioned`, clips,
+    opacity, transforms, gradients, borders and shadows, over one `Box` node
+    and a `Stack`. Before this a screen was made of named components or it
+    was not made.
+  - **Scrolling as Flutter means it.** A `Scaffold`'s body does not scroll;
+    `SingleChildScrollView`, `ListView` and `GridView` do, on either axis,
+    with pull-to-refresh and a `ScrollController` that can send a scroller
+    somewhere.
+  - **Navigation that keeps state.** `Navigator.push` with a result, pages
+    beneath kept alive, an app bar that gains its own back button, bottom
+    navigation and a rail, and `router.dart` for an app built on go_router.
+  - **Touch.** Taps with their position, double taps, long presses, pans,
+    drag and drop, a `Dismissible`.
+  - **Drawing.** `CustomPaint` over a `Canvas` node that replays a command
+    list - which is what a chart, a calendar and every game board became.
+  - **Choosing.** A dropdown and the platform's date and time pickers.
+  - **Knowing the window.** `MediaQuery` and `LayoutBuilder`, from a
+    `dnn:viewport` event each renderer sends; app lifecycle and hardware keys
+    the same way.
+  - **Right-to-left.** The reminders app was right-to-left in Arabic under
+    Flutter and came out left-to-right here. The root of the tree carries the
+    direction now and every renderer turns the screen from it;
+    `Directionality`, `EdgeInsetsDirectional` and their kin resolve against
+    it. Android: seen on the emulator under an Arabic locale - app bar,
+    bottom-navigation order, list tiles, tabs, calendar and switch mirrored.
+  - **Images.** Remote images are cached instead of fetched on every rebuild,
+    and `Image.errorBuilder` supplies a fallback. Android: remote images
+    loaded in list rows on the emulator; the disk cache's behaviour offline
+    and at expiry was not examined.
+  - **A Flutter widget in a native screen.** `FlutterSlot`, for the ad banner
+    the games app could not redraw. On the emulator an AdMob test banner
+    showed through the hole at its 320×50dp, pinned; tapping the ad was not
+    tested.
+  - **State management that is already written.** `dart_not_native_bloc`.
+  - **The app's own theme.** `ThemeData` with a seeded `ColorScheme`, read
+    through `Theme.of` and handed to the renderers with `toAppTheme`.
+  - **Icons.** Every style of every Material icon, and the same glyph on web
+    as everywhere else.
+  - **A keyless widget's id** no longer doubles in length at every stateful
+    widget above it - thirty deep it was megabytes, and hung a page.
+
+  What those apps still work around is §6.
+
 - **Theming — a palette reaches every renderer (2026-09-17).**
   `runApp`/`runNativeApp`/`runWebApp` take an `AppTheme` of `primary`,
   `onPrimary`, `secondary`, `surface` and `error`, carried to every renderer
@@ -1287,7 +1444,11 @@ affordance, not a production error screen.
   which is still the only way to know whether any of this *sounds* right. Focus
   order is the platform's own (the reading order of the tree) rather than
   anything an app can state.
-- **Forms — bound to text fields (2026-09-17).** `TextFormField(field:)` binds a
+- **Forms — bound to text fields (2026-09-17).** *(Renamed 2026-10-03: `Form`,
+  `FormField` and `TextFormField` are Flutter's widgets now. The model this
+  entry describes is exported from `widgets.dart` as `FormModel` and
+  `FormFieldModel`, and the field bound to it is `ModelTextFormField(field:)`.
+  Read the names below with that in mind.)* `TextFormField(field:)` binds a
   `FormField` to a facade `TextField`: it shows the field's value, label, hint
   and validation error, reports edits with `setValue`, and validates on submit
   (and blur). It rebuilds itself when a validator reports an error, so a submit
@@ -1360,9 +1521,12 @@ affordance, not a production error screen.
   reads Flutter's own `icons.dart` and writes both tables, so every one of the
   2,231 filled Material icons can be named (`Icons.shopping_cart`) and drawn,
   with the codepoints that match the font `uses-material-design: true` bundles.
-  The rounded, sharp, outlined and two-tone variants are left out on purpose:
+  ~~The rounded, sharp, outlined and two-tone variants are left out on purpose:
   they live in fonts Flutter does not bundle, so their numbers would draw
-  whatever happens to sit there in the filled one. Ten of them checked by eye
+  whatever happens to sit there in the filled one.~~ - wrong, and put right
+  2026-10-03: Flutter keeps every style in the one `MaterialIcons` font, so
+  `Icons` now has all 8,825 names and the web shell ships that same font
+  instead of mapping codepoints back to another font's ligatures. Ten of them checked by eye
   on an emulator and a simulator - a magnifier, a heart, a house, a cog, a
   cart, a calendar, a cloud, a padlock, a bell and a figure, all the right way
   round. Left: `renderText`-embedded inline icons if wanted.
@@ -1490,7 +1654,9 @@ affordance, not a production error screen.
   points at the git tag rather than a local path, and the integration guide
   offers a git dependency. What is left is pub.dev: `dart pub publish
   --dry-run` passed on everything but those URLs, so the package itself is
-  publishable whenever a version is cut - see RELEASING.md.
+  publishable whenever a version is cut - see RELEASING.md. As of 2026-10-03
+  three apps consume the framework, all by path, with the repository checked
+  out beside them; what that costs them is §6.5.
 - **CI landed (2026-09-16).** `.github/workflows/ci.yml` runs the lanes on
   every push and PR: `flutter analyze` plus the Dart/Flutter/DOM suites,
   `integration_test` on the Linux desktop host, an Android debug build that
@@ -1689,7 +1855,20 @@ affordance, not a production error screen.
 
 ---
 
-## 5. Documentation — cleaned up (2026-09-17), and again (2026-09-19)
+## 5. Documentation — cleaned up (2026-09-17), again (2026-09-19), and brought up to the widget layer (2026-10-03)
+
+**2026-10-03.** The docs described the framework as it was before the widget
+layer took Flutter's shape. Brought up to date: both READMEs (the root one
+still had a table saying Android and iOS were "Flutter + optional FFI"; the
+package one described only the FFI bridge), `INTEGRATION.md` - which gained
+§8, a migration guide for an existing Flutter app, written from the three
+migrations - `API_REFERENCE.md`, and the smaller guides where a rename or a
+changed signature had made them false. One claim was found wrong rather than
+stale: `ROUTING_GUIDE.md` said the browser's Back button pops named routes
+with nothing to wire, and it does not (§6.3 item 11). Every snippet written
+or kept was analysed against the current API.
+
+The earlier passes:
 
 The first pass removed ~38 stale markdown files: the "✅ Complete!" / "Summary"
 build-completion artifacts, the contradicting roadmaps, the plugin
@@ -1743,21 +1922,299 @@ forms via `FormBuilder`/`TextFormField`), and `packages/native_bridge/API_REFERE
 
 ---
 
+## 6. Open after the migration work (2026-10-03)
+
+What is known to be open now that three real apps run on the widget layer.
+Every item traces to the code, a doc comment or the changelog - the place is
+named - and the order inside each group is the order I would do them in.
+
+### 6.1 iOS: compile the Swift, then run it
+
+**The iOS renderer as it stands has never been compiled.** The last iOS that
+ran - five flows on a simulator, the release build on an iPad, 2026-09-24 -
+was the 47-node vocabulary. Since then `ios/Classes/NativeUIRenderer.swift`
+gained about 2,100 lines and `ios/Classes/NativeUIViews.swift`, 2,040 lines,
+is new; all of it was written on a machine with no Xcode. The source-level
+tests in `renderer_coverage_test.dart` read the Swift for the dispatch and for
+a handful of behaviours. They do not compile it, and this project has already
+shipped a Swift renderer that sat uncompilable for two commits behind exactly
+those tests (a missing `override`, 2026-09-18).
+
+So until someone builds it on a Mac, every iOS claim about the twelve new node
+types, right-to-left, the image cache, the disabled controls and the Flutter
+slot is a claim about text. In order:
+
+1. `flutter build ios --simulator --debug --no-codesign` - which is also what
+   the `native.yml` lane will run the moment this is pushed. Expect compile
+   errors; nothing has ever checked this code for so much as a type.
+2. `tool/device_check.sh ios` on a simulator: the five flows, then the
+   integration lane.
+3. The three migrated apps on a simulator, screen by screen, as was done on
+   the Android emulator - those passes found about thirty bugs there and iOS
+   has had none of it.
+
+Where to look first, because it is code whose behaviour cannot be judged by
+reading it:
+
+- **`DnnBoxView`** - one view carrying size, padding, gradient, border,
+  shadow, clip, transform, four gestures, `UIDragInteraction` drag and drop
+  and animated changes. The Android counterpart is where several of the
+  emulator pass's bugs were: a clip outline that was empty on first layout, a box
+  losing its child's stated size, a row in an aligned box not getting the
+  box's width.
+- **The `FlutterSlot` hole** - `DnnFlutterSlotView` has to be see-through and
+  touch-through, `DnnRootContainerView.hitTest` has to let those touches fall
+  to the Flutter view underneath, and `dnn:slotRect` has to report the
+  rectangle in the Flutter view's coordinates. Any one of the three wrong and
+  an ad is invisible, untappable or in the wrong place.
+- **`DnnCanvasDrawingView`** - the Core Graphics replay of the command list.
+  Angles are y-down, where Core Graphics' `clockwise` means the opposite of
+  what it says; text is drawn from its top-left corner with an alignment
+  relative to `maxWidth`.
+- **`DnnScrollView`** - pull-to-refresh, and the scroll-to that is obeyed
+  once per `scrollVersion`.
+- **Right-to-left** - iOS forces `semanticContentAttribute` on every view,
+  where Android sets one property on the root. Every hand-positioned view
+  (grid cells, the lazy list's rows, swipe actions, the stack) has to agree.
+- **The pickers and the dropdown** - the picker code branches on iOS 13.4
+  and 14 for its style, and `DnnDropdownView` on iOS 14 for its menu, so
+  there are paths a single simulator will not take.
+- **`DnnTabBar` / `DnnRailView`** - bottom navigation against the safe area,
+  which is where the app bar and the scaffold both needed a second go.
+- **The patch path.** A node that holds children has to be in the Swift
+  reconciler's `childViews` or it is rebuilt instead of patched, and nothing
+  fails when it is missing - a field inside it just loses focus. The coverage
+  test pins this for the motion nodes only.
+
+The build number is in the same state as the rest: **the Swift that sends it
+back with each event is written and has never been compiled** (changelog, "An
+event is answered by the build it was raised against"). Until it has run, the
+stale-callback bug fixed on Android - a list's size report landing on a row's
+tap after the window moved - is not known to be fixed there. The same goes for
+the scroll reports, the snackbar's position and the scrolling rail that
+Android gained on the emulator: written for iOS, not compiled.
+
+**Done when:** the Swift builds, `device_check.sh ios` is green, the device
+lane's tree includes the new node types (§6.3), and the three apps have been
+looked at on a simulator.
+
+### 6.2 What the widget layer accepts and does not do
+
+Flutter's API is there so that code compiles; these are the places where it
+compiles and then does less. Each is stated in the widget's own doc comment
+(`lib/src/widgets/<file>.dart`). Ordered by how likely a migrated app is to
+notice.
+
+1. **No `AnimationController`.** `Animation` exists for signatures and stands
+   still (`motion.dart`); there is no `Tween`, no `AnimatedBuilder` driven by
+   a controller. A `Ticker` is a 16 ms timer whose tick, if it calls
+   `setState`, is a full rebuild and a message to the platform
+   (`binding.dart`). Anything explicit - a progress ring that eases, a shake,
+   a staggered entrance - has to be restated as an implicit animation or a
+   canvas. The real answer is probably a node that carries a timeline to the
+   renderer, as `animateMs` carries an end state.
+2. **No page transitions.** `MaterialPageRoute` shows its page at once;
+   `PageRouteBuilder.transitionsBuilder` is accepted and never called
+   (`navigation.dart`); `router.dart` has no `pageBuilder`. A `Hero` is its
+   child and nothing more.
+3. **`onEnd` is never called** on any implicit animation - see the protocol
+   gap in §6.3.
+4. **Implicit animation is size, colour, opacity and transform only.**
+   Padding, margin, alignment and borders land at once, so `AnimatedPadding`
+   and `AnimatedAlign` do not animate; `AnimatedSwitcher`, `AnimatedCrossFade`
+   and `AnimatedSize` show the new child with no transition (`motion.dart`).
+   All curves collapse to the five every renderer has.
+5. **A `ScrollController` hears scrolling a step behind, and on a windowed
+   list not at all.** A scroller reports its offset when it comes to rest and
+   at most every 100 ms on the way (verified on the Android emulator,
+   2026-10-03), so `offset` and listeners follow the reader - enough for a
+   "back to top" button or loading more near the end, not for moving
+   something in step with the drag. A windowed `ListView` reports rows, not
+   pixels: its controller still hears the app's moves only, and its
+   `maxScrollExtent` comes from the stated row heights. `animateTo` arrives
+   at once (`scrolling.dart`). No scroll notifications.
+6. **Widgets that are not there**, which fail at compile time: `PageView`,
+   `CustomScrollView` and every sliver, `DataTable`, `Stepper`,
+   `ReorderableListView`, `InteractiveViewer`, `PopScope`. (`Hero`,
+   `MouseRegion` and `PopupMenuButton` were on this list until 2026-10-04;
+   the first two are now there in name, the third opens a dialog.)
+7. **`TextPainter` cannot measure.** Widths are 0.55 x the font size per
+   character (`custom_paint.dart`). Text on a canvas is placed correctly
+   because the box travels with it; a painter that *fits* things around
+   measured text - a chart's axis labels, a word game's tiles - is working
+   from an estimate.
+8. **`Dismissible` reveals an action rather than sliding the row away**, and
+   does nothing for a vertical direction; a `Draggable`'s `feedback` and
+   `childWhenDragging` are not drawn and only `onDragCompleted` is called;
+   `GestureDetector`'s `onTapDown`/`onTapUp`/`onTap` fire together after the
+   tap (`gestures.dart`).
+9. **`TabBarView` does not swipe**, and a tab change does not animate.
+10. **Snackbars are not queued**: the newest replaces the one showing. Their
+    colour, shape, margin and `behavior` are not carried (`navigation.dart`).
+11. **`Scaffold.drawer` is a sheet**, opened by a menu button the app bar
+    gains - not a panel from the side. A scaffold nested in another's body is
+    composed from a column and a stack.
+12. **Canvas paint is flat colour.** Shaders (so gradients), mask filters,
+    blend modes, `clipPath` and `saveLayer` paints are not carried;
+    `Path.addRRect` adds the plain rectangle and `arcToPoint` a straight line.
+13. **`Image.loadingBuilder` and `frameBuilder` are never called**, and
+    `errorBuilder` is called once, up front. `color` tinting is not applied
+    (`text.dart`).
+14. **Focus is text fields only.** `FocusScope.nextFocus()` does nothing
+    (`inputs.dart`); every `KeyboardListener` on screen hears every key
+    (`binding.dart`).
+15. **`TimeOfDay.format` knows two conventions**: twelve-hour for English,
+    twenty-four for everything else.
+16. **`State.didChangeDependencies` runs once**, and `updateShouldNotify` is
+    not consulted (`lib/widgets.dart`).
+
+### 6.3 Protocol gaps
+
+Things no widget can do because no node can say them. Each needs a prop or an
+event, and then the same work in four renderers.
+
+1. **No animation-finished event.** A renderer animates the difference
+   between two trees and never reports the end, which is why `onEnd` is dead
+   (`AnimatedOpacity`'s doc comment). The first thing an explicit-animation
+   design needs.
+2. **No colours on `Toggle`, `Checkbox`, `Radio`, `Slider` or
+   `FloatingActionButton`.** The widgets accept `activeColor`,
+   `backgroundColor` and the rest and carry none of them (`buttons.dart`);
+   every one is drawn in the theme's primary. An app whose brand needs one
+   green switch cannot have it.
+3. **`LazyList` has no refresh and no padding.** A `RefreshIndicator` over a
+   windowed list is "its child and no more", and the list's padding is a
+   `Padding` node around it rather than scrolling content inset
+   (`scrolling.dart`). The lists long enough to be windowed are the ones most
+   likely to want pull-to-refresh.
+4. **Text spans cannot be tapped.** `spans` are styled runs; `TextSpan` has
+   no `recognizer` and a `WidgetSpan` is left out of the line (`text.dart`).
+   "By continuing you accept the *terms*" has to be a `Row`.
+5. **Only the screen has a direction.** `RootProps.textDirection` is one prop
+   on the root. A `Directionality` deep in a screen turns the widget layer's
+   values and rows below it, not the platform's own controls there
+   (changelog; `_screenDirection` in `lib/widgets.dart`). An LTR code field
+   in an Arabic form is not expressible.
+6. **Swipe actions are not mirrored.** `SwipeActions` is "swiped left" for
+   its trailing actions in every direction - Android places the two bars with
+   `Gravity.LEFT` and `Gravity.RIGHT` - and `Dismissible` maps `endToStart`
+   onto it without consulting the direction. In Arabic the delete is on the
+   wrong side.
+7. **Drag and drop reports only the drop.** No start, no end over nothing
+   (`Draggable`'s doc comment), so a board cannot highlight the piece being
+   moved or put it back.
+8. **A text field's look does not travel.** `TextField.style`, and
+   `InputDecoration`'s `border`, `filled`, `fillColor` and `contentPadding`,
+   are accepted and not carried (`inputs.dart`).
+9. **No pixel offset back from a `LazyList`.** `Scroll` reports
+   `{offset, maxExtent, viewport}` through its `scrollEventId` now; `LazyList`
+   still reports its visible range of rows and nothing finer, which is the
+   remainder of §6.2 item 5.
+10. **`NavigationRail`'s `leading`, `trailing` and `extended`** are not drawn.
+11. **`MaterialApp(routes:)` and `Navigator.push` are not in the browser's
+    history.** `_MaterialAppState` binds the back gesture with no history
+    adapter and `runWebApp` binds none for a widget host, so on web the
+    browser's Back button leaves the page and the URL never changes. Only
+    `GoRouter.attachHistory` mirrors. `ROUTING_GUIDE.md` said otherwise until
+    2026-10-03.
+12. **The device lane's "one of every node type" is 47 of 59.**
+    `integration_test/native_renderer_test.dart` builds its tree by hand and
+    has none of the twelve new types in it. The example apps it also draws do
+    reach `Box`, `Scroll` and `Icon` through the widget layer; nothing in the
+    lane draws a `Canvas`, a picker, a `Dropdown`, bottom navigation or a
+    `FlutterSlot`. And no Maestro flow touches any of them.
+
+### 6.4 What the Android emulator passes left open (2026-10-03)
+
+What this section used to list as under way has landed and was seen on the
+emulator: a scroller comes back where it was when a pushed page is popped,
+and reports its offset; a snackbar sits above the scaffold's bottom bar and
+floating button; a navigation rail scrolls when its items do not fit; Android
+draws Material 3 shapes and metrics (40dp stadium buttons, 80dp bottom
+navigation with its pill, the Material 3 floating button, 12dp cards, the app
+bar staying at 56dp as Flutter's does); the widget layer's `AppBar` resolves
+its colours as Flutter does and always sends them. The changelog's "Three
+real apps on an Android emulator" has each. What is left:
+
+1. **A windowed list's offset.** `LazyList` reports rows, not pixels (§6.3
+   item 9), so a `ScrollController` on a `ListView` with `itemExtent` does not
+   follow the reader.
+2. **A snackbar does not know a nested scaffold's floating button.** A
+   scaffold nested in another's body is composed, its button with it, and the
+   snackbar clears only what the outer scaffold owns.
+3. **`ElevatedButton` is drawn as a filled primary button** where Flutter's
+   Material 3 draws a tonal one on the surface.
+4. **A disabled button's look on Android** has not been settled against
+   Flutter's.
+5. **`useMaterial3: false` still gets Material 3 shapes on Android.** The
+   widget layer honours the flag for the app bar's colours; the Material views
+   are built against a Material 3 theme regardless.
+6. **Not verified on any device:** `dnn:key` hardware keys, how
+   pull-to-refresh feels under a finger, the Material date and time pickers
+   (no migrated app opens one), a tap on an ad inside a `FlutterSlot`, a slot
+   inside a scroller, and the image disk cache offline or at expiry.
+
+All of the above was an emulator. §6.5 item 8 is the phone.
+
+### 6.5 Publishing, and living with apps that depend on this
+
+1. **Cut a version.** The pubspec still says 0.1.0 and everything since -
+   including a section of breaking changes - sits under `Unreleased`. By
+   RELEASING.md's own rule this is 0.2.0. Three apps depend on "whatever is
+   in the checkout", which is no version at all.
+2. **pub.dev.** The apps depend by path (`../dart_not_native/packages/
+   native_bridge`), so each of their build machines needs this repository
+   checked out beside them at a compatible commit; a git dependency with a
+   `ref:` is the stopgap. `dart_not_native_bloc` is `publish_to: none` until
+   the main package is hosted, and depends on it by path itself.
+3. **CI for the consuming apps.** Nothing here builds an app that depends on
+   the framework, so a breaking change in the widget layer is found when
+   somebody next builds one of the three. The cheap version is a lane that
+   checks out one of them and runs `flutter analyze` and its tests against
+   the commit under test.
+4. **CI does not run `packages/dart_not_native_bloc`.** `ci.yml` runs the
+   root suite and `packages/native_bridge`; the bloc package's suite is run
+   by hand, and `tool/count_tests.sh` does not count it.
+5. **Ship the test harness.** `test/support/app_tester.dart` is copied into
+   every consuming app because it is not exported. It wants to be a public
+   testing library.
+6. **`--no-tree-shake-icons` on every build.** Forgetting it fails a release
+   build inside Flutter's icon tree shaker (`_iconData` in
+   `lib/platforms/flutter_renderer.dart` says why). Either stop making
+   `IconData` at run time on the paths a release build can see, or document
+   the failure where it will be searched for - INTEGRATION.md §5.2 does the
+   second.
+7. **The gen-l10n bridge is written per app.** Ten lines, the same ten in
+   two of the three apps, and mobile-only because the generated code imports
+   Flutter. A documented pattern today (INTEGRATION.md §8.4); a candidate for
+   a small generator or a companion package.
+8. **Run the device checks on a phone again.** The physical-device evidence
+   (2026-09-24) is all from before this work. `tool/device_check.sh android`
+   on the phone, after §6.3 item 12.
+
+---
+
 ## What is already solid
 
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 1103 tests
-  (588 in the package, 316 for the example apps and goldens, 199 in the browser,
-  counted 2026-09-26), plus 15 integration tests that run on a real Android and
+  contracts, the plugin system and the design system are covered by 1874 tests
+  (1008 in the package, 388 for the example apps and goldens, 478 in the browser,
+  counted 2026-10-04), plus 15 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, thirteen the native
   renderers drawing the whole node vocabulary and every example app.
 - The web DOM renderer is tested in a real browser, including markup goldens
   for three style kits, reconciliation behaviour, the back button, overlays
   and a scrolling lazy list.
-- The Flutter renderer paints every node type, and all fifteen example apps
-  are rendered through it and checked for overflow at phone size.
+- The Flutter renderer paints every node type, and every example app in the
+  catalogue (eleven) is rendered through it and checked for overflow at phone
+  size.
+- The widget layer is exercised family by family
+  (`test/apps/flutter_facade_test.dart`, `packages/native_bridge/test/widgets/`,
+  `packages/native_bridge/test/router/`), and three production apps have
+  test suites of their own written against it.
 - Rendering is coalesced per tick and reconciled structurally, with benchmarks
   behind the numbers.
-- Integration is a dependency and one call, on every target.
+- Integration is a dependency and one call, on every target - plus, on
+  mobile, one activity base class and one build flag (INTEGRATION.md §5).

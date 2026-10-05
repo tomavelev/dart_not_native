@@ -1,0 +1,25 @@
+# The text input showcase: a field that says when it is wrong, and focus
+# moved by the app.
+#
+# entry: android=lib/main_native_textinput.dart
+#
+# A text field's id is on the field itself, so `fill` types into it and its
+# text can be read back by the same id. The error is the field's own, drawn
+# under it by the platform's text input layout.
+context platform=android
+open "com.programtom.dart_not_native" --relaunch
+wait "id=\"email_field\"" 30000
+wait "id=\"name_status\" label=\"Status: Not focused\"" 5000
+
+fill "id=\"email_field\"" "not-an-email"
+wait text "Please enter a valid email" 5000
+fill "id=\"email_field\"" "someone@example.com"
+wait absent "label=\"Please enter a valid email\"" 5000
+is text "id=\"email_field\"" "someone@example.com"
+
+# Focus asked for by the app: the field reports its own focus and blur.
+press "id=\"focus_name\""
+wait "id=\"name_status\" label=\"Status: Focused\"" 5000
+press "id=\"dismiss_keyboard\""
+wait "id=\"name_status\" label=\"Status: Not focused\"" 5000
+close

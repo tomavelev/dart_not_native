@@ -1,303 +1,323 @@
 {
   "type": "Scaffold",
-  "props": {},
+  "props": {
+    "bodyScrolls": false
+  },
   "children": [
     {
       "type": "AppBar",
       "props": {
-        "title": "Design System (Page 1/5)"
+        "title": "Design System (Page 1/5)",
+        "backgroundColor": "#ffffff",
+        "foregroundColor": "#212121"
       },
       "children": null
     },
     {
-      "type": "Column",
+      "type": "Scroll",
       "props": {
-        "crossAxisAlignment": "stretch"
+        "scrollOffset": 0.0,
+        "scrollVersion": 0,
+        "scrollEventId": "cb:1"
       },
       "children": [
         {
-          "type": "Padding",
+          "type": "Column",
           "props": {
-            "padding": 8.0
+            "crossAxisAlignment": "stretch"
           },
           "children": [
             {
-              "type": "Row",
+              "type": "Padding",
               "props": {
-                "mainAxisAlignment": "spaceBetween",
-                "spacing": 0.0
+                "padding": 8.0
               },
               "children": [
                 {
-                  "type": "Button",
+                  "type": "Row",
                   "props": {
-                    "label": "Previous",
-                    "eventId": "cb:nav_prev",
-                    "variant": "tertiary",
-                    "disabled": false,
-                    "id": "nav_prev"
-                  },
-                  "children": null
-                },
-                {
-                  "type": "Expanded",
-                  "props": {
-                    "flex": 1
+                    "mainAxisAlignment": "spaceBetween",
+                    "mainAxisSize": "max",
+                    "spacing": 0.0
                   },
                   "children": [
                     {
-                      "type": "Text",
+                      "type": "Button",
                       "props": {
-                        "content": "Page 1 of 5 · Typography",
-                        "fontSize": 16.0,
-                        "fontWeight": 500,
-                        "maxLines": 1,
-                        "overflow": "ellipsis",
-                        "id": "page_indicator"
+                        "label": "Previous",
+                        "eventId": "cb:nav_prev",
+                        "variant": "tertiary",
+                        "minHeight": 40.0,
+                        "paddingHorizontal": 12.0,
+                        "disabled": false,
+                        "id": "nav_prev"
                       },
                       "children": null
-                    }
-                  ]
-                },
-                {
-                  "type": "Button",
-                  "props": {
-                    "label": "Next",
-                    "eventId": "cb:nav_next",
-                    "variant": "tertiary",
-                    "disabled": false,
-                    "id": "nav_next"
-                  },
-                  "children": null
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "Padding",
-          "props": {
-            "padding": 16.0
-          },
-          "children": [
-            {
-              "type": "Row",
-              "props": {
-                "mainAxisAlignment": "start",
-                "spacing": 24.0
-              },
-              "children": [
-                {
-                  "type": "Expanded",
-                  "props": {
-                    "flex": 1
-                  },
-                  "children": [
+                    },
                     {
-                      "type": "Column",
+                      "type": "Expanded",
                       "props": {
-                        "crossAxisAlignment": "start"
+                        "flex": 1
                       },
                       "children": [
                         {
-                          "type": "Padding",
-                          "props": {
-                            "padding": 4.0
-                          },
-                          "children": [
-                            {
-                              "type": "Text",
-                              "props": {
-                                "content": "Font sizes",
-                                "fontSize": 16.0,
-                                "fontWeight": 700
-                              },
-                              "children": null
-                            }
-                          ]
-                        },
-                        {
                           "type": "Text",
                           "props": {
-                            "content": "Heading 1 (32px)",
-                            "fontSize": 32.0,
-                            "fontWeight": 700
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Heading 2 (28px)",
-                            "fontSize": 28.0,
-                            "fontWeight": 600
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Heading 3 (24px)",
-                            "fontSize": 24.0,
-                            "fontWeight": 600
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Body Large (18px)",
-                            "fontSize": 18.0
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Body Medium (16px)",
-                            "fontSize": 16.0
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Body Small (14px)",
-                            "fontSize": 14.0
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Caption (12px)",
-                            "fontSize": 12.0,
-                            "color": "#757575"
+                            "content": "Page 1 of 5 · Typography",
+                            "fontSize": 16.0,
+                            "fontWeight": 500,
+                            "maxLines": 1,
+                            "overflow": "ellipsis",
+                            "id": "page_indicator"
                           },
                           "children": null
                         }
                       ]
+                    },
+                    {
+                      "type": "Button",
+                      "props": {
+                        "label": "Next",
+                        "eventId": "cb:nav_next",
+                        "variant": "tertiary",
+                        "minHeight": 40.0,
+                        "paddingHorizontal": 12.0,
+                        "disabled": false,
+                        "id": "nav_next"
+                      },
+                      "children": null
                     }
                   ]
-                },
+                }
+              ]
+            },
+            {
+              "type": "Padding",
+              "props": {
+                "padding": 16.0
+              },
+              "children": [
                 {
-                  "type": "Expanded",
+                  "type": "Row",
                   "props": {
-                    "flex": 1
+                    "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
+                    "spacing": 24.0
                   },
                   "children": [
                     {
-                      "type": "Column",
+                      "type": "Expanded",
                       "props": {
-                        "crossAxisAlignment": "start"
+                        "flex": 1
                       },
                       "children": [
                         {
-                          "type": "Padding",
+                          "type": "Column",
                           "props": {
-                            "padding": 4.0
+                            "crossAxisAlignment": "start"
                           },
                           "children": [
                             {
+                              "type": "Padding",
+                              "props": {
+                                "padding": 4.0
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Font sizes",
+                                    "fontSize": 16.0,
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            },
+                            {
                               "type": "Text",
                               "props": {
-                                "content": "Font weights",
-                                "fontSize": 16.0,
+                                "content": "Heading 1 (32px)",
+                                "fontSize": 32.0,
                                 "fontWeight": 700
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Heading 2 (28px)",
+                                "fontSize": 28.0,
+                                "fontWeight": 600
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Heading 3 (24px)",
+                                "fontSize": 24.0,
+                                "fontWeight": 600
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Body Large (18px)",
+                                "fontSize": 18.0
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Body Medium (16px)",
+                                "fontSize": 16.0
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Body Small (14px)",
+                                "fontSize": 14.0
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Caption (12px)",
+                                "fontSize": 12.0,
+                                "color": "#757575"
                               },
                               "children": null
                             }
                           ]
-                        },
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
                         {
-                          "type": "Text",
+                          "type": "Column",
                           "props": {
-                            "content": "Light 300",
-                            "fontSize": 18.0,
-                            "fontWeight": 300
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Regular 400",
-                            "fontSize": 18.0,
-                            "fontWeight": 400
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Medium 500",
-                            "fontSize": 18.0,
-                            "fontWeight": 500
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Semibold 600",
-                            "fontSize": 18.0,
-                            "fontWeight": 600
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Bold 700",
-                            "fontSize": 18.0,
-                            "fontWeight": 700
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "SizedBox",
-                          "props": {
-                            "height": 16.0
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Padding",
-                          "props": {
-                            "padding": 4.0
+                            "crossAxisAlignment": "start"
                           },
                           "children": [
                             {
+                              "type": "Padding",
+                              "props": {
+                                "padding": 4.0
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Font weights",
+                                    "fontSize": 16.0,
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            },
+                            {
                               "type": "Text",
                               "props": {
-                                "content": "Line heights",
-                                "fontSize": 16.0,
+                                "content": "Light 300",
+                                "fontSize": 18.0,
+                                "fontWeight": 300
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Regular 400",
+                                "fontSize": 18.0,
+                                "fontWeight": 400
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Medium 500",
+                                "fontSize": 18.0,
+                                "fontWeight": 500
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Semibold 600",
+                                "fontSize": 18.0,
+                                "fontWeight": 600
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Bold 700",
+                                "fontSize": 18.0,
                                 "fontWeight": 700
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "SizedBox",
+                              "props": {
+                                "height": 16.0
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Padding",
+                              "props": {
+                                "padding": 4.0
+                              },
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "content": "Line heights",
+                                    "fontSize": 16.0,
+                                    "fontWeight": 700
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Tight (1.2) for headings"
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Normal (1.5) for body"
+                              },
+                              "children": null
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Relaxed (1.8) for long-form"
                               },
                               "children": null
                             }
                           ]
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Tight (1.2) for headings"
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Normal (1.5) for body"
-                          },
-                          "children": null
-                        },
-                        {
-                          "type": "Text",
-                          "props": {
-                            "content": "Relaxed (1.8) for long-form"
-                          },
-                          "children": null
                         }
                       ]
                     }

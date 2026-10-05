@@ -66,3 +66,8 @@ test/**/failures/
 
 # Signing is per developer - see ios/Flutter/Signing.xcconfig.example
 ios/Flutter/Signing.xcconfig
+
+# What a run of e2e/agent-device/run.sh leaves behind
+/e2e/agent-device/artifacts/
+.agent-device/
+/maestro/native/artifacts/

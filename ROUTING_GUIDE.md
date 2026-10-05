@@ -1,13 +1,46 @@
 # Routing Guide
 
-Navigation in dart_not_native is a plain-Flutter `MaterialApp` with named routes,
-imported from `package:dart_not_native/widgets.dart`. The route table, the
-history stack and the platform back gesture come with it — and, as everywhere in
-the facade, the only difference from a real Flutter app is that import.
+Navigation in dart_not_native is Flutter's, imported from
+`package:dart_not_native/widgets.dart`: `Navigator.push` with a
+`MaterialPageRoute`, or a `MaterialApp` with named routes. An app built on
+go_router has a third way, `package:dart_not_native/router.dart`, which is
+go_router's API. All three share one back gesture.
 
-The working example is `lib/examples/apps/routing_example_app.dart`.
+The working example for named routes is
+`lib/examples/apps/routing_example_app.dart`.
 
-## A single screen vs. a routed app
+One thing is different from Flutter in all three, and it is worth knowing
+before anything else: **pages do not transition.** A pushed page replaces what
+was on screen at once - no slide, no fade, no `Hero`.
+
+## Pushing a page
+
+Exactly as in Flutter:
+
+```dart
+final saved = await Navigator.push<bool>(
+  context,
+  MaterialPageRoute(builder: (context) => const EditScreen()),
+);
+if (saved == true) { /* ... */ }
+
+// in EditScreen:
+Navigator.pop(context, true);
+```
+
+`push` answers with a future that completes with the value given to `pop`.
+The pages beneath a pushed one keep their `State` and are exactly as they were
+when it is popped. An `AppBar` on a page that can be popped gains a back
+button on its own, unless `automaticallyImplyLeading` is false.
+
+`pushReplacement`, `pushAndRemoveUntil`, `popUntil`, `maybePop` and `canPop`
+are there, on `Navigator` and on `Navigator.of(context)`. `PageRouteBuilder`
+is accepted and its `transitionsBuilder` is never called.
+
+`Navigator.of(context)` works from any widget tree - `runApp` puts a navigator
+at the root - so pushing a page needs no `MaterialApp`.
+
+## Named routes
 
 For one screen, pass `home`:
 
@@ -15,22 +48,23 @@ For one screen, pass `home`:
 runApp(MaterialApp(home: const HomeScreen()));
 ```
 
-For several, pass `initialRoute` and a `routes` map. Each entry maps a path to a
-builder that returns the screen:
+For several, pass `initialRoute` and a `routes` map. A route builder is
+Flutter's `(context) => Widget`; one that takes a second parameter is given
+the path's parameters:
 
 ```dart
 MaterialApp(
   initialRoute: '/',
   routes: {
-    '/':            (context, params) => const HomeScreen(),
-    '/users':       (context, params) => const UsersList(),
-    '/users/:id':   (context, params) => UserDetail(id: params['id']),
-    '/settings':    (context, params) => const Settings(),
+    '/':            (context) => const HomeScreen(),
+    '/users':       (context) => const UsersList(),
+    '/users/:id':   (context, params) => UserDetail(id: params['id'] as String),
+    '/settings':    (context) => const Settings(),
   },
 )
 ```
 
-A route builder is a `RouteWidgetBuilder`:
+The second form is a `RouteWidgetBuilder`:
 
 ```dart
 typedef RouteWidgetBuilder = Widget Function(
@@ -39,7 +73,10 @@ typedef RouteWidgetBuilder = Widget Function(
 );
 ```
 
-## Route parameters
+Because the map holds both shapes it is typed `Map<String, Function>`; a
+builder of any other shape throws an `ArgumentError` when its route is built.
+
+### Route parameters
 
 A segment starting with `:` is a parameter. `'/users/:id'` matched against
 `/users/42` gives `params['id'] == '42'`:
@@ -51,30 +88,28 @@ A segment starting with `:` is a parameter. `'/users/:id'` matched against
 },
 ```
 
-Parameters are strings; parse them yourself (`int.tryParse(params['id'])`).
+Parameters are strings; parse them yourself (`int.tryParse('${params['id']}')`).
 
-## Moving between screens
-
-Get the navigator from any `BuildContext` with `Navigator.of(context)`:
+### Moving between named routes
 
 ```dart
 // Go to a route.
 Navigator.of(context).pushNamed('/users/42');
 
-// Go back (pops the current route, or closes a dialog/sheet if one is open).
+// Go back (closes a dialog or sheet if one is open, else pops).
 Navigator.of(context).pop();
-
-// Go back with a result.
-Navigator.of(context).pop('saved');
 ```
 
 `pop()` is overloaded on purpose: if a dialog or bottom sheet is open it closes
-that first; otherwise it pops the route. So one back action does the right thing
-whether a modal is up or not.
+that first; otherwise it pops a pushed page; otherwise it steps the named
+router back. So one back action does the right thing whether a modal is up or
+not.
 
-## The history stack
+### The history stack
 
-The navigator exposes the stack, for a back button or a breadcrumb:
+The navigator exposes the named router's stack, for a back button or a
+breadcrumb. These three are the framework's own - Flutter's `NavigatorState`
+has no such members:
 
 | Member | Returns |
 | --- | --- |
@@ -88,13 +123,84 @@ if (nav.canGoBack) TextButton(onPressed: nav.pop, child: const Text('Back'));
 Text('You are at ${nav.currentPath}');
 ```
 
+## go_router's API
+
+An app that routes with go_router changes one import and removes the
+dependency:
+
+```dart
+import 'package:dart_not_native/router.dart';
+import 'package:dart_not_native/widgets.dart';
+
+final router = GoRouter(
+  initialLocation: '/',
+  redirect: (context, state) => signedIn ? null : '/login',
+  routes: [
+    GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+    ShellRoute(
+      builder: (context, state, child) => AppShell(child: child),
+      routes: [
+        GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+        GoRoute(
+          path: '/guests/:id',
+          builder: (context, state) => GuestScreen(state.pathParameters['id']!),
+        ),
+      ],
+    ),
+  ],
+);
+
+void main() => runApp(MaterialApp.router(routerConfig: router));
+```
+
+`context.go`, `context.push`, `context.pop`, `context.replace` and the named
+variants, `redirect` at the router and on a route, `refreshListenable`,
+`errorBuilder`, `GoRouterState` with `pathParameters`, `uri`,
+`matchedLocation` and `extra`.
+
+It is a subset and says where it stops:
+
+- no `pageBuilder`, `Page`s or transitions;
+- no `StatefulShellRoute`, no navigator keys, no `onExit`;
+- a path parameter matches one whole segment - inline patterns (`:id(\d+)`)
+  are not supported;
+- with a browser history attached, `push` writes a history entry too (in
+  go_router only `go` changes the URL by default).
+
 ## The platform back gesture
 
-You get it for free. The Android back button and the iOS edge-swipe pop the
-top route, and on the first screen they hand control back to the platform
-(the app closes or backgrounds). On the web the browser Back button pops the
-same stack, and an in-app `pop()` updates the URL — the history is one stack,
-however the user moves through it. There is nothing to wire.
+On Android and iOS you get it for free: the back button and the edge swipe
+close the topmost dialog or sheet, then pop a pushed page or step the named
+router back, and on the first screen hand control back to the platform (the
+app closes or backgrounds). Android needs `MainActivity` to extend
+`FlutterFragmentActivity` - INTEGRATION.md §5.1.
+
+**On the web it depends on how the app routes.** Only `GoRouter` is mirrored
+into the browser's history, and only once it is handed the adapter:
+
+```dart
+// lib/main_web.dart
+import 'package:dart_not_native/web.dart'
+    show BrowserHistoryAdapter, bindBrowserBack;
+
+Future<void> main() async {
+  final history = BrowserHistoryAdapter();
+  final router = buildRouter(initialLocation: history.currentPath ?? '/')
+    ..attachHistory(history);
+  await runApp(MaterialApp.router(routerConfig: router));
+  bindBrowserBack();
+}
+```
+
+Every `go` and `push` then becomes a history entry written to the URL
+fragment (`#/guests/7`), so a reload or a deep link lands on the same screen
+and the browser's Back button pops in-app navigation before leaving the page.
+
+`MaterialApp(routes:)` and `Navigator.push` are **not** mirrored: in-app back
+buttons work, but the browser's Back button leaves the page and the URL does
+not change. (An earlier version of this guide said otherwise. It is an open
+item - `TODO.md` §6.3.) A web app that needs Back and deep links routes with
+`GoRouter`.
 
 ## A complete example
 
@@ -110,7 +216,7 @@ class RoutingApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
         initialRoute: '/',
         routes: {
-          '/':          (context, params) => const _Home(),
+          '/':          (context) => const _Home(),
           '/users/:id': (context, params) => _User(id: params['id'] as String),
         },
       );

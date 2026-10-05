@@ -21,7 +21,10 @@ class OverlayBack {
   bool _registered = false;
 
   /// Node types that take the back gesture while open.
-  static const modalTypes = {'Dialog', 'BottomSheet'};
+  ///
+  /// The pickers are in the list for the same reason a dialog is: each is
+  /// modal, and each fires its dismiss event when it is sent away.
+  static const modalTypes = {'Dialog', 'BottomSheet', 'DatePicker', 'TimePicker'};
 
   /// Tracks the modal overlays in [tree], rendered by [renderer].
   void track(WidgetNode tree, NativeUIRenderer renderer) {

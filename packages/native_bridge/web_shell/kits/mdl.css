@@ -29,3 +29,23 @@
 .dnn-mdl-chip--outlined .mdl-chip__text { color: inherit; }
 
 .dnn-mdl-list.mdl-list { align-self: stretch; padding: 0; margin: 0; background: var(--dnn-surface); }
+
+/* Material's outlined and tonal buttons, on MDL's flat one. */
+.dnn-kit-mdl .dnn-mdl-button--outlined { color: var(--dnn-primary); border: 1px solid var(--dnn-divider); }
+.dnn-kit-mdl .dnn-mdl-button--tonal { color: var(--dnn-primary); background: color-mix(in srgb, var(--dnn-primary) 16%, var(--dnn-surface)); }
+
+/* MDL's FAB is a fixed circle with its icon pinned to the middle; the
+   extended one is a pill with the icon in line before the label. */
+.dnn-fab--extended.mdl-button--fab {
+  width: auto;
+  min-width: 80px;
+  border-radius: 16px;
+  padding: 0 20px 0 16px;
+  font-size: 14px;
+  text-transform: none;
+  color: var(--dnn-on-primary, #fff);
+}
+.dnn-fab--extended.mdl-button--fab .material-icons { position: static; transform: none; width: auto; line-height: 1; }
+
+/* MDL gives an icon inside a button a line-height of its own. */
+.mdl-button .dnn-button__icon.material-icons { vertical-align: middle; }

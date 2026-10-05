@@ -14,6 +14,7 @@ export 'src/app_theme.dart';
 export 'src/native_ui_app.dart';
 export 'src/system_back.dart';
 export 'src/event_binding.dart';
+export 'src/flutter_slots.dart';
 export 'src/frame_probe.dart';
 export 'src/listenable.dart';
 export 'src/render_error.dart';
@@ -23,7 +24,11 @@ export 'platforms/android_ui_builder.dart';
 export 'platforms/ios_ui_builder.dart';
 export 'design_system/tokens.dart';
 export 'design_system/components.dart';
-export 'routing/route.dart';
+// The legacy router's `Route` and `RouterConfig` share their names with the
+// widget layer's (Flutter's) classes, so they are not part of this surface:
+// a file that imports core.dart and widgets.dart together means Flutter's.
+// Import 'routing/route.dart' directly for the legacy ones.
+export 'routing/route.dart' hide Route, RouterConfig;
 export 'routing/navigation_app.dart';
 export 'routing/history_sync.dart';
 export 'i18n/translations.dart';

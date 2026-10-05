@@ -1,0 +1,28 @@
+# The design system showcase: buttons that report, and the three checkable
+# controls.
+#
+# entry: android=lib/main_native_design_system.dart
+context platform=android
+open "com.programtom.dart_not_native" --relaunch
+wait "id=\"page_indicator\" label=\"Page 1 of 5 · Typography\"" 30000
+
+press "id=\"nav_next\""
+press "id=\"nav_next\""
+press "id=\"nav_next\""
+wait "id=\"page_indicator\" label=\"Page 4 of 5 · Buttons & Cards\"" 5000
+wait "id=\"last_action\" label=\"Last pressed: none\"" 5000
+press "label=\"Secondary\""
+wait absent "id=\"last_action\" label=\"Last pressed: none\"" 5000
+# A disabled button is announced as one, and pressing it changes nothing.
+wait "label=\"Disabled\" enabled=false" 5000
+
+press "id=\"nav_next\""
+wait "id=\"page_indicator\" label=\"Page 5 of 5 · Feedback & Inputs\"" 5000
+wait "id=\"newsletter_state\" label=\"Newsletter: off\"" 5000
+press "label=\"Subscribe to newsletter\""
+wait "id=\"newsletter_state\" label=\"Newsletter: on\"" 5000
+press "label=\"Plan: Pro\""
+wait "id=\"plan_state\" label=\"Selected plan: pro\"" 5000
+press "label=\"Dark mode\""
+wait "id=\"dark_mode_state\" label=\"Dark mode: on\"" 5000
+close
