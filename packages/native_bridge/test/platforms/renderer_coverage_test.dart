@@ -79,7 +79,7 @@ void main() {
       pattern: RegExp(r'"[A-Za-z]+"(, "[A-Za-z]+")* ->'),
     ),
     'iOS (Swift)': handledTypes(
-      'ios/Classes/NativeUIRenderer.swift',
+      'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift',
       pattern: RegExp(r'case "[A-Za-z]+"(, "[A-Za-z]+")*:'),
     ),
   };
@@ -118,7 +118,8 @@ void main() {
     final sources = {
       'Android (Kotlin)':
           'android/src/main/kotlin/com/programtom/dart_not_native/NativeUIRenderer.kt',
-      'iOS (Swift)': 'ios/Classes/NativeUIRenderer.swift',
+      'iOS (Swift)':
+          'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift',
     };
 
     sources.forEach((name, path) {
@@ -153,7 +154,7 @@ void main() {
         marker: 'child-views',
       ),
       'iOS (Swift)': handledTypes(
-        'ios/Classes/NativeUIRenderer.swift',
+        'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift',
         pattern: RegExp(r'case "[A-Za-z]+"(,\s*"[A-Za-z]+")*:'),
         marker: 'child-views',
       ),
@@ -194,7 +195,7 @@ void main() {
     test('iOS (Swift) sends a change event as the text changes', () {
       expect(
         handlerBody(
-          'ios/Classes/NativeUIRenderer.swift',
+          'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift',
           '@objc private func textChanged(_ sender: UITextField) {',
         ),
         contains('"change"'),
@@ -212,7 +213,8 @@ void main() {
     const kotlin =
         'android/src/main/kotlin/com/programtom/dart_not_native/'
         'NativeUIRenderer.kt';
-    const swift = 'ios/Classes/NativeUIRenderer.swift';
+    const swift =
+        'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift';
 
     final paths = {
       'Android (Kotlin)': (
@@ -272,7 +274,8 @@ void main() {
       );
     });
 
-    const swift = 'ios/Classes/NativeUIRenderer.swift';
+    const swift =
+        'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift';
 
     test('iOS (Swift) lets a scaffold with a bar start at the very top', () {
       expect(
@@ -346,7 +349,8 @@ void main() {
     const kotlin =
         'android/src/main/kotlin/com/programtom/dart_not_native/'
         'NativeUIRenderer.kt';
-    const swift = 'ios/Classes/NativeUIRenderer.swift';
+    const swift =
+        'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift';
 
     /// What each renderer's function must still contain: a name for the
     /// test, the file, the function's opening, and the lines that do the job.
@@ -505,8 +509,10 @@ void main() {
     const kotlinViews =
         'android/src/main/kotlin/com/programtom/dart_not_native/'
         'NativeUIViews.kt';
-    const swift = 'ios/Classes/NativeUIRenderer.swift';
-    const swiftViews = 'ios/Classes/NativeUIViews.swift';
+    const swift =
+        'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift';
+    const swiftViews =
+        'ios/dart_not_native/Sources/dart_not_native/NativeUIViews.swift';
 
     test('Android (Kotlin) reports a node id as the resource name', () {
       final identify = handlerBody(
@@ -600,7 +606,8 @@ void main() {
     const kotlin =
         'android/src/main/kotlin/com/programtom/dart_not_native/'
         'NativeUIRenderer.kt';
-    const swift = 'ios/Classes/NativeUIRenderer.swift';
+    const swift =
+        'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift';
     // The build number is added where an event leaves; a second call to the
     // channel would be a way round it.
     expect(

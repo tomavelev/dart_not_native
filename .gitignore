@@ -71,3 +71,7 @@ ios/Flutter/Signing.xcconfig
 /e2e/agent-device/artifacts/
 .agent-device/
 /maestro/native/artifacts/
+
+# What Xcode and `swift build` leave beside a plugin's Package.swift
+.build/
+.swiftpm/

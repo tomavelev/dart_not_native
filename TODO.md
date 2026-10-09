@@ -1939,8 +1939,8 @@ one screen of the new vocabulary has been looked at.** The last iOS anyone
 watched before that - five flows on a
 simulator, the release build on an iPad, 2026-09-24 - was the 47-node
 vocabulary. Since then
-`ios/Classes/NativeUIRenderer.swift` gained about 2,100 lines and
-`ios/Classes/NativeUIViews.swift`, 2,040 lines, is new; all of it was written
+`ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift` gained about 2,100 lines and
+`ios/dart_not_native/Sources/dart_not_native/NativeUIViews.swift`, 2,040 lines, is new; all of it was written
 on a machine with no Xcode. The source-level tests in
 `renderer_coverage_test.dart` read the Swift for the dispatch and for a
 handful of behaviours; they do not compile it. The `native.yml` lane does, and

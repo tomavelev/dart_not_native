@@ -9,11 +9,11 @@ the left screen edge to Dart.
   s.homepage         = 'https://programtom.com'
   s.license          = { :type => 'Apache-2.0', :file => '../LICENSE' }
   s.author           = { 'Toma Velev' => 'tomavelev@gmail.com' }
-  # TODO: point at the published repository once it is hosted.
   s.source           = { :git => 'https://github.com/tomavelev/dart_not_native.git', :tag => s.version.to_s }
-  s.source_files     = 'Classes/**/*'
+  # Where Swift Package Manager expects them, so both build the same files.
+  s.source_files     = 'dart_not_native/Sources/dart_not_native/**/*.swift'
   s.dependency 'Flutter'
-  s.platform = :ios, '12.0'
+  s.platform = :ios, '15.0'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.swift_version = '5.0'
 end

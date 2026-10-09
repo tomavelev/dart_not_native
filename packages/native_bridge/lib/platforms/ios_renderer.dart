@@ -92,7 +92,7 @@ class iOSNativeRenderer implements NativeUIRenderer, HasFrameProbe {
   ///
   /// The native side diffs the tree it receives against the one on screen and
   /// patches only what changed (`renderTree` in
-  /// `ios/Classes/NativeUIRenderer.swift`), falling back to a full rebuild when
+  /// `ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift`), falling back to a full rebuild when
   /// the shape changes.
   ///
   /// Each render still crosses the platform channel and walks the whole tree,
@@ -151,9 +151,15 @@ class iOSNativeRenderer implements NativeUIRenderer, HasFrameProbe {
       // The native half answers with what it could not draw, structured; see
       // RenderError.fromChannel, which also reads the bare string older halves
       // returned.
-      return RenderError.fromChannel(await platform.invokeMethod('render', json));
+      return RenderError.fromChannel(
+        await platform.invokeMethod('render', json),
+      );
     } catch (e, stackTrace) {
-      return RenderError.failed('Render error: $e', cause: e, stackTrace: stackTrace);
+      return RenderError.failed(
+        'Render error: $e',
+        cause: e,
+        stackTrace: stackTrace,
+      );
     }
   }
 

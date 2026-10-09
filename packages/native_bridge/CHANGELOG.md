@@ -93,6 +93,16 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### The iOS plugin is a Swift package too
+
+- `ios/dart_not_native/Package.swift` declares the plugin for Swift Package
+  Manager, which Flutter is moving every plugin to and had begun warning
+  about. The three Swift files moved from `ios/Classes/` to
+  `ios/dart_not_native/Sources/dart_not_native/`, where SwiftPM expects
+  them, and the podspec builds them from there - so an app on CocoaPods
+  gets the same code it did. Built both ways on a simulator. The podspec's
+  minimum is iOS 15 now, which is Flutter's own.
+
 ### The iOS renderer runs again
 
 - Everything the Swift renderer gained on 2026-10-03 was written on a machine

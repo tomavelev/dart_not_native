@@ -5,7 +5,7 @@
 /// `examples/apps/counter_app.dart` - on the iOS `UIView` renderer via [runApp]
 /// from `widgets.dart`: the widget tree crosses the
 /// `com.programtom.dart_not_native/renderer` method channel and is drawn as
-/// real UIKit views by `ios/Classes/NativeUIRenderer.swift`. Flutter only hosts
+/// real UIKit views by `ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift`. Flutter only hosts
 /// the engine; every pixel on screen is a UIView.
 ///
 /// Run it with:
