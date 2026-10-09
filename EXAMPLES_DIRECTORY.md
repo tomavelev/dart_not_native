@@ -88,7 +88,8 @@ flutter run -t lib/main_native_ios.dart                 -d <ios>      # the coun
 `--no-tree-shake-icons` is needed for a release build and harmless otherwise:
 icons are made from codepoints at run time, which Flutter's icon tree shaker
 refuses (INTEGRATION.md §5.2). On iOS, see the status in the README first -
-the Swift renderer as it stands has not been compiled.
+the Swift renderer as it stands draws these examples on a simulator and has
+not been looked at beyond that.
 
 Most files directly under `lib/examples/` are mobile entries that call
 `runApp` from `widgets.dart` and so draw natively too. Two are not:

@@ -86,7 +86,7 @@ if [ "$TESTS_ONLY" = 0 ] && [ "$MAESTRO_STAGE" = 1 ]; then
 fi
 
 # The agent-device lane is Android's for now: its flows were recorded there,
-# and the iOS renderer's half of what they rely on has not been compiled.
+# and the iOS renderer's half of what they rely on has only drawn the examples.
 if [ "$TESTS_ONLY" = 0 ] && [ "$AGENT_DEVICE_STAGE" = 1 ] && [ "$PLATFORM" = android ]; then
   echo "== flows (agent-device)"
   e2e/agent-device/run.sh --device "$DEVICE"

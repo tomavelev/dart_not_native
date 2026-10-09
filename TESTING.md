@@ -83,8 +83,10 @@ machine, instead of showing a placeholder on a device nobody is holding.
 
 Reading source is not compiling it, and compiling it is not running it. The
 `native.yml` lane compiles both natives when a path that can break them
-changes, and it built everything the iOS renderer gained on 2026-10-03 - so
-that Swift compiles, and has never drawn a screen (`TODO.md` §6.1).
+changes, and it built everything the iOS renderer gained on 2026-10-03.
+`tool/device_check.sh ios` then ran it on a simulator on 2026-10-09 and came
+back green - which says the examples draw, not that anyone has looked at them
+(`TODO.md` §6.1).
 
 ## What runs in CI, and when
 
@@ -156,8 +158,8 @@ Maestro flows do, and the runner builds each one once. It exits non-zero if a
 flow fails, and leaves agent-device's logs, a JUnit file per flow and a
 screenshot of the screen a failing flow stopped on under
 `e2e/agent-device/artifacts/`, which git ignores. Android only for now: the
-flows were written there, and the iOS half of what they rely on has been
-compiled and never run.
+flows were written there, and the iOS half of what they rely on has drawn
+the examples on a simulator and nothing more.
 
 Six flows, across four entry points: the component showcase, the design
 system, the text input showcase, and the controls gallery

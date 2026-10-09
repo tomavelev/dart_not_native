@@ -190,7 +190,9 @@ Colours on a node are `#rrggbb`, or `#aarrggbb` with alpha. Alignments are
 
 The bold rows are the twelve types added since 0.1.0. On Android they have
 been drawn on an emulator - all but `DatePicker` and `TimePicker`, which no
-app there opened; **on iOS the Swift for them has not been compiled.**
+app there opened. **On iOS eight of them have been drawn on a simulator, by
+the example apps and unlooked at; `Dropdown`, `DatePicker`, `TimePicker` and
+`FlutterSlot` have not been drawn at all.**
 
 ### The newer nodes
 
@@ -251,7 +253,8 @@ An event is answered by the build it was raised against: the tree travels
 with its build number, both native renderers hand it back with each event,
 the web and Flutter renderers name the build they are showing, and
 `EventBindings` keeps the last few builds' callbacks. Verified on an Android
-emulator; the Swift that sends it is written and has not been compiled.
+emulator; the Swift that sends it compiles, and the stale-callback case it
+is there for has not been tried on iOS.
 
 ### Errors
 

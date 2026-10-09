@@ -93,6 +93,19 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### The iOS renderer runs again
+
+- Everything the Swift renderer gained on 2026-10-03 was written on a machine
+  with no Xcode. It compiles (the `native.yml` lane, 2026-10-05), and on
+  2026-10-09 `tool/device_check.sh ios` passed on an iPhone 18 Pro simulator
+  (iOS 27.0): the five Maestro flows, `app_test.dart` (2 tests) and
+  `native_renderer_test.dart` (14 tests - every example app drawn with
+  nothing reported undrawn). The examples put eight of the twelve new node
+  types through it: `Box`, `Stack`, `Positioned`, `Scroll`, `Icon`, `Canvas`,
+  `BottomBar` and `BottomNavigation`. `Dropdown`, `DatePicker`, `TimePicker`
+  and `FlutterSlot` are on none of those screens. Nobody looked at what was
+  drawn, and none of the three migrated apps has run on iOS.
+
 ### Three real apps on an Android emulator
 
 Three migrated Flutter apps were walked screen by screen on a Pixel 8 emulator
@@ -105,9 +118,9 @@ Three migrated Flutter apps were walked screen by screen on a Pixel 8 emulator
   whichever row's tap had since been given its number, selecting a time nobody
   touched. The tree now travels with its build number, the views hand it back
   with every event, and `EventBindings` keeps the last few builds' callbacks.
-  Both native renderers echo the number - the Swift compiles and has not
-  been run - and the web and Flutter renderers name the build they are
-  showing: the Flutter host builds its widgets a frame after a render, so a
+  Both native renderers echo the number - the Swift compiles, and the case
+  has not been tried on iOS - and the web and Flutter renderers name the build
+  they are showing: the Flutter host builds its widgets a frame after a render, so a
   tap in that frame was from the build before.
 - **Buttons are drawn as written**: no forced capitals or wide tracking on a
   button, a tab, a snackbar action or an extended FAB, and no shadow box
@@ -141,12 +154,12 @@ Three migrated Flutter apps were walked screen by screen on a Pixel 8 emulator
   pushed one, a snackbar changed the shape of the screen - starts where the
   reader was instead of at the top. A scroller without a controller keeps its
   position by its place in the tree. On Android, web and the Flutter host;
-  written for iOS, compiled and not run. A windowed list still reports rows, not
+  written for iOS, compiled and not checked there. A windowed list still reports rows, not
   pixels.
 - **A snackbar sits above the bottom bar and the floating button**, not over
-  them, on Android, web and the Flutter host (iOS compiled, not run).
+  them, on Android, web and the Flutter host (iOS compiled, not checked).
 - **A navigation rail scrolls when its destinations do not fit** - seven of
-  them on a phone held sideways - on all four renderers (iOS compiled, not run).
+  them on a phone held sideways - on all four renderers (iOS compiled, not checked).
 - **Material 3 on Android.** The Material views are built against a Material
   3 theme: buttons have round ends, the bottom navigation is 80dp with a pill
   behind the selected destination, the floating button is the rounded square,
@@ -303,8 +316,8 @@ accessibility tree: no view had an identifier, and what was composed from
 boxes - every `InkWell`, list tile, chip and drawn button - had no name and
 no role. Each was a defect for TalkBack and VoiceOver before it was one for a
 test. Verified on an Android 15 emulator; the DOM renderer has browser tests
-for the same; **the Swift compiles and has never been run**, like the rest of
-the iOS renderer since 2026-10-03.
+for the same; **the Swift compiles and none of this has been checked on
+iOS** beyond the accessibility flow the device check already had.
 
 - **A node's `id` reaches the tree.** A widget's `Key` was already the node's
   `id`; the renderers now expose it - Android as the view's resource name
@@ -503,8 +516,8 @@ inner control is not hidden. The Flutter renderer was not touched.
   locale - app bar, bottom-navigation order, list tiles, tabs, calendar and
   switch all mirrored - and remote images loaded in list rows. What the disk
   cache does offline or at expiry was not examined, and nothing records the
-  disabled controls on a device. The Swift has not been compiled and is
-  pinned by source-level tests only.
+  disabled controls on a device. The Swift compiles and none of this has
+  been looked at on iOS.
 
 ### Two more apps, and what they needed
 

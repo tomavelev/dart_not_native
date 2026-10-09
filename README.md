@@ -46,8 +46,8 @@ Flutter app), which is the renderer the test suite covers most heavily.
 
 In one paragraph: **web and the Flutter renderer are tested; Android is run on
 a phone and an emulator, including three migrated production apps; the iOS
-renderer as it stands compiles in CI and has never been run; nothing is on
-pub.dev.**
+renderer as it stands draws the examples on a simulator and has had none of
+the three apps on it; nothing is on pub.dev.**
 [TODO.md](TODO.md) and [the changelog](packages/native_bridge/CHANGELOG.md)
 carry the detail, and this list is kept short so it does not drift out of step
 with them.
@@ -87,8 +87,12 @@ with them.
 - **iOS for anything recent.** The Swift for the twelve node types added
   since the last iOS run, for right-to-left, the image cache, the
   `FlutterSlot` hole, scroll reporting and the event build number compiles
-  in CI and has never been run on a simulator or a device. Assume it needs
-  work before it draws a screen correctly.
+  in CI, and on 2026-10-09 it passed the device check on a simulator: the
+  five flows and every example app drawn with nothing left undrawn. Nobody
+  has looked at those screens, a dropdown, the two pickers and a
+  `FlutterSlot` were not on any of them, and none of the three migrated apps
+  has run on it. Assume it needs work before it draws a real screen
+  correctly.
 - **Animation you drive yourself.** No `AnimationController`, no page
   transitions; a `Hero` compiles and does not fly. Implicit animations of size, colour, opacity and
   transform are done by the renderer; a `Ticker` is a 16 ms timer.
@@ -201,7 +205,7 @@ your screens  ──  package:dart_not_native/widgets.dart      Flutter's API, p
 | Target | Drawn by | Flutter engine | Evidence |
 |---|---|---|---|
 | **Android** | `NativeUIRenderer.kt`: Material and platform views | hosts Dart and plugins | a phone and an emulator; three migrated apps on the emulator |
-| **iOS** | `NativeUIRenderer.swift`: UIKit | hosts Dart and plugins | simulator and iPad for the earlier vocabulary; **current Swift compiled, never run** |
+| **iOS** | `NativeUIRenderer.swift`: UIKit | hosts Dart and plugins | simulator and iPad for the earlier vocabulary; **current Swift: the examples on a simulator, unlooked at** |
 | **Web** | `WebUIRenderer`: DOM, styled by a CSS kit | none | browser test suite, markup goldens, Maestro flows |
 | **Any Flutter host** | `FlutterUIRenderer`: Flutter widgets | paints | widget tests; every example rendered and checked for overflow |
 
