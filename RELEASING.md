@@ -74,13 +74,15 @@ new heading, so `git show v0.2.0` shows the release itself.
 1. Every lane green: `flutter analyze --no-fatal-infos lib packages/native_bridge/lib`,
    the package suite, the example suite, the DOM suite in Chrome, and
    `flutter test integration_test` on an Android and an iOS device (see
-   `.github/workflows/ci.yml` for the exact commands). Also, by hand, since no
-   lane runs it: `flutter test` in `packages/dart_not_native_bloc`.
+   `.github/workflows/ci.yml` for the exact commands). CI runs
+   `packages/dart_not_native_bloc` too. The device half is
+   `tool/device_check.sh android` and `tool/device_check.sh ios`, which no
+   lane runs.
 
-   The iOS half of this cannot be met today. The Swift renderer has not been
-   compiled since it gained twelve node types (TODO.md §6.1), so a release
-   cut now would ship an iOS half nobody has built. Either compile and run it
-   first, or say so under **Known limits** in so many words.
+   The iOS half of this is met for the examples and not beyond them: the
+   device check is green on a simulator and one screen of the new vocabulary
+   has been looked at, but none of the three migrated apps has run on iOS
+   (TODO.md §6.1). Say so under **Known limits** in so many words.
 2. Move the CHANGELOG's `Unreleased` entries under a `## <version>` heading.
    Anything still true and unfinished belongs under **Known limits** rather
    than being dropped.

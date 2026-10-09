@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Counts the three test suites and, with --write, puts the numbers into TODO.md.
+# Counts the four test suites and, with --write, puts the numbers into TODO.md.
 #
 #   tool/count_tests.sh            # print them
 #   tool/count_tests.sh --write    # print them and update TODO.md
@@ -15,23 +15,26 @@ cd "$ROOT"
 # The last "+N" a run prints is the number of tests that passed.
 count() { grep -oE '\+[0-9]+' | tail -1 | tr -d '+'; }
 
-echo "counting - this runs all three suites, so it takes a minute" >&2
+echo "counting - this runs all four suites, so it takes a minute" >&2
 
 app=$(flutter test 2>&1 | count)
 pkg=$(cd packages/native_bridge && flutter test 2>&1 | count)
 web=$(cd packages/native_bridge && flutter test --platform chrome test/web_ui 2>&1 | count)
+bloc=$(cd packages/dart_not_native_bloc && flutter test 2>&1 | count)
 
-for n in "$app" "$pkg" "$web"; do
+for n in "$app" "$pkg" "$web" "$bloc"; do
   [[ "$n" =~ ^[0-9]+$ ]] || { echo "a suite did not report a count - is it red?" >&2; exit 1; }
 done
 
-total=$((app + pkg + web))
+total=$((app + pkg + web + bloc))
 today=$(date +%Y-%m-%d)
-line="  (${pkg} in the package, ${app} for the example apps and goldens, ${web} in the browser,"
+line="  (${pkg} in the package, ${app} for the example apps and goldens, ${web} in the browser,
+  ${bloc} in the bloc package,"
 
 echo "package: $pkg"
 echo "example apps and goldens: $app"
 echo "browser: $web"
+echo "bloc package: $bloc"
 echo "total: $total"
 
 if [ "${1:-}" = "--write" ]; then
@@ -43,7 +46,10 @@ s = open(p, encoding='utf-8').read()
 pattern = (
     r'covered by [0-9,]+ tests\n'
     r'  \([0-9]+ in the package, [0-9]+ for the example apps and goldens, '
-    r'[0-9]+ in the browser,\n  counted [0-9-]+\)'
+    # The bloc package's count joined the sentence on 2026-10-09; a TODO.md
+    # from before that does not have the line.
+    r'[0-9]+ in the browser,\n(?:  [0-9]+ in the bloc package,\n)?'
+    r'  counted [0-9-]+\)'
 )
 # Whether the sentence is there and whether it needs changing are two
 # questions. Asking them as one reports a reworded file every time the counts

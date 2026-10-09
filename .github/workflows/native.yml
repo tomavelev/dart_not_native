@@ -1,9 +1,9 @@
 name: Native
 
-# Compiles the Kotlin and Swift renderers. Nothing here boots a device: the
-# simulator and emulator lanes are in `device.yml`, which never runs on a push
-# or a pull request, because they take tens of minutes and were the only
-# lanes that ever hung.
+# Compiles the Kotlin and Swift renderers. Nothing here boots a device, and
+# nothing in CI does: the simulator and emulator lanes took tens of minutes
+# and were the only lanes that ever hung, so that work is `tool/device_check.sh`,
+# run on a machine that already has the device.
 #
 # So these run when something that can break them changes, rather than always.
 # The paths below are chosen from what has actually broken them: the renderers
@@ -15,20 +15,16 @@ name: Native
 # Swift renderer once sat uncompilable for two commits, which is what this
 # catches. What it cannot catch is an app that compiles and then refuses to
 # launch: the iOS 26 UIScene failure did exactly that, and only a lane that
-# starts the app would have seen it. `device.yml` is that lane, and it is now
-# something you run rather than something that runs on every push.
+# starts the app would have seen it. `tool/device_check.sh` is that check, and
+# it is something you run rather than something that runs on every push.
 #
-# The budgets are per lane and sized from what each has actually taken: 15
-# minutes for the compile-only Android lane, 30 for iOS and 25 for the
-# emulator, both of which also boot a device, run the integration suite and
-# drive the flows.
-#
-# Fifteen everywhere was tried first and was wrong: it cancelled the iOS lane
-# at 15m48s on its last step with everything before it green. A timeout is
-# meant to bound a hang - this morning a step ran 54 minutes before anyone
-# noticed - not to cut off work that is proceeding. If one of these starts
-# timing out while making real progress, the honest answer is to split the
-# lane so each half can be tight again, rather than to keep adding minutes.
+# Fifteen minutes each, now that both only compile - the Android lane takes
+# about five and the iOS one under three. A timeout is meant to bound a hang
+# (a step once ran 54 minutes before anyone noticed), not to cut off work that
+# is proceeding: when the iOS lane also booted a simulator, fifteen cancelled
+# it at 15m48s on its last step with everything before it green. If one of
+# these starts timing out while making real progress, split it rather than
+# add minutes.
 
 on:
   push:
@@ -103,7 +99,8 @@ jobs:
   ios-build:
     name: iOS native compile
     # Fifteen is enough now that it only compiles. It needed thirty when it
-    # also booted a simulator and drove the flows; that work is in device.yml.
+    # also booted a simulator and drove the flows; that work is
+    # tool/device_check.sh now.
     timeout-minutes: 15
     # Xcode only exists on the macOS runners, which is why this lane was missing
     # and why the Swift renderer could sit un-compiled through several commits
@@ -121,8 +118,3 @@ jobs:
       # iOS half without needing a signing identity.
       - name: Build simulator app
         run: flutter build ios --simulator --debug --no-codesign
-
-      # And then runs it: the Swift renderer draws one of every node type and
-      # all ten example apps, which compiling alone never checks. The iOS half
-      # is the least device-verified one, so this is the lane that matters
-      # most for it.
