@@ -8,9 +8,9 @@ root has the checklist and the tagging convention.
 
 Everything since 0.1.0. The headline is that the native renderers stopped being
 code that had never run: both now draw the whole vocabulary on real hardware.
-The lanes that would keep it that way are written and have never executed -
-the repository has no remote yet, so every result below was got by hand or on
-a device in the room.
+The lanes that compile and test it run on every pull request; none of them
+boots a device, so every device result below was got by hand or on a device in
+the room.
 
 ### The widget layer takes Flutter's shape (breaking)
 
@@ -105,8 +105,8 @@ Three migrated Flutter apps were walked screen by screen on a Pixel 8 emulator
   whichever row's tap had since been given its number, selecting a time nobody
   touched. The tree now travels with its build number, the views hand it back
   with every event, and `EventBindings` keeps the last few builds' callbacks.
-  Both native renderers echo the number - the Swift is written and not
-  compiled - and the web and Flutter renderers name the build they are
+  Both native renderers echo the number - the Swift compiles and has not
+  been run - and the web and Flutter renderers name the build they are
   showing: the Flutter host builds its widgets a frame after a render, so a
   tap in that frame was from the build before.
 - **Buttons are drawn as written**: no forced capitals or wide tracking on a
@@ -141,12 +141,12 @@ Three migrated Flutter apps were walked screen by screen on a Pixel 8 emulator
   pushed one, a snackbar changed the shape of the screen - starts where the
   reader was instead of at the top. A scroller without a controller keeps its
   position by its place in the tree. On Android, web and the Flutter host;
-  written for iOS and not compiled. A windowed list still reports rows, not
+  written for iOS, compiled and not run. A windowed list still reports rows, not
   pixels.
 - **A snackbar sits above the bottom bar and the floating button**, not over
-  them, on Android, web and the Flutter host (iOS written, not compiled).
+  them, on Android, web and the Flutter host (iOS compiled, not run).
 - **A navigation rail scrolls when its destinations do not fit** - seven of
-  them on a phone held sideways - on all four renderers (iOS not compiled).
+  them on a phone held sideways - on all four renderers (iOS compiled, not run).
 - **Material 3 on Android.** The Material views are built against a Material
   3 theme: buttons have round ends, the bottom navigation is 80dp with a pill
   behind the selected destination, the floating button is the rounded square,
@@ -303,8 +303,8 @@ accessibility tree: no view had an identifier, and what was composed from
 boxes - every `InkWell`, list tile, chip and drawn button - had no name and
 no role. Each was a defect for TalkBack and VoiceOver before it was one for a
 test. Verified on an Android 15 emulator; the DOM renderer has browser tests
-for the same; **the Swift is uncompiled**, like the rest of the iOS renderer
-since 2026-10-03.
+for the same; **the Swift compiles and has never been run**, like the rest of
+the iOS renderer since 2026-10-03.
 
 - **A node's `id` reaches the tree.** A widget's `Key` was already the node's
   `id`; the renderers now expose it - Android as the view's resource name

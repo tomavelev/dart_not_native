@@ -35,7 +35,7 @@ web there is no Flutter engine at all.
 | Web (`WebUIRenderer`, dart2js) | covered by the browser test suite and markup goldens |
 | Flutter (`FlutterUIRenderer`) | covered by widget tests; paints every node type |
 | Android (`NativeUIRenderer.kt`) | compiles and runs: a physical phone for the original vocabulary, a Pixel 8 emulator (API 35) for three migrated production apps |
-| iOS (`NativeUIRenderer.swift`) | the earlier vocabulary ran on a simulator and an iPad. **The Swift added since - twelve node types, right-to-left, the image cache, the `FlutterSlot` hole - has never been compiled** |
+| iOS (`NativeUIRenderer.swift`) | the earlier vocabulary ran on a simulator and an iPad. **The Swift added since - twelve node types, right-to-left, the image cache, the `FlutterSlot` hole - compiles in CI and has never been run** |
 
 Not on pub.dev. `CHANGELOG.md` has what changed and its **Known limits**; the
 repository's `TODO.md` has what is open, with the evidence behind each status.

@@ -45,15 +45,20 @@ jobs:
         run: |
           flutter pub get
           (cd packages/native_bridge && flutter pub get)
+          (cd packages/dart_not_native_bloc && flutter pub get)
 
       # The shipping libraries carry pre-existing style infos; gate on real
       # problems (errors and warnings) so a regression fails the build without
       # the lint backlog making it permanently red.
       - name: Analyze
-        run: flutter analyze --no-fatal-infos lib packages/native_bridge/lib
+        run: flutter analyze --no-fatal-infos lib packages/native_bridge/lib packages/dart_not_native_bloc/lib
 
       - name: Framework unit + Flutter-renderer tests
         working-directory: packages/native_bridge
+        run: flutter test
+
+      - name: Bloc widgets tests
+        working-directory: packages/dart_not_native_bloc
         run: flutter test
 
       - name: Example, golden and Flutter-render tests

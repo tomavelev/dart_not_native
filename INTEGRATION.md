@@ -24,11 +24,11 @@ platform needs before it can render.
 **Status, before anything else.** Web and the Flutter renderer are covered by
 the test suites. Android's native renderer has been run on a phone and on an
 emulator, including three migrated production apps. **The iOS renderer as it
-now stands has never been compiled**: the Swift for everything added since the
-last iOS run - twelve node types, right-to-left, the image cache, the
-`FlutterSlot` hole, the event build number - was written on a machine with no
-Xcode. §6 has the detail. If iOS is your first target, expect to be the person
-who compiles it.
+now stands compiles and has never been run**: the Swift for everything added
+since the last iOS run - twelve node types, right-to-left, the image cache,
+the `FlutterSlot` hole, the event build number - was written on a machine with
+no Xcode and has only been built by CI. §6 has the detail. If iOS is your
+first target, expect to be the first person who runs it.
 
 ---
 
@@ -941,7 +941,7 @@ while the screen behind it scrolled, was covered while a pushed page was open
 and came back on Back, and taps elsewhere on the screen kept working. Tapping
 the ad itself was not tested. The slot was pinned, so the scroll lag above was
 not exercised either. That is one emulator, not a range of devices, and the
-iOS hole is among the uncompiled Swift.
+iOS hole is among the Swift that has compiled and never run.
 
 ### 8.7 A web target
 

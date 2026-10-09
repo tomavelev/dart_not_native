@@ -46,7 +46,8 @@ Flutter app), which is the renderer the test suite covers most heavily.
 
 In one paragraph: **web and the Flutter renderer are tested; Android is run on
 a phone and an emulator, including three migrated production apps; the iOS
-renderer as it stands has never been compiled; nothing is on pub.dev.**
+renderer as it stands compiles in CI and has never been run; nothing is on
+pub.dev.**
 [TODO.md](TODO.md) and [the changelog](packages/native_bridge/CHANGELOG.md)
 carry the detail, and this list is kept short so it does not drift out of step
 with them.
@@ -85,9 +86,9 @@ with them.
 ### Not there
 - **iOS for anything recent.** The Swift for the twelve node types added
   since the last iOS run, for right-to-left, the image cache, the
-  `FlutterSlot` hole, scroll reporting and the event build number is written
-  and has never been compiled. Assume it needs
-  work before it builds.
+  `FlutterSlot` hole, scroll reporting and the event build number compiles
+  in CI and has never been run on a simulator or a device. Assume it needs
+  work before it draws a screen correctly.
 - **Animation you drive yourself.** No `AnimationController`, no page
   transitions; a `Hero` compiles and does not fly. Implicit animations of size, colour, opacity and
   transform are done by the renderer; a `Ticker` is a 16 ms timer.
@@ -200,7 +201,7 @@ your screens  ──  package:dart_not_native/widgets.dart      Flutter's API, p
 | Target | Drawn by | Flutter engine | Evidence |
 |---|---|---|---|
 | **Android** | `NativeUIRenderer.kt`: Material and platform views | hosts Dart and plugins | a phone and an emulator; three migrated apps on the emulator |
-| **iOS** | `NativeUIRenderer.swift`: UIKit | hosts Dart and plugins | simulator and iPad for the earlier vocabulary; **current Swift uncompiled** |
+| **iOS** | `NativeUIRenderer.swift`: UIKit | hosts Dart and plugins | simulator and iPad for the earlier vocabulary; **current Swift compiled, never run** |
 | **Web** | `WebUIRenderer`: DOM, styled by a CSS kit | none | browser test suite, markup goldens, Maestro flows |
 | **Any Flutter host** | `FlutterUIRenderer`: Flutter widgets | paints | widget tests; every example rendered and checked for overflow |
 
