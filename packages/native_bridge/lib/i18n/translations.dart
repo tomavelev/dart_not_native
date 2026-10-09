@@ -8,13 +8,45 @@ import 'dart:convert';
 
 import '../src/listenable.dart';
 
-/// Language locale representation
+/// A language, optionally narrowed by a country and a script.
+///
+/// Flutter's shape - `Locale('en', 'US')`, `languageCode`, `countryCode` - so
+/// a screen that names a locale reads the same against either framework. The
+/// older names [language], [region] and [script] remain as getters.
 class Locale {
-  final String language; // 'en', 'es', 'fr', etc.
-  final String? region; // 'US', 'GB', 'MX', etc. (optional)
-  final String? script; // 'Hans', 'Hant', etc. for scripts (optional)
+  /// 'en', 'es', 'fr'...
+  final String languageCode;
 
-  const Locale(this.language, {this.region, this.script});
+  /// 'US', 'GB', 'MX'... or null for the language in general.
+  final String? countryCode;
+
+  /// 'Hans', 'Hant'... for a language written more than one way.
+  final String? scriptCode;
+
+  const Locale(this.languageCode, [this.countryCode]) : scriptCode = null;
+
+  /// A locale named part by part, which is the only way to give a script.
+  const Locale.fromSubtags({
+    this.languageCode = 'und',
+    this.scriptCode,
+    this.countryCode,
+  });
+
+  /// The same as [languageCode].
+  String get language => languageCode;
+
+  /// The same as [countryCode].
+  String? get region => countryCode;
+
+  /// The same as [scriptCode].
+  String? get script => scriptCode;
+
+  /// The locale as a BCP 47 tag: `en`, `en-US`, `zh-Hans-CN`.
+  String toLanguageTag() => [
+    languageCode,
+    if (scriptCode != null) scriptCode,
+    if (countryCode != null) countryCode,
+  ].join('-');
 
   /// Create from string like 'en_US' or 'zh_Hans_CN'
   factory Locale.fromString(String locale) {
@@ -24,10 +56,10 @@ class Locale {
     // language[_script]_region: a three-part tag carries the script in the
     // middle and the region last (zh_Hans_CN); a two-part tag is just a region
     // (en_US).
-    return Locale(
-      parts[0],
-      script: parts.length > 2 ? parts[1] : null,
-      region: parts.length > 2
+    return Locale.fromSubtags(
+      languageCode: parts[0],
+      scriptCode: parts.length > 2 ? parts[1] : null,
+      countryCode: parts.length > 2
           ? parts[2]
           : (parts.length > 1 ? parts[1] : null),
     );

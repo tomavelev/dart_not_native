@@ -155,6 +155,22 @@ class NavigationState {
   void replace(RouteEntry entry) {
     history[_currentIndex] = entry;
   }
+
+  /// Drops entries from the top for as long as [keep] is false of them, then
+  /// adds [entry]. Answers whether anything was dropped.
+  bool pushAndRemoveUntil(RouteEntry entry, bool Function(RouteEntry) keep) {
+    if (_currentIndex < history.length - 1) {
+      history.removeRange(_currentIndex + 1, history.length);
+    }
+    var removed = false;
+    while (history.isNotEmpty && !keep(history.last)) {
+      history.removeLast();
+      removed = true;
+    }
+    history.add(entry);
+    _currentIndex = history.length - 1;
+    return removed;
+  }
 }
 
 /// Router configuration
@@ -292,6 +308,39 @@ class Router {
     final to = state.current;
 
     _notifyListeners(RouterEvent(type: 'forward', from: from, to: to));
+
+    return true;
+  }
+
+  /// Navigate to [path] after dropping the history above the newest entry
+  /// that [keep] is true of - all of it when it is true of none, which is how
+  /// a splash screen hands over to the page nobody should come back from.
+  Future<bool> navigateAndRemoveUntil(
+    String path,
+    bool Function(RouteEntry entry) keep, {
+    Map<String, dynamic>? params,
+  }) async {
+    final route = config.findByPath(path);
+    if (route == null) return false;
+
+    if (route.guards != null) {
+      for (final guard in route.guards!) {
+        final allowed = await guard();
+        if (!allowed) return false;
+      }
+    }
+
+    final routeParams = {...route.extractParams(path), ...?params};
+    final entry = RouteEntry(route: route, path: path, params: routeParams);
+
+    final from = state.current;
+    final removed = state.pushAndRemoveUntil(entry, keep);
+
+    // With entries gone the platform's own stack cannot be told to forget
+    // them, so the page it is on becomes the new one.
+    _notifyListeners(
+      RouterEvent(type: removed ? 'replace' : 'push', from: from, to: entry),
+    );
 
     return true;
   }

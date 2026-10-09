@@ -1,0 +1,1258 @@
+{
+  "type": "Scaffold",
+  "props": {
+    "bodyScrolls": false
+  },
+  "children": [
+    {
+      "type": "AppBar",
+      "props": {
+        "title": "Controls Gallery",
+        "backgroundColor": "#ffffff",
+        "foregroundColor": "#212121"
+      },
+      "children": [
+        {
+          "type": "IconButton",
+          "props": {
+            "icon": "info_outline",
+            "iconCodepoint": 58173,
+            "eventId": "cb:info",
+            "tooltip": "About this screen",
+            "id": "info"
+          },
+          "children": null
+        }
+      ]
+    },
+    {
+      "type": "Scroll",
+      "props": {
+        "padding": [
+          16.0,
+          16.0,
+          16.0,
+          16.0
+        ],
+        "scrollOffset": 0.0,
+        "scrollVersion": 0,
+        "scrollEventId": "cb:touch_scroll.scroll",
+        "id": "touch_scroll"
+      },
+      "children": [
+        {
+          "type": "Column",
+          "props": {
+            "crossAxisAlignment": "start"
+          },
+          "children": [
+            {
+              "type": "Text",
+              "props": {
+                "content": "About opened: 0",
+                "id": "info_count"
+              },
+              "children": null
+            },
+            {
+              "type": "Padding",
+              "props": {
+                "paddingLeft": 0.0,
+                "paddingTop": 16.0,
+                "paddingRight": 0.0,
+                "paddingBottom": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Boxes that take a touch",
+                    "fontSize": 18.0,
+                    "fontWeight": 600,
+                    "semanticRole": "heading"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "tapEventId": "cb:tap_box.tap",
+                "ripple": true,
+                "id": "tap_box"
+              },
+              "children": [
+                {
+                  "type": "Box",
+                  "props": {
+                    "padding": [
+                      16.0,
+                      12.0,
+                      16.0,
+                      12.0
+                    ],
+                    "color": "#e3f2fd",
+                    "borderRadius": 8.0
+                  },
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Tap me"
+                      },
+                      "children": null
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Taps: 0",
+                "id": "tap_count"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 8.0
+              },
+              "children": null
+            },
+            {
+              "type": "Box",
+              "props": {
+                "longPressEventId": "cb:hold_box.longPress",
+                "id": "hold_box"
+              },
+              "children": [
+                {
+                  "type": "Box",
+                  "props": {
+                    "padding": [
+                      16.0,
+                      12.0,
+                      16.0,
+                      12.0
+                    ],
+                    "color": "#e3f2fd",
+                    "borderRadius": 8.0
+                  },
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "content": "Hold me"
+                      },
+                      "children": null
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Holds: 0",
+                "id": "hold_count"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 8.0
+              },
+              "children": null
+            },
+            {
+              "type": "Box",
+              "props": {
+                "tapEventId": "cb:card.tap",
+                "ripple": true,
+                "id": "card"
+              },
+              "children": [
+                {
+                  "type": "Padding",
+                  "props": {
+                    "padding": 4.0
+                  },
+                  "children": [
+                    {
+                      "type": "Card",
+                      "props": {
+                        "variant": "elevated",
+                        "elevation": 4.0,
+                        "padding": 0.0
+                      },
+                      "children": [
+                        {
+                          "type": "Padding",
+                          "props": {
+                            "padding": 12.0
+                          },
+                          "children": [
+                            {
+                              "type": "Row",
+                              "props": {
+                                "mainAxisAlignment": "start",
+                                "mainAxisSize": "max",
+                                "spacing": 0.0
+                              },
+                              "children": [
+                                {
+                                  "type": "Expanded",
+                                  "props": {
+                                    "flex": 1
+                                  },
+                                  "children": [
+                                    {
+                                      "type": "Text",
+                                      "props": {
+                                        "content": "Open the card"
+                                      },
+                                      "children": null
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "IconButton",
+                                  "props": {
+                                    "icon": "star_border",
+                                    "iconCodepoint": 58874,
+                                    "eventId": "cb:star",
+                                    "tooltip": "Add star",
+                                    "id": "star"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Card opened: 0, starred: no",
+                "id": "card_count"
+              },
+              "children": null
+            },
+            {
+              "type": "SizedBox",
+              "props": {
+                "height": 8.0
+              },
+              "children": null
+            },
+            {
+              "type": "Box",
+              "props": {
+                "ignorePointer": true
+              },
+              "children": [
+                {
+                  "type": "Box",
+                  "props": {
+                    "tapEventId": "cb:ignored_box.tap",
+                    "ripple": true,
+                    "id": "ignored_box"
+                  },
+                  "children": [
+                    {
+                      "type": "Box",
+                      "props": {
+                        "padding": [
+                          16.0,
+                          12.0,
+                          16.0,
+                          12.0
+                        ],
+                        "color": "#eeeeee",
+                        "borderRadius": 8.0
+                      },
+                      "children": [
+                        {
+                          "type": "Text",
+                          "props": {
+                            "content": "Cannot be tapped"
+                          },
+                          "children": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "Ignored taps: 0",
+                "id": "ignored_count"
+              },
+              "children": null
+            },
+            {
+              "type": "Padding",
+              "props": {
+                "paddingLeft": 0.0,
+                "paddingTop": 16.0,
+                "paddingRight": 0.0,
+                "paddingBottom": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Layers",
+                    "fontSize": 18.0,
+                    "fontWeight": 600,
+                    "semanticRole": "heading"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "height": 96.0
+              },
+              "children": [
+                {
+                  "type": "Stack",
+                  "props": {
+                    "alignment": [
+                      -1.0,
+                      -1.0
+                    ],
+                    "id": "layers"
+                  },
+                  "children": [
+                    {
+                      "type": "Box",
+                      "props": {
+                        "expand": "both",
+                        "color": "#fff3e0"
+                      },
+                      "children": []
+                    },
+                    {
+                      "type": "Positioned",
+                      "props": {
+                        "left": 12.0,
+                        "top": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Text",
+                          "props": {
+                            "content": "Underneath"
+                          },
+                          "children": null
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Positioned",
+                      "props": {
+                        "right": 12.0,
+                        "bottom": 12.0
+                      },
+                      "children": [
+                        {
+                          "type": "Box",
+                          "props": {
+                            "padding": [
+                              6.0,
+                              6.0,
+                              6.0,
+                              6.0
+                            ],
+                            "color": "#fb8c00",
+                            "id": "on_top"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "On top"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Padding",
+              "props": {
+                "paddingLeft": 0.0,
+                "paddingTop": 16.0,
+                "paddingRight": 0.0,
+                "paddingBottom": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "Things with a name but no text",
+                    "fontSize": 18.0,
+                    "fontWeight": 600,
+                    "semanticRole": "heading"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Row",
+              "props": {
+                "mainAxisAlignment": "start",
+                "mainAxisSize": "max",
+                "spacing": 0.0
+              },
+              "children": [
+                {
+                  "type": "Icon",
+                  "props": {
+                    "codepoint": 59083,
+                    "semanticLabel": "Warning"
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "width": 12.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Icon",
+                  "props": {
+                    "codepoint": 57699
+                  },
+                  "children": null
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "width": 12.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Box",
+                  "props": {
+                    "semanticLabel": "Sunny, 24 degrees",
+                    "id": "weather"
+                  },
+                  "children": [
+                    {
+                      "type": "Icon",
+                      "props": {
+                        "codepoint": 59097
+                      },
+                      "children": null
+                    }
+                  ]
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "width": 12.0
+                  },
+                  "children": null
+                },
+                {
+                  "type": "Box",
+                  "props": {
+                    "semanticLabel": "Bar chart: three bars",
+                    "semanticRole": "image",
+                    "id": "chart"
+                  },
+                  "children": [
+                    {
+                      "type": "Canvas",
+                      "props": {
+                        "width": 72.0,
+                        "height": 40.0,
+                        "sizeEventId": "cb:0",
+                        "paints": [
+                          {
+                            "color": "#1976d2"
+                          }
+                        ],
+                        "commands": [
+                          [
+                            "rect",
+                            0.0,
+                            26.666666666666664,
+                            20.0,
+                            13.333333333333336,
+                            0
+                          ],
+                          [
+                            "rect",
+                            26.0,
+                            13.333333333333332,
+                            20.0,
+                            26.666666666666668,
+                            0
+                          ],
+                          [
+                            "rect",
+                            52.0,
+                            0.0,
+                            20.0,
+                            40.0,
+                            0
+                          ]
+                        ]
+                      },
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Padding",
+              "props": {
+                "paddingLeft": 0.0,
+                "paddingTop": 16.0,
+                "paddingRight": 0.0,
+                "paddingBottom": 8.0
+              },
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "content": "A long way down",
+                    "fontSize": 18.0,
+                    "fontWeight": 600,
+                    "semanticRole": "heading"
+                  },
+                  "children": null
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_1"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 1",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_2"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 2",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_3"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 3",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_4"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 4",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_5"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 5",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_6"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 6",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_7"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 7",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_8"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 8",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_9"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 9",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_10"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 10",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_11"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 11",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Box",
+              "props": {
+                "minHeight": 56.0,
+                "expand": "width",
+                "padding": [
+                  16.0,
+                  8.0,
+                  24.0,
+                  8.0
+                ],
+                "alignment": [
+                  -1.0,
+                  0.0
+                ],
+                "id": "row_12"
+              },
+              "children": [
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisSize": "max",
+                    "spacing": 16.0
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "props": {
+                        "flex": 1
+                      },
+                      "children": [
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start",
+                            "mainAxisSize": "min"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "content": "Row 12",
+                                "fontSize": 16.0,
+                                "color": "#212121"
+                              },
+                              "children": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Text",
+              "props": {
+                "content": "The end of the page",
+                "id": "page_end"
+              },
+              "children": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "BottomBar",
+      "props": {},
+      "children": [
+        {
+          "type": "BottomNavigation",
+          "props": {
+            "eventId": "cb:pages",
+            "items": [
+              {
+                "label": "Touch",
+                "icon": 58992
+              },
+              {
+                "label": "Choose",
+                "icon": 59011
+              },
+              {
+                "label": "Feedback",
+                "icon": 57683
+              }
+            ],
+            "selectedIndex": 0,
+            "id": "pages"
+          },
+          "children": null
+        }
+      ]
+    }
+  ]
+}

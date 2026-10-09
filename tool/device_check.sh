@@ -5,6 +5,7 @@
 #   tool/device_check.sh ios                # a booted simulator
 #   tool/device_check.sh ios --device <udid>
 #   tool/device_check.sh android --flows-only
+#   tool/device_check.sh android --no-maestro      # a machine without Maestro
 #
 # This is deliberately not a CI lane. Booting a simulator or an emulator takes
 # tens of minutes on a hosted runner, and those were the only lanes that ever
@@ -17,7 +18,11 @@
 #      accessibility tree. This is the half that catches an app which compiles
 #      and then refuses to launch - the iOS 26 UIScene failure was exactly
 #      that, and no compile would ever have seen it.
-#   2. The integration tests, one file per invocation, which hand each
+#   2. On Android, the agent-device flows (e2e/agent-device), which go through
+#      the same tree to the node types the Maestro flows were written before:
+#      tappable boxes, layers, a dropdown, tabs, a bottom bar, a dialog. They
+#      find views by id, so they also fail if a Key stops reaching the tree.
+#   3. The integration tests, one file per invocation, which hand each
 #      renderer one of every node type and every example app and listen for
 #      what it could not draw.
 #
@@ -32,18 +37,22 @@ shift || true
 DEVICE=""
 FLOWS_ONLY=0
 TESTS_ONLY=0
+MAESTRO_STAGE=1
+AGENT_DEVICE_STAGE=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --device) DEVICE="$2"; shift 2 ;;
     --flows-only) FLOWS_ONLY=1; shift ;;
     --tests-only) TESTS_ONLY=1; shift ;;
+    --no-maestro) MAESTRO_STAGE=0; shift ;;
+    --no-agent-device) AGENT_DEVICE_STAGE=0; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
 case "$PLATFORM" in
   android|ios) ;;
-  *) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
 
 # --- find the device, and say plainly when there is not one -----------------
@@ -71,9 +80,16 @@ if [ -z "$DEVICE" ]; then
 fi
 
 # --- the flows first: they fail fastest and catch the most ------------------
-if [ "$TESTS_ONLY" = 0 ]; then
-  echo "== flows"
+if [ "$TESTS_ONLY" = 0 ] && [ "$MAESTRO_STAGE" = 1 ]; then
+  echo "== flows (maestro)"
   maestro/native/run.sh "$PLATFORM" --device "$DEVICE"
+fi
+
+# The agent-device lane is Android's for now: its flows were recorded there,
+# and the iOS renderer's half of what they rely on has not been compiled.
+if [ "$TESTS_ONLY" = 0 ] && [ "$AGENT_DEVICE_STAGE" = 1 ] && [ "$PLATFORM" = android ]; then
+  echo "== flows (agent-device)"
+  e2e/agent-device/run.sh --device "$DEVICE"
 fi
 
 # --- then the integration tests, one file at a time -------------------------

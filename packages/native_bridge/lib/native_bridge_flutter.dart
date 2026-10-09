@@ -1,55 +1,22 @@
-/// dart_not_native Framework - Complete Cross-Platform Solution
+/// The FFI bridge: call into C by method name, with the same Dart on every
+/// target.
 ///
-/// This library provides a unified interface for:
-/// 1. **Native Bridge** - Cross-platform abstraction (FFI on mobile, in-memory on web)
-/// 2. **Web Bridge** - Material CSS widgets for web
-/// 3. **Plugin System** - Extensible plugins for offline-sync, persistence, etc.
+/// This is the oldest part of the package and is separate from the renderers.
+/// An app drawing its screens with the framework imports
+/// `package:dart_not_native/widgets.dart` and needs none of this.
 ///
-/// ## Usage
-///
-/// ### Standard Import (Automatic Platform Detection)
 /// ```dart
-/// import 'package:dart_not_native/material.dart';
+/// import 'package:dart_not_native/native_bridge_flutter.dart';
 ///
-/// void main() {
-///   runApp(const MyApp());
-/// }
-///
-/// class MyApp extends StatelessWidget {
-///   @override
-///   Widget build(BuildContext context) {
-///     return MaterialApp(
-///       home: Scaffold(
-///         appBar: AppBar(title: Text('Hello')),
-///         body: Center(child: Text('Works everywhere!')),
-///       ),
-///     );
-///   }
-/// }
-/// ```
-///
-/// The framework automatically uses:
-/// - **Android/iOS**: Flutter Material (native rendering)
-/// - **Web**: Material CSS (Material Design Lite)
-///
-/// ### With Optional Native Code
-/// ```dart
 /// void main() {
 ///   NativeBridge.initialize('libbridge.so');
-///   runApp(const MyApp());
+///   final count = NativeBridge.callMethod('increment_counter');
 /// }
 /// ```
 ///
-/// ### With Backend Sync (Coming Soon)
-/// ```dart
-/// void main() {
-///   NativeBridge.use(BackendSyncPlugin(
-///     apiUrl: 'https://api.example.com',
-///   ));
-///   runApp(const MyApp());
-/// }
-/// ```
-
+/// On Android [NativeBridge.initialize] opens the named library; on iOS it
+/// looks the symbols up in the app's own process; on web it does nothing, and
+/// calls go to in-memory Dart functions (`platforms/web_bridge.dart`).
 library dart_not_native;
 
 // Export core bridge functionality
@@ -57,10 +24,4 @@ export 'native_bridge.dart';
 export 'platforms/mobile_bridge.dart' show initializeMobile;
 export 'platforms/web_bridge.dart' show initializeWeb;
 
-// Export plugin system (designed, implementation coming)
-
-// Material widgets exported via material_adapter with platform detection
-// This single export provides different implementations per platform:
-// - Mobile (Android/iOS): Flutter Material
-// - Web: Material CSS (web_ui)
-// Access via: import 'package:dart_not_native/material.dart';
+// The plugin system is exported by 'package:dart_not_native/material.dart'.

@@ -1,0 +1,39 @@
+# The bottom bar, a dropdown, tabs, a slider and the checkable controls.
+#
+# entry: android=lib/main_native_gallery.dart
+context platform=android
+open "com.programtom.dart_not_native" --relaunch
+wait "label=\"Touch\" selected=true" 30000
+press "label=\"Choose\""
+wait "label=\"Choose\" selected=true" 5000
+wait "id=\"fruit\"" 5000
+
+# The dropdown's value is the field's text. Its menu is a window of its own,
+# which agent-device leaves out of the tree it matches a selector against, so
+# the option cannot be pressed by name from a script; opening the menu and
+# closing it again is as far as this goes. (By hand: press 'label="Cherry"'
+# --raw.)
+is text "id=\"fruit\"" "Apple"
+press "id=\"fruit\""
+back
+wait "id=\"fruit_value\" label=\"Fruit: Apple\"" 5000
+
+# Tabs: one is selected, and choosing another moves the selection.
+wait "label=\"One\" selected=true" 5000
+press "label=\"Two\""
+wait "label=\"Two\" selected=true" 5000
+wait "id=\"section_value\" label=\"Section: Two\"" 5000
+
+# A press on a slider lands in its middle.
+wait "id=\"volume_value\" label=\"Volume: 30\"" 5000
+press "id=\"volume\""
+wait "id=\"volume_value\" label=\"Volume: 50\"" 5000
+
+# A control in a list tile is named by the tile's title, and each can be
+# pressed on its own id.
+press "id=\"terms\""
+press "id=\"alerts\""
+press "id=\"plan_pro\""
+wait "id=\"choices\" label=\"Terms: accepted, alerts: on, plan: pro\"" 5000
+wait "role=checkbox label=\"Accept the terms\"" 5000
+close

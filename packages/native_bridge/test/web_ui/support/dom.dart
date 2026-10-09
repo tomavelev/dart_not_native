@@ -44,3 +44,55 @@ WidgetNode withId(WidgetNode node, String id) => WidgetNode(
   props: {...node.props, 'id': id},
   children: node.children,
 );
+
+/// A node built from raw props, for the event ids a builder would only
+/// allocate inside a running app.
+WidgetNode node(
+  String type,
+  Map<String, dynamic> props, [
+  List<WidgetNode> children = const [],
+]) => WidgetNode(type: type, props: props, children: children);
+
+/// A pointer event at a point in the window, as a mouse or a finger sends it.
+web.PointerEvent pointer(
+  String type,
+  num x,
+  num y, {
+  String kind = 'mouse',
+  int id = 1,
+}) => web.PointerEvent(
+  type,
+  web.PointerEventInit(
+    clientX: x.toInt(),
+    clientY: y.toInt(),
+    pointerId: id,
+    pointerType: kind,
+    button: 0,
+    bubbles: true,
+    cancelable: true,
+  ),
+);
+
+/// A click where a pointer was, rather than the pointerless `element.click()`.
+web.MouseEvent clickAt(num x, num y) => web.MouseEvent(
+  'click',
+  web.MouseEventInit(
+    clientX: x.toInt(),
+    clientY: y.toInt(),
+    detail: 1,
+    bubbles: true,
+    cancelable: true,
+  ),
+);
+
+/// Long enough for the browser to lay out and run its resize observers.
+Future<void> settle([int milliseconds = 60]) =>
+    Future<void>.delayed(Duration(milliseconds: milliseconds));
+
+/// Lifts [root] above the view the Flutter test harness lays over the page,
+/// for a test that asks the document what is under a point.
+void raiseAboveHarness(web.HTMLElement root) {
+  root.style
+    ..position = 'relative'
+    ..zIndex = '1';
+}

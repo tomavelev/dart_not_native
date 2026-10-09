@@ -395,6 +395,89 @@ void main() {
       await tester.pump(const Duration(minutes: 1));
       expect(events, isEmpty);
     });
+
+    WidgetNode snackbarOver(WidgetNode scaffold) => UIBuilder.overlay(
+      child: scaffold,
+      overlays: [UIBuilder.snackbar(message: 'Saved', id: 'saved')],
+    );
+    WidgetNode destinations() => UIBuilder.bottomBar(
+      child: UIBuilder.bottomNavigation(
+        eventId: 'tab',
+        selectedIndex: 0,
+        items: const [
+          (label: 'One', icon: 0xe88a, selectedIcon: null),
+          (label: 'Two', icon: 0xe88a, selectedIcon: null),
+        ],
+      ),
+    );
+
+    // Material shows a snackbar above the bottom bar and above the floating
+    // button; the snackbar here is drawn beside the scaffold, so it has to
+    // be told how far up they reach.
+    testWidgets('sits above the bottom bar', (tester) async {
+      await show(
+        tester,
+        snackbarOver(
+          UIBuilder.scaffold(
+            body: UIBuilder.text('body'),
+            bottomBar: destinations(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        tester.getRect(find.text('Saved')).bottom,
+        lessThan(tester.getTopLeft(find.byType(NavigationBar)).dy),
+      );
+    });
+
+    testWidgets('sits above the floating button, and the bar under that', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        snackbarOver(
+          UIBuilder.scaffold(
+            body: UIBuilder.text('body'),
+            floatingActionButton: UIBuilder.floatingActionButton(
+              tooltip: 'Add',
+              eventId: 'add',
+            ),
+            bottomBar: destinations(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final button = tester.getRect(find.byType(FloatingActionButton));
+      expect(
+        button.top,
+        lessThan(tester.getTopLeft(find.byType(NavigationBar)).dy),
+      );
+      expect(tester.getRect(find.text('Saved')).bottom, lessThan(button.top));
+    });
+
+    testWidgets('comes back down when the bar it cleared has gone', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        snackbarOver(
+          UIBuilder.scaffold(
+            body: UIBuilder.text('body'),
+            bottomBar: destinations(),
+          ),
+        ),
+      );
+      await tester.pump();
+      final lifted = tester.getRect(find.text('Saved')).bottom;
+
+      await show(tester, snackbarOver(UIBuilder.scaffold(body: UIBuilder.text('body'))));
+      await tester.pump();
+      await tester.pump();
+      expect(tester.getRect(find.text('Saved')).bottom, greaterThan(lifted));
+    });
   });
 
   group('lazy list', () {

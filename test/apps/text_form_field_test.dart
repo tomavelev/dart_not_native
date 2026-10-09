@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../support/app_tester.dart';
 
 // The app's form, captured so the test can read the field it drives.
-Form? capturedForm;
+FormModel? capturedForm;
 
 class _FormApp extends StatefulWidget {
   const _FormApp();
@@ -17,7 +17,7 @@ class _FormApp extends StatefulWidget {
 }
 
 class _FormAppState extends State<_FormApp> {
-  late final Form form = (FormBuilder()..addEmailField(name: 'email')).build();
+  late final FormModel form = (FormBuilder()..addEmailField(name: 'email')).build();
 
   @override
   void initState() {
@@ -27,7 +27,7 @@ class _FormAppState extends State<_FormApp> {
   @override
   Widget build(BuildContext context) => Scaffold(
         body: Column(
-          children: [TextFormField(field: form.getField('email')!)],
+          children: [ModelTextFormField(field: form.getField('email')!)],
         ),
       );
 }

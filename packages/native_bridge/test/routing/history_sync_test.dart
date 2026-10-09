@@ -1,7 +1,7 @@
 /// Unit tests for keeping the router and the platform's history in step.
 library;
 
-import 'package:dart_not_native/core.dart' hide Route, Router, RouterConfig;
+import 'package:dart_not_native/core.dart' hide Router;
 import 'package:dart_not_native/routing/history_sync.dart';
 import 'package:dart_not_native/routing/navigation_app.dart';
 import 'package:dart_not_native/routing/route.dart';

@@ -2,9 +2,10 @@
 /// platform's own views on request.
 library;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../../flutter_slot.dart';
 import '../../platforms/android_renderer.dart';
 import '../../platforms/flutter_renderer.dart';
 import '../../platforms/ios_renderer.dart';
@@ -126,6 +127,9 @@ Color? _parse(String? value) {
 /// renderer, answers no - and the caller paints with Flutter instead of
 /// showing an empty screen.
 Future<NativeUIRenderer?> _availableNativeRenderer(AppTheme appTheme) async {
+  // A Flutter web build in a phone's browser reports the phone's platform,
+  // and has none of its views.
+  if (kIsWeb) return null;
   switch (defaultTargetPlatform) {
     case TargetPlatform.android:
       final renderer = AndroidNativeRenderer(theme: appTheme);
@@ -140,8 +144,10 @@ Future<NativeUIRenderer?> _availableNativeRenderer(AppTheme appTheme) async {
   return null;
 }
 
-/// What Flutter shows while the platform's own views draw the app: nothing,
-/// plus the hot reload hook those views would otherwise miss.
+/// What Flutter shows while the platform's own views draw the app: the themed
+/// background, the widgets of any `FlutterSlot` in the tree - painted where
+/// the native renderer reports the holes it left for them - and the hot reload
+/// hook those views would otherwise miss.
 class _NativeViewsHost extends StatefulWidget {
   const _NativeViewsHost({required this.app});
 
@@ -184,5 +190,12 @@ class _NativeViewsHostState extends State<_NativeViewsHost>
   }
 
   @override
-  Widget build(BuildContext context) => const Scaffold(body: SizedBox.expand());
+  Widget build(BuildContext context) => const Scaffold(
+    // The slot rectangles are measured from the top left of the Flutter view,
+    // so the layer has to stay the size of the view: a body that shrank for
+    // the keyboard would still start at the origin, but would clip a slot the
+    // native side had only moved.
+    resizeToAvoidBottomInset: false,
+    body: SizedBox.expand(child: FlutterSlotLayer()),
+  );
 }

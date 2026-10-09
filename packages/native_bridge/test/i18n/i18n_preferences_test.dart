@@ -20,11 +20,11 @@ void main() {
     });
 
     test('round trips through the store', () async {
-      await saveLocalePreference(const Locale('es', region: 'MX'));
+      await saveLocalePreference(const Locale('es', 'MX'));
 
       final loaded = await loadLocalePreference();
 
-      expect(loaded, const Locale('es', region: 'MX'));
+      expect(loaded, const Locale('es', 'MX'));
       expect(getI18nPreferences().get('preferred_locale'), 'es_MX');
     });
 
@@ -63,11 +63,11 @@ void main() {
     test(
       'matches on language when the exact system locale is missing',
       () async {
-        const regional = [Locale('en', region: 'GB'), Locale('es')];
+        const regional = [Locale('en', 'GB'), Locale('es')];
 
         expect(
           await getBestAvailableLocale(regional),
-          const Locale('en', region: 'GB'),
+          const Locale('en', 'GB'),
         );
       },
     );

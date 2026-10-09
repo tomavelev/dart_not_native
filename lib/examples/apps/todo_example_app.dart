@@ -61,7 +61,7 @@ class _TodoAppState extends State<TodoApp> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const AppBar(title: Text('My Todos')),
-      body: Column(
+      body: SingleChildScrollView(child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
@@ -110,7 +110,7 @@ class _TodoAppState extends State<TodoApp> {
               ],
             ),
         ],
-      ),
+      )),
     );
   }
 

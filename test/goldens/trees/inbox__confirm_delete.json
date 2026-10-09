@@ -4,12 +4,16 @@
   "children": [
     {
       "type": "Scaffold",
-      "props": {},
+      "props": {
+        "bodyScrolls": false
+      },
       "children": [
         {
           "type": "AppBar",
           "props": {
-            "title": "Inbox (6667 unread)"
+            "title": "Inbox (6667 unread)",
+            "backgroundColor": "#ffffff",
+            "foregroundColor": "#212121"
           },
           "children": null
         },
@@ -53,6 +57,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -145,6 +150,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -237,6 +243,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -329,6 +336,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -421,6 +429,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -513,6 +522,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -605,6 +615,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -697,6 +708,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -789,6 +801,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -881,6 +894,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -973,6 +987,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1065,6 +1080,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1157,6 +1173,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1249,6 +1266,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1341,6 +1359,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1433,6 +1452,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1525,6 +1545,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1617,6 +1638,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1709,6 +1731,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1801,6 +1824,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1893,6 +1917,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -1985,6 +2010,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -2077,6 +2103,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -2169,6 +2196,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -2261,6 +2289,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -2353,6 +2382,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -2445,6 +2475,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -2537,6 +2568,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -2629,6 +2661,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -2721,6 +2754,7 @@
                       "type": "Row",
                       "props": {
                         "mainAxisAlignment": "start",
+                        "mainAxisSize": "max",
                         "spacing": 12.0
                       },
                       "children": [
@@ -2816,6 +2850,8 @@
                 "label": "Mark as read",
                 "eventId": "cb:sheet_toggle_read",
                 "variant": "tertiary",
+                "minHeight": 40.0,
+                "paddingHorizontal": 12.0,
                 "disabled": false,
                 "id": "sheet_toggle_read"
               },
@@ -2828,6 +2864,8 @@
                 "eventId": "cb:sheet_delete",
                 "variant": "primary",
                 "color": "#f44336",
+                "minHeight": 40.0,
+                "paddingHorizontal": 24.0,
                 "disabled": false,
                 "id": "sheet_delete"
               },
@@ -2874,6 +2912,8 @@
                 "label": "Cancel",
                 "eventId": "cb:confirm_cancel",
                 "variant": "tertiary",
+                "minHeight": 40.0,
+                "paddingHorizontal": 12.0,
                 "disabled": false,
                 "id": "confirm_cancel"
               },
@@ -2886,6 +2926,8 @@
                 "eventId": "cb:confirm_ok",
                 "variant": "primary",
                 "color": "#f44336",
+                "minHeight": 40.0,
+                "paddingHorizontal": 24.0,
                 "disabled": false,
                 "id": "confirm_ok"
               },

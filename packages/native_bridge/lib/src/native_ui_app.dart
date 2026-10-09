@@ -80,7 +80,15 @@ abstract class NativeUIApp {
   final List<String> _bannerMessages = [];
 
   /// A banner over [tree] naming what the last render could not do.
-  WidgetNode _withErrorBanner(WidgetNode tree) => UIBuilder.overlay(
+  ///
+  /// The tree stops being the root when it is wrapped, so what it said about
+  /// the screen as its root - the reading direction - is said by the wrapper.
+  WidgetNode _withErrorBanner(WidgetNode tree) => UIBuilder.withTextDirection(
+        _bannerOver(UIBuilder.withTextDirection(tree, null)),
+        tree.props[RootProps.textDirection] as String?,
+      );
+
+  WidgetNode _bannerOver(WidgetNode tree) => UIBuilder.overlay(
         child: tree,
         overlays: [
           UIBuilder.snackbar(
@@ -182,6 +190,8 @@ abstract class NativeUIApp {
       tree = _withErrorBanner(tree);
     }
     _overlayBack.track(tree, renderer);
+    // So a renderer can say which build an event of its is for.
+    _bindings.tag(tree);
     // render() answers with a RenderError (or null), and may reject; either way
     // the problem is surfaced rather than dropped on the floor.
     renderer.render(tree).then(

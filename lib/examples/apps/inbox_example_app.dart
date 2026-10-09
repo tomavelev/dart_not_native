@@ -73,7 +73,7 @@ class _InboxAppState extends State<InboxApp> {
         key: const ValueKey('inbox'),
         itemCount: messages.length,
         itemExtent: 104,
-        itemBuilder: (index) => _row(context, messages[index]),
+        itemBuilder: (context, index) => _row(context, messages[index]),
       ),
     );
   }

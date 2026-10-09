@@ -57,10 +57,53 @@ html, body {
   min-height: var(--dnn-viewport-height, 100vh);
   flex: 1;
 }
-.dnn-scaffold > :not(.dnn-appbar):not(.dnn-navbar):not(.dnn-fab) {
+/* The body is the child that is none of the scaffold's furniture. */
+.dnn-scaffold > :not(.dnn-appbar):not(.dnn-navbar):not(.dnn-fab):not(.dnn-bottombar) {
   flex: 1 1 auto;
   overflow: auto;
 }
+/* Clear of the notch and the home indicator, unless the app asked to draw
+ * under them (--edge). Zero in any browser that is not drawing under one. */
+.dnn-scaffold:not(.dnn-scaffold--edge) {
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+/* bodyScrolls: false. The scaffold is exactly the viewport and the body is
+ * exactly what the bars leave of it, so a body that lays itself out against
+ * the screen has a height to do it against: an Expanded has a share to take, a
+ * Scroll has an edge to scroll at, a Stack has corners to pin things to. The
+ * body does not scroll, and what does not fit is the body's to deal with. */
+.dnn-scaffold--fixed {
+  height: var(--dnn-viewport-height, 100vh);
+  min-height: 0;
+  overflow: hidden;
+}
+.dnn-scaffold--fixed > :not(.dnn-appbar):not(.dnn-navbar):not(.dnn-fab):not(.dnn-bottombar) {
+  flex: 1 1 0;
+  min-height: 0;
+}
+/* A body that is itself a scroller keeps its scrolling, which is the point of
+ * turning the scaffold's off. */
+.dnn-scaffold--fixed > :not(.dnn-appbar):not(.dnn-navbar):not(.dnn-fab):not(.dnn-bottombar):not(.dnn-scroll):not(.dnn-lazylist) {
+  overflow: hidden;
+}
+
+/* Along the bottom edge. In a scaffold whose page scrolls it sticks there; in
+ * a fixed one it is simply the last thing in the column. Its height is
+ * published by the renderer as --dnn-bottombar-height, for the floating
+ * button to sit above - while there is a bar: the last height published
+ * outlives a bar the app has since taken away. */
+.dnn-bottombar {
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--dnn-surface);
+}
+.dnn-bottombar > * { flex: 0 0 auto; }
+.dnn-scaffold:has(> .dnn-bottombar) > .dnn-fab { bottom: calc(24px + var(--dnn-bottombar-height, 0px)); }
 
 .dnn-appbar {
   display: flex;
@@ -73,6 +116,49 @@ html, body {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 .dnn-appbar__title { font-size: 20px; font-weight: 500; letter-spacing: 0.02em; }
+/* One line, however long: a title that wraps pushes the bar out of shape. */
+.dnn-appbar__title, .dnn-mz-nav__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* The node's children: the actions, at the far end. */
+.dnn-appbar__actions {
+  display: flex;
+  align-items: center;
+  margin-inline-start: auto;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+/* A title subtree is the first of those children, and takes the room the
+ * title text would have had; the actions stay at the end. */
+.dnn-appbar--title-node .dnn-appbar__actions { flex: 1 1 auto; margin-inline-start: 0; }
+.dnn-appbar--title-node .dnn-appbar__actions > :first-child { flex: 1 1 auto; min-width: 0; margin-inline-end: auto; }
+/* Centred on the bar, not on the room left between the buttons - which would
+ * put it off to one side whenever the two ends differ. */
+.dnn-appbar--center { position: relative; }
+.dnn-appbar--center .dnn-appbar__title,
+.dnn-appbar--center .dnn-mz-nav__title {
+  position: absolute;
+  left: 72px;
+  right: 72px;
+  text-align: center;
+  pointer-events: none;
+}
+/* Reading direction. The renderer puts dir="rtl" on its root for a screen that
+ * reads from the right, and that alone turns every flex row round. What it
+ * cannot turn is a rule that names a side, so anything here that means "the
+ * start" or "the end" says so - margin-inline-start, inset-inline-end - and
+ * left and right are kept for what is really a side: a centred title's equal
+ * margins, the map's attribution. */
+.dnn-appbar__leading { margin: 0; margin-inline: -8px 8px; flex: 0 0 auto; }
+/* The one glyph in the bar that carries a direction: back points to the start. */
+[dir="rtl"] .dnn-appbar__leading--back { transform: scaleX(-1); }
+/* Buttons and glyphs in the bar are drawn in the bar's colour, whatever the
+ * kit or the theme would have made them elsewhere. */
+.dnn-appbar button, .dnn-appbar .dnn-icon-button { color: inherit; }
 
 /* iOS-style navigation */
 .dnn-navstack { display: flex; flex-direction: column; min-height: var(--dnn-viewport-height, 100vh); flex: 1; }
@@ -101,19 +187,58 @@ html, body {
    for it also makes the column grow into what it is in. */
 .dnn-column--main-center,
 .dnn-column--main-end,
-.dnn-column--main-spaceBetween { flex: 1 1 auto; }
+.dnn-column--main-spaceBetween,
+.dnn-column--main-spaceAround,
+.dnn-column--main-spaceEvenly,
+.dnn-column--size-max { flex: 1 1 auto; }
 .dnn-column--main-center { justify-content: center; }
 .dnn-column--main-end { justify-content: flex-end; }
 .dnn-column--main-spaceBetween { justify-content: space-between; }
+.dnn-column--main-spaceAround { justify-content: space-around; }
+.dnn-column--main-spaceEvenly { justify-content: space-evenly; }
+/* mainAxisSize 'min' hugs the children even when an alignment was asked for,
+   so it comes after the rules above and takes their growing back. */
+.dnn-column.dnn-column--size-min { flex: 0 0 auto; }
 
 .dnn-row { display: flex; flex-direction: row; align-items: center; min-width: 0; }
 .dnn-row--center { justify-content: center; }
 .dnn-row--end { justify-content: flex-end; }
 .dnn-row--spaceBetween { justify-content: space-between; }
+.dnn-row--spaceAround { justify-content: space-around; }
+.dnn-row--spaceEvenly { justify-content: space-evenly; }
+.dnn-row--cross-start { align-items: flex-start; }
+.dnn-row--cross-end { align-items: flex-end; }
+.dnn-row--cross-stretch { align-items: stretch; }
+/* As wide as its children, or as wide as it is allowed. */
+.dnn-row--size-min { width: fit-content; max-width: 100%; }
+.dnn-row--size-max { width: 100%; }
+/* "As wide as it is allowed" is a percentage, and a percentage of a parent
+   that hugs its child is the child's own width - which is no width at all for
+   a row asked to spread its children out. Padding and a box with no width of
+   its own pass the width they are offered straight through in Flutter, so
+   around a row that fills they take it here too, one or two deep. */
+:is(.dnn-padding, .dnn-box, .dnn-fade):has(> .dnn-row--size-max),
+:is(.dnn-padding, .dnn-box, .dnn-fade):has(> :is(.dnn-padding, .dnn-box, .dnn-fade) > .dnn-row--size-max) {
+  align-self: stretch;
+  justify-self: stretch;
+}
+/* A column asked to fill takes the height its row has, whatever the row does
+   with children that hug: without this an Expanded holding one is as tall as
+   the column's content, and a column whose content is itself a share of the
+   height has none. */
+.dnn-row > .dnn-expanded:has(> .dnn-column--size-max) { align-self: stretch; }
+/* And the other way round: an Expanded in a column that centres is as wide as
+   its child, so a child that fills the width - a row asked to, a box with
+   nothing in it - would be filling nothing. */
+.dnn-column > .dnn-expanded:has(> :is(.dnn-row--size-max, .dnn-fill-w)) { align-self: stretch; }
 
 .dnn-center { display: flex; align-items: center; justify-content: center; width: 100%; }
 .dnn-expanded { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .dnn-expanded > * { flex: 1 1 auto; }
+/* fit: 'loose'. The share is still set aside, but the child is only as big as
+   it wants to be inside it. */
+.dnn-expanded--loose { align-items: flex-start; }
+.dnn-expanded--loose > * { flex: 0 1 auto; max-width: 100%; }
 .dnn-sizedbox { flex-shrink: 0; }
 .dnn-spacer { flex: 1 1 auto; }
 
@@ -124,7 +249,26 @@ html, body {
 /* ---- Buttons ----------------------------------------------------------
  * .dnn-fab positioning is shared by every kit; the rest is the plain kit. */
 
-.dnn-fab { position: fixed; right: 24px; bottom: 24px; z-index: 10; }
+.dnn-fab { position: fixed; inset-inline-end: 24px; bottom: 24px; z-index: 10; }
+/* Material's extended button: the same control as a pill, icon then label.
+   Kits whose own button is a fixed circle undo that in their stylesheet. */
+.dnn-fab.dnn-fab--extended {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
+  min-width: 80px;
+  height: 56px;
+  padding: 0;
+  padding-inline: 16px 20px;
+  border-radius: 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
 
 .dnn-button {
   font: inherit;
@@ -149,7 +293,23 @@ html, body {
 .dnn-button--tertiary { background: transparent; color: var(--dnn-primary); box-shadow: none; }
 .dnn-button--sm { height: 28px; font-size: 12px; padding: 0 12px; }
 .dnn-button--lg { height: 44px; font-size: 16px; padding: 0 24px; }
+.dnn-button--outlined { background: transparent; color: var(--dnn-primary); box-shadow: none; border: 1px solid var(--dnn-divider); }
+.dnn-button--tonal { background: color-mix(in srgb, var(--dnn-primary) 16%, var(--dnn-surface)); color: var(--dnn-primary); box-shadow: none; }
 .dnn-button[disabled] { background: var(--dnn-divider); color: var(--dnn-text-secondary); box-shadow: none; cursor: default; }
+.dnn-button--outlined[disabled] { background: transparent; }
+
+/* A glyph before a button's label, and a button that fills its line - both
+   for every kit, since the renderer adds them to whatever button the kit
+   built. An expanding button gives up its side margins: they are outside the
+   width, and the line would overflow by them. */
+.dnn-button--icon { display: inline-flex; align-items: center; justify-content: center; }
+/* A glyph is set left to right whatever is around it - the icon font says so,
+   or its ligatures would not form - and a logical property follows the
+   element's own direction. So where a rule is on the glyph itself, the side
+   is named and named again for a screen that reads from the right. */
+.dnn-button__icon.material-icons { font-size: 18px; line-height: 1; margin-right: 8px; }
+[dir="rtl"] .dnn-button__icon.material-icons { margin-right: 0; margin-left: 8px; }
+button.dnn-button--expand.dnn-button--expand { width: 100%; margin-left: 0; margin-right: 0; }
 
 .dnn-fab--plain {
   width: 56px;
@@ -198,6 +358,88 @@ html, body {
 .dnn-textfield__error { font-size: 12px; color: var(--dnn-error); margin-top: 4px; }
 .dnn-textfield--error .dnn-textfield__label { color: var(--dnn-error); }
 .dnn-textfield--error .dnn-textfield__input { border-color: var(--dnn-error); box-shadow: inset 0 0 0 1px var(--dnn-error); }
+.dnn-textfield__helper { font-size: 12px; color: var(--dnn-text-secondary); margin-top: 4px; }
+
+/* Glyphs at the ends of a field. The renderer wraps the input in a box of its
+   own to pin them to, for any kit, and the input makes room for them. */
+.dnn-textfield__box { position: relative; display: flex; flex-direction: column; }
+.dnn-textfield__icon.material-icons {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--dnn-text-secondary);
+}
+.dnn-textfield__icon--prefix { left: 10px; pointer-events: none; }
+.dnn-textfield__icon--suffix { right: 10px; }
+/* The prefix is at the start of the field and the suffix at its end. Named by
+   side, as above: these are glyphs. */
+[dir="rtl"] .dnn-textfield__icon--prefix { left: auto; right: 10px; }
+[dir="rtl"] .dnn-textfield__icon--suffix { right: auto; left: 10px; }
+[dir="rtl"] button.dnn-textfield__icon--suffix,
+[dir="rtl"] button.dnn-textfield__icon--suffix:focus { right: auto; left: 4px; }
+button.dnn-textfield__icon--suffix,
+button.dnn-textfield__icon--suffix:focus {
+  right: 4px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+button.dnn-textfield__icon--suffix:focus-visible { outline: 2px solid var(--dnn-primary); }
+.dnn-textfield__box > input, .dnn-textfield__box > textarea { box-sizing: border-box; }
+.dnn-textfield--prefix .dnn-textfield__box > input,
+.dnn-textfield--prefix .dnn-textfield__box > textarea { padding-inline-start: 40px; }
+.dnn-textfield--suffix .dnn-textfield__box > input,
+.dnn-textfield--suffix .dnn-textfield__box > textarea { padding-inline-end: 40px; }
+
+/* A dropdown: the browser's own select, dressed as a text field. */
+.dnn-dropdown { display: flex; flex-direction: column; width: 100%; max-width: 480px; margin: 4px 0; }
+.dnn-dropdown__label { font-size: 12px; font-weight: 500; color: var(--dnn-text-secondary); margin-bottom: 4px; }
+.dnn-dropdown__field { position: relative; display: flex; }
+/* The arrow. The select's own is taken off below so every browser draws the
+   same one. */
+.dnn-dropdown__field::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 14px;
+  top: 50%;
+  margin-top: -2px;
+  border: 5px solid transparent;
+  border-top-color: var(--dnn-text-secondary);
+  pointer-events: none;
+}
+.dnn-dropdown select.dnn-dropdown__select {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 12px;
+  padding-inline-end: 36px;
+  border: 1px solid var(--dnn-divider);
+  border-radius: 4px;
+  background: var(--dnn-surface);
+  color: var(--dnn-text);
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.dnn-dropdown select.dnn-dropdown__select:focus { border-color: var(--dnn-primary); box-shadow: inset 0 0 0 1px var(--dnn-primary); }
+.dnn-dropdown select.dnn-dropdown__select:disabled { background: var(--dnn-surface-variant); color: var(--dnn-text-secondary); cursor: default; }
+/* Showing the hint rather than a choice. */
+.dnn-dropdown--empty select.dnn-dropdown__select { color: var(--dnn-text-secondary); }
+.dnn-dropdown--underlined select.dnn-dropdown__select { border-width: 0 0 1px; border-radius: 0; background: transparent; padding-inline-start: 0; }
+.dnn-dropdown__error { font-size: 12px; color: var(--dnn-error); margin-top: 4px; }
+.dnn-dropdown--error .dnn-dropdown__label { color: var(--dnn-error); }
+.dnn-dropdown--error select.dnn-dropdown__select { border-color: var(--dnn-error); box-shadow: inset 0 0 0 1px var(--dnn-error); }
 
 /* A floating label: inside the outline while the field is empty and unfocused,
    raised into the border once there is something to read. No JavaScript -
@@ -207,7 +449,7 @@ html, body {
 .dnn-textfield.dnn-textfield--floating { position: relative; padding-top: 10px; }
 .dnn-textfield--floating .dnn-textfield__label {
   position: absolute;
-  left: 8px;
+  inset-inline-start: 8px;
   top: 20px;
   margin: 0;
   padding: 0 4px;
@@ -220,6 +462,8 @@ html, body {
   transform-origin: left top;
   transition: transform 120ms ease, color 120ms ease;
 }
+/* The label shrinks towards the corner it starts in. */
+[dir="rtl"] .dnn-textfield--floating .dnn-textfield__label { transform-origin: right top; }
 .dnn-textfield--floating:focus-within .dnn-textfield__label,
 .dnn-textfield--floating:has(.dnn-textfield__input:not(:placeholder-shown)) .dnn-textfield__label {
   transform: translateY(-16px) scale(0.75);
@@ -230,6 +474,12 @@ html, body {
    out of the way. */
 .dnn-textfield--floating .dnn-textfield__input::placeholder { color: transparent; }
 .dnn-textfield--floating .dnn-textfield__input:focus::placeholder { color: var(--dnn-text-secondary); }
+/* A field with glyphs at its ends keeps its input in a box of its own. The box
+   is positioned, to pin the glyphs to, and so would paint over a floating
+   label that is not lifted above it; and the label starts clear of a glyph
+   at the near end. */
+.dnn-textfield--floating:has(.dnn-textfield__box) .dnn-textfield__label { z-index: 1; }
+.dnn-textfield--prefix.dnn-textfield--floating .dnn-textfield__label { inset-inline-start: 36px; }
 
 .dnn-camera {
   position: relative;
@@ -343,7 +593,7 @@ html, body {
   content: '';
   position: absolute;
   top: -3px;
-  left: -2px;
+  inset-inline-start: -2px;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -351,7 +601,12 @@ html, body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 .dnn-switch input:checked + .dnn-switch__track { background: color-mix(in srgb, var(--dnn-primary) 50%, transparent); }
-.dnn-switch input:checked + .dnn-switch__track::after { left: 18px; background: var(--dnn-primary); }
+.dnn-switch input:checked + .dnn-switch__track::after { inset-inline-start: 18px; background: var(--dnn-primary); }
+/* A control the app has disabled: the browser already refuses the click, and
+ * this is what says so - for every kit, since the renderer puts the class on
+ * whatever the kit built. */
+.dnn-choice--disabled { opacity: 0.38; cursor: default; }
+.dnn-choice--disabled input { cursor: default; }
 
 /* ---- Surfaces --------------------------------------------------------- */
 
@@ -430,6 +685,24 @@ body:has(.dnn-modal) { overflow: hidden; }
   background: var(--dnn-surface);
 }
 
+/* A date or time picker: a narrow dialog around the browser's own input. */
+.dnn-modal--picker .dnn-dialog { width: min(328px, calc(100vw - 48px)); }
+.dnn-picker__input {
+  font: inherit;
+  font-size: 20px;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--dnn-divider);
+  border-radius: 4px;
+  background: var(--dnn-surface);
+  color: var(--dnn-text);
+  outline: none;
+  box-sizing: border-box;
+}
+.dnn-picker__input:focus { border-color: var(--dnn-primary); box-shadow: inset 0 0 0 1px var(--dnn-primary); }
+
 .dnn-snackbar {
   position: fixed;
   left: 0;
@@ -442,12 +715,24 @@ body:has(.dnn-modal) { overflow: hidden; }
   align-items: center;
   gap: 8px;
   min-height: 48px;
-  padding: 6px 8px 6px 16px;
+  padding: 6px 0;
+  padding-inline: 16px 8px;
   border-radius: 4px;
   background: var(--dnn-inverse-surface);
   color: var(--dnn-inverse-text);
   font-size: 14px;
   box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2), 0 6px 10px rgba(0, 0, 0, 0.14);
+}
+/* Above the scaffold's bottom bar and its floating button, not over them, as
+ * Material has it. The snackbar is drawn beside the scaffold rather than in
+ * it, so the bar's height is read from the overlay they share, where the
+ * renderer publishes it too; the button's is its 56px and the 24px under it. */
+.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar) > .dnn-snackbar {
+  bottom: calc(8px + var(--dnn-bottombar-height, 0px));
+}
+.dnn-overlay:has(> .dnn-scaffold > .dnn-fab) > .dnn-snackbar { bottom: 88px; }
+.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar):has(> .dnn-scaffold > .dnn-fab) > .dnn-snackbar {
+  bottom: calc(88px + var(--dnn-bottombar-height, 0px));
 }
 .dnn-snackbar__message { flex: 1; }
 .dnn-snackbar__action {
@@ -486,7 +771,7 @@ body:has(.dnn-modal) { overflow: hidden; }
   padding: 12px 16px;
   margin: 4px 0;
   border-radius: 4px;
-  border-left: 4px solid currentColor;
+  border-inline-start: 4px solid currentColor;
   font-size: 14px;
 }
 .dnn-alert__body { flex: 1; display: flex; flex-direction: column; color: var(--dnn-text); }
@@ -530,3 +815,222 @@ body:has(.dnn-modal) { overflow: hidden; }
   box-sizing: border-box;
   overflow: hidden;
 }
+
+/* ---- Free-form composition ---------------------------------------------
+ * A box, a stack, a scroller, a glyph, a canvas. Sizes, colours and the rest
+ * of what the app states are inline styles; this is the part that is the
+ * same for every one of them. */
+
+/* A one-cell grid: the child fills the cell unless the box aligns it. The
+ * track may be smaller than the child, so a box with a stated size holds its
+ * child to it instead of growing round it. */
+.dnn-box {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  min-width: 0;
+  box-sizing: border-box;
+}
+.dnn-box > * { min-width: 0; min-height: 0; }
+.dnn-box[data-tap] { cursor: pointer; }
+.dnn-box[data-tap]:focus-visible { outline: 2px solid var(--dnn-primary); outline-offset: 2px; }
+.dnn-box--pan, .dnn-canvas.dnn-box--pan { touch-action: none; }
+.dnn-box--hold { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.dnn-box--dragging { opacity: 0.4; }
+/* Touch feedback: a wash over the box while it is pressed. */
+.dnn-box--ripple { position: relative; }
+.dnn-box--ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+.dnn-box--ripple:hover::after { opacity: 0.04; }
+.dnn-box--ripple:active::after { opacity: 0.12; }
+/* The copy of a box that follows the pointer while it is dragged. */
+.dnn-drag-ghost { opacity: 0.85; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3); }
+
+/* expand. What "fill" means depends on what the element is in: across a
+ * column it is the column's width, along a row it is a share of what the row
+ * has left - and the other way round for height. The margins are outside the
+ * width, so they come off it (--dnn-mx / --dnn-my, set by the renderer). */
+.dnn-fill-w { width: calc(100% - var(--dnn-mx, 0px)); }
+.dnn-fill-h { height: calc(100% - var(--dnn-my, 0px)); }
+.dnn-row > .dnn-fill-w { width: auto; flex: 1 1 0; min-width: 0; }
+.dnn-column > .dnn-fill-h, .dnn-expanded > .dnn-fill-h { height: auto; flex: 1 1 0; min-height: 0; }
+.dnn-column > .dnn-fill-w { align-self: stretch; width: auto; }
+.dnn-row > .dnn-fill-h { align-self: stretch; height: auto; }
+
+/* Layers. Every child shares the one cell, so the biggest sizes the stack and
+ * the stack's alignment places the others; each is positioned so that they
+ * paint in tree order, first at the back. A pinned child leaves the cell. */
+.dnn-stack {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+.dnn-stack > * { grid-area: 1 / 1; position: relative; min-width: 0; min-height: 0; }
+/* Outside a stack a Positioned is its child and nothing else. */
+.dnn-positioned { display: contents; }
+.dnn-stack > .dnn-positioned { display: grid; position: absolute; }
+
+/* A scroller takes the room it is given along its axis and the full extent
+ * across it. Which flex property that is depends on the parent, as above. */
+.dnn-scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  align-self: stretch;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Stops the page behind from scrolling, or refreshing, when this reaches
+     its end. */
+  overscroll-behavior: contain;
+}
+.dnn-scroll__content { display: flex; flex-direction: column; flex: 0 0 auto; }
+.dnn-scroll__content > * { flex: 0 0 auto; }
+.dnn-scroll--reverse { flex-direction: column-reverse; }
+.dnn-scroll--horizontal { flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+.dnn-scroll--horizontal.dnn-scroll--reverse { flex-direction: row-reverse; }
+.dnn-scroll--horizontal > .dnn-scroll__content { flex-direction: row; }
+.dnn-column > .dnn-scroll--horizontal, .dnn-scroll__content > .dnn-scroll--horizontal { flex: 0 0 auto; }
+.dnn-row > .dnn-scroll:not(.dnn-scroll--horizontal) { flex: 0 1 auto; }
+/* shrinkWrap: as long as its child, and so with nothing to scroll. */
+.dnn-scroll.dnn-scroll--shrink { flex: 0 0 auto; overflow: visible; }
+
+/* Pull-to-refresh. A strip of no height pinned to the top of the viewport,
+ * holding a badge the renderer drags into view with the finger and the tree
+ * keeps there while it says "refreshing". */
+.dnn-scroll__refresh {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 0;
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.dnn-scroll__badge {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dnn-surface);
+  color: var(--dnn-primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transform: translateY(-48px);
+  transition: transform 200ms ease, opacity 200ms ease;
+}
+.dnn-scroll__badge > .dnn-spinner { width: 20px; height: 20px; }
+.dnn-scroll__refresh--on > .dnn-scroll__badge { opacity: 1; transform: translateY(16px); }
+
+/* One glyph. With no colour of its own it is text, and takes the colour of
+ * whatever it is in. */
+.dnn-icon.material-icons { flex: 0 0 auto; color: inherit; user-select: none; -webkit-user-select: none; }
+
+/* A canvas: a box-shaped frame, the surface filling it, the child over it. */
+.dnn-canvas { position: relative; display: block; min-width: 0; box-sizing: border-box; }
+.dnn-canvas__surface { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.dnn-canvas__child { position: absolute; inset: 0; display: grid; }
+.dnn-canvas__child:empty { display: none; }
+
+/* An image with a fallback: one cell, the image and the fallback sharing it,
+ * and the renderer hiding whichever is not the one to show. */
+.dnn-image-frame {
+  display: inline-grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+.dnn-image-frame > * { grid-area: 1 / 1; min-width: 0; min-height: 0; }
+.dnn-image-frame > .dnn-image { width: 100%; height: 100%; }
+.dnn-image-frame__fallback { display: grid; place-items: center; }
+.dnn-image-frame > [hidden] { display: none; }
+
+/* The room a Flutter widget would have had; its fallback, if any, inside. */
+.dnn-flutter-slot { display: grid; align-self: stretch; flex: 0 0 auto; overflow: hidden; }
+
+/* ---- Bottom navigation --------------------------------------------------
+ * Material's navigation bar: destinations side by side, the selected one
+ * marked by a pill behind its icon. --rail turns it on its side. */
+.dnn-bottomnav {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  width: 100%;
+  height: 80px;
+  background: var(--dnn-surface);
+  border-top: 1px solid var(--dnn-divider);
+}
+.dnn-bottomnav__item,
+.dnn-bottomnav__item:focus {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--dnn-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dnn-bottomnav__item:focus-visible { outline: 2px solid var(--dnn-primary); outline-offset: -2px; }
+.dnn-bottomnav__indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 32px;
+  border-radius: 16px;
+}
+.dnn-bottomnav__label { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dnn-bottomnav__item--selected { color: var(--dnn-text); }
+.dnn-bottomnav__item--selected .dnn-bottomnav__indicator {
+  background: color-mix(in srgb, var(--dnn-primary) 20%, transparent);
+  color: var(--dnn-primary);
+}
+.dnn-bottomnav--rail {
+  flex-direction: column;
+  justify-content: flex-start;
+  align-self: stretch;
+  flex: 0 0 auto;
+  gap: 12px;
+  width: 80px;
+  height: auto;
+  padding: 12px 0;
+  border-top: none;
+  border-inline-end: 1px solid var(--dnn-divider);
+  /* More destinations than the window is tall: the rail scrolls, rather than
+   * the last of them being out of reach. */
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.dnn-bottomnav--rail .dnn-bottomnav__item { flex: 0 0 auto; height: 56px; }
+.dnn-bottomnav--rail .dnn-bottomnav__indicator { width: 56px; }
+
+/* A floating button a Positioned holds is placed by that: a scaffold built
+ * inside another's body pins its button to its own corner, clear of the outer
+ * scaffold's bottom bar, rather than to the window's. */
+.dnn-positioned > .dnn-fab { position: static; }
+/* A dropdown beside other things in a row - a list row's trailing - is as
+ * wide as its choices, not as wide as the row. */
+.dnn-row > .dnn-dropdown { width: auto; flex: 0 0 auto; }

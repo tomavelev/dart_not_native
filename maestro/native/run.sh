@@ -12,6 +12,11 @@
 # Options:
 #   --device <id>   adb serial or simulator udid (default: the only one booted)
 #   --no-build      reuse whatever is already installed
+#   --agent-device  run the flows through agent-device's Maestro engine
+#                   (`agent-device test --maestro`) instead of Maestro itself -
+#                   for a machine that has the one and not the other. Android
+#                   only here. It reads a subset of Maestro: see README.md for
+#                   which of these flows it runs.
 #
 # Why this exists: `integration_test/native_renderer_test.dart` asks both
 # renderers to draw every node type and listens for errors, which says nothing
@@ -25,7 +30,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 FLOWS="$HERE/flows"
 MAESTRO="${MAESTRO:-$(command -v maestro || echo "$HOME/.maestro/bin/maestro")}"
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 [ $# -ge 1 ] || usage
 PLATFORM="$1"; shift
@@ -33,16 +38,21 @@ case "$PLATFORM" in android|ios) ;; *) usage ;; esac
 
 DEVICE=""
 BUILD=1
+ENGINE=maestro
 SELECTED=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --device) DEVICE="$2"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
+    --agent-device) ENGINE=agent-device; shift ;;
     -h|--help) usage ;;
     *) SELECTED+=("$1"); shift ;;
   esac
 done
 
+if [ "$ENGINE" = agent-device ] && [ "$PLATFORM" != android ]; then
+  echo "--agent-device runs the Android flows only." >&2; exit 2
+fi
 if [ "$PLATFORM" = android ]; then
   APP_ID="com.programtom.dart_not_native"
   [ -n "$DEVICE" ] || DEVICE="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
@@ -106,6 +116,12 @@ for flow in "${SELECTED[@]}"; do
   fi
   install_app "$entry"
   echo "== $(basename "$flow") on $DEVICE"
-  "$MAESTRO" --device "$DEVICE" test -e APP_ID="$APP_ID" "$flow" || failed=1
+  if [ "$ENGINE" = agent-device ]; then
+    "${AGENT_DEVICE:-agent-device}" test "$flow" --maestro --platform "$PLATFORM" \
+      --serial "$DEVICE" -e APP_ID="$APP_ID" \
+      --artifacts-dir "$HERE/artifacts/$(basename "$flow" .yaml)" || failed=1
+  else
+    "$MAESTRO" --device "$DEVICE" test -e APP_ID="$APP_ID" "$flow" || failed=1
+  fi
 done
 exit "$failed"

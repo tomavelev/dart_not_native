@@ -1,0 +1,28 @@
+# The component showcase: pages turned by their buttons, a counter kept
+# across them, a list on the last page.
+#
+# entry: android=lib/main_native_components_showcase.dart
+#
+# Everything here is found by id - the widget's Key, which the renderer
+# exposes as the view's resource name.
+context platform=android
+open "com.programtom.dart_not_native" --relaunch
+wait "id=\"page_indicator\" label=\"Page 1 of 3\"" 30000
+
+# The floating button counts, on whichever page it is pressed.
+press "label=\"Increment\""
+press "id=\"next_page\""
+wait "id=\"page_indicator\" label=\"Page 2 of 3\"" 5000
+wait "id=\"counter_value\" label=\"Counter Value: 1\"" 5000
+press "id=\"decrement\""
+wait "id=\"counter_value\" label=\"Counter Value: 0\"" 5000
+
+# The last page is a list; its rows are there to be read.
+press "id=\"next_page\""
+wait "id=\"page_indicator\" label=\"Page 3 of 3\"" 5000
+wait text "Efficient stack layout" 5000
+wait text "Native performance" 5000
+
+press "id=\"prev_page\""
+wait "id=\"page_indicator\" label=\"Page 2 of 3\"" 5000
+close

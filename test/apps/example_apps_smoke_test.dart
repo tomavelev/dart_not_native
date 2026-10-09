@@ -104,6 +104,6 @@ void main() {
   });
 
   test('the catalogue covers every example app', () {
-    expect(exampleApps, hasLength(11));
+    expect(exampleApps, hasLength(12));
   });
 }

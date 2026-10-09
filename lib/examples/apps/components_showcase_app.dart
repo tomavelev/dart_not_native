@@ -54,7 +54,7 @@ class _ComponentsShowcaseAppState extends State<ComponentsShowcaseApp> {
           'Component Showcase (Page ${currentPage + 1}/${ComponentsShowcaseApp.pageCount})',
         ),
       ),
-      body: _pageContent(),
+      body: SingleChildScrollView(child: _pageContent()),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Increment',
         onPressed: () => setState(logic.incrementCounter),

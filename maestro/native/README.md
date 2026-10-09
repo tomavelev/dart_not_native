@@ -17,10 +17,42 @@ flows first and the integration tests after. None of this runs in CI - see
 TESTING.md for why - so it is worth running by hand after a change to the
 Kotlin or Swift renderers.
 
+**State of these flows, 2026-10-03.** All of them were last run before the
+widget layer and the renderers grew: they drive the example apps, and none
+touches a node type added since (boxes, stacks, canvas, dropdowns, pickers,
+bottom navigation, the Flutter slot). The Android flows should still run.
+The iOS ones need the Swift renderer to compile first, and it has not been
+compiled since it gained those node types - `TODO.md` §6.1.
+
 Each flow names the entry point it needs in an `# entry:` comment, because
 every example shares one application id; the runner builds and installs that
 app first. `--device` picks a specific emulator or simulator when more than one
 is up.
+
+## Without Maestro
+
+`agent-device` (TESTING.md has the lane it is used for) reads a subset of
+Maestro's YAML, so these flows can be run on a machine that has it and not
+Maestro:
+
+```sh
+maestro/native/run.sh android --agent-device
+maestro/native/run.sh android counter --agent-device --no-build
+```
+
+Android only, and not all of them - tried on 2026-10-04 with agent-device
+0.21.20 on an Android 15 emulator:
+
+| Flow | Through agent-device |
+|---|---|
+| `counter` | passes |
+| `textinput_android` | passes |
+| `inbox` | passes |
+| `focus` | fails: `(?i)` at the start of a text is not understood, so `tapOn: "(?i)focus the name field"` finds nothing. With the flag taken out it passes. |
+| `a11y_android` | refused before it starts: `checked:` on `assertVisible` is not supported. With those lines taken out it passes - but they are what the flow is for. |
+
+So it is a way to run three of the five, not a replacement. The flows are
+left as Maestro reads them.
 
 ## Why this exists
 

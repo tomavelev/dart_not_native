@@ -252,7 +252,8 @@ class DSBadge {
 // ============================================================================
 
 class DSCheckbox {
-  /// Checkbox input
+  /// Checkbox input. [disabled] draws it greyed and takes no tap - see
+  /// `UIBuilder.checkbox`.
   static WidgetNode input({
     required String eventId,
     bool checked = false,
@@ -276,7 +277,8 @@ class DSCheckbox {
 // ============================================================================
 
 class DSRadio {
-  /// Radio button input
+  /// Radio button input. [disabled] draws it greyed and takes no tap - see
+  /// `UIBuilder.checkbox`.
   static WidgetNode input({
     required String eventId,
     required String value,
@@ -302,7 +304,8 @@ class DSRadio {
 // ============================================================================
 
 class DSToggle {
-  /// Toggle/Switch input
+  /// Toggle/Switch input. [disabled] draws it greyed and takes no tap - see
+  /// `UIBuilder.checkbox`.
   static WidgetNode input({
     required String eventId,
     bool enabled = false,

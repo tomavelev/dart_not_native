@@ -3,6 +3,8 @@
 
 import 'package:flutter/services.dart';
 import '../src/app_theme.dart';
+import '../src/event_binding.dart';
+import '../src/flutter_slots.dart';
 import '../src/frame_probe.dart';
 import '../src/render_error.dart';
 import 'native_frame_probe.dart';
@@ -49,7 +51,31 @@ class iOSNativeRenderer implements NativeUIRenderer, HasFrameProbe {
           (key, value) => MapEntry(key.toString(), value),
         ) ??
         <String, dynamic>{};
-    return handleEvent(eventId, data);
+    // Where a FlutterSlot's hole came to rest: for the registry the Flutter
+    // layer under the native views paints from, not for the app.
+    if (eventId == RendererEvents.slotRect) {
+      FlutterSlots.instance.reportRect(data);
+      return {'success': true};
+    }
+    // The renderer's own events - viewport, key, lifecycle - are sent whether
+    // or not the app listens, so one nobody registered for is not an error.
+    if (eventId.startsWith('dnn:') && !eventHandlers.containsKey(eventId)) {
+      return {'success': true, 'handled': false};
+    }
+    // The views say which tree they were showing when this happened, so the
+    // callback an id named in *that* build answers - see EventBindings.
+    EventBindings.eventBuild = (arguments['build'] as num?)?.toInt();
+    // The handler runs before handleEvent first yields, so the build is
+    // still set when it is looked up - and is cleared as soon as it has
+    // been, not when the handler's future completes: another event may
+    // arrive in between, from another build.
+    final Future<dynamic> handled;
+    try {
+      handled = handleEvent(eventId, data);
+    } finally {
+      EventBindings.eventBuild = null;
+    }
+    return handled;
   }
 
   /// Initialize the renderer and setup event channel
@@ -115,7 +141,13 @@ class iOSNativeRenderer implements NativeUIRenderer, HasFrameProbe {
         await platform.invokeMethod('initialize', theme.toJson());
         _initialized = true;
       }
+      // The tree about to be drawn says which slots are still wanted.
+      FlutterSlots.instance.sync(this, tree);
       final json = tree.toJson();
+      // Beside the tree, not in it: the build's number, which the views hand
+      // back with every event (see _onNativeCall).
+      final build = EventBindings.buildOf(tree);
+      if (build != null) json['build'] = build;
       // The native half answers with what it could not draw, structured; see
       // RenderError.fromChannel, which also reads the bare string older halves
       // returned.

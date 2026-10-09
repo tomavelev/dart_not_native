@@ -1,7 +1,7 @@
 /// Unit tests for the Router: navigation, guards, listeners and history.
 library;
 
-import 'package:dart_not_native/core.dart' hide Route, Router, RouterConfig;
+import 'package:dart_not_native/core.dart' hide Router;
 import 'package:dart_not_native/routing/route.dart';
 import 'package:flutter_test/flutter_test.dart';
 

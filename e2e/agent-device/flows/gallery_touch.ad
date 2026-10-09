@@ -1,0 +1,46 @@
+# Boxes that take a touch, layers and a long scroll - the node types the
+# other examples do not have.
+#
+# entry: android=lib/main_native_gallery.dart
+context platform=android
+open "com.programtom.dart_not_native" --relaunch
+wait "id=\"tap_box\"" 30000
+
+# An app bar action, named by its tooltip.
+press "label=\"About this screen\""
+wait "id=\"info_count\" label=\"About opened: 1\"" 5000
+
+# A box with a tap is a button; one with a long press answers a long press.
+press "id=\"tap_box\""
+wait "id=\"tap_count\" label=\"Taps: 1\"" 5000
+longpress "id=\"hold_box\"" 800
+wait "id=\"hold_count\" label=\"Holds: 1\"" 5000
+
+# A tappable card with a button inside it: each is pressed on its own.
+press "id=\"star\""
+wait "id=\"card_count\" label=\"Card opened: 0, starred: yes\"" 5000
+wait "label=\"Remove star\"" 5000
+press "label=\"Open the card\""
+wait "id=\"card_count\" label=\"Card opened: 1, starred: yes\"" 5000
+
+# Under IgnorePointer nothing is pressed, and the box says it is unavailable.
+wait "id=\"ignored_box\" enabled=false" 5000
+press "id=\"ignored_box\""
+wait "id=\"tap_count\" label=\"Taps: 1\"" 5000
+is text "id=\"ignored_count\"" "Ignored taps: 0"
+
+# Layers: what is on top is found, and so is what it sits over.
+is visible "id=\"on_top\""
+wait text "Underneath" 5000
+# Things with no text have the name they were given.
+wait "label=\"Warning\"" 5000
+wait "id=\"weather\" label=\"Sunny, 24 degrees\"" 5000
+wait "id=\"chart\" label=\"Bar chart: three bars\"" 5000
+
+# The page scrolls to its end.
+scroll down
+scroll down
+scroll down
+wait "id=\"page_end\"" 5000
+wait "id=\"row_12\"" 5000
+close

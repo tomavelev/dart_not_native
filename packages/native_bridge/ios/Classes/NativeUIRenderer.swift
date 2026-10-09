@@ -96,6 +96,31 @@ class NativeUIRenderer {
   /// its mind and rebuild instead of patching stale colours in place.
   private var paintedDark: Bool?
 
+  /// Whether the screen reads right to left - the root node's `textDirection`.
+  ///
+  /// It is stated once, at the top of the tree, and can change from one render
+  /// to the next (the app switched to Arabic). Like the appearance, it is not a
+  /// prop any view below the root carries, so a change rebuilds: every stack
+  /// has to turn round, and patching would keep the ones it has.
+  private var isRTL = false
+
+  /// Decoded remote images, by URL.
+  ///
+  /// `URLSession.shared` already keeps the *bytes* on disk (its `URLCache`
+  /// honours the response's cache headers), but a rebuild still paid for a
+  /// request and a decode, and showed the alt text in between. With the bitmap
+  /// in memory an image the screen has already drawn is drawn again at once.
+  /// NSCache lets go of entries by itself under memory pressure.
+  private static let imageCache: NSCache<NSString, UIImage> = {
+    let cache = NSCache<NSString, UIImage>()
+    cache.totalCostLimit = 32 * 1024 * 1024
+    return cache
+  }()
+
+  /// Who is waiting for each URL being fetched, so ten rows showing the same
+  /// avatar make one request between them. Main thread only.
+  private static var imageWaiters: [String: [(UIImage?) -> Void]] = [:]
+
   /// Whether the dark palette is in force.
   ///
   /// In `system` mode this asks the host view controller, never the renderer's
@@ -158,8 +183,28 @@ class NativeUIRenderer {
     color(themeSurfaceVariant, fallback: themeSurfaceVariant)
   }
 
-  private var rootContainer: UIView?
+  private var rootContainer: DnnRootContainerView?
   private var methodChannel: FlutterMethodChannel?
+
+  /// The `FlutterSlot` views the last render left on screen, what was last
+  /// said about each, and whether a modal overlay is drawn above them - see
+  /// `updateSlotRects`.
+  private var slotViews: [DnnFlutterSlotView] = []
+  private var slotReports: [String: String] = [:]
+  private var slotsCovered = false
+
+  /// A `Scroll`'s offset by its id, which survives its view being rebuilt, and
+  /// the `scrollVersion` each scroller (or lazy list) has already obeyed.
+  private var scrollOffsets: [String: CGFloat] = [:]
+  private var scrollVersions: [String: Int] = [:]
+
+  /// The viewport last reported to Dart, and how much of the host view the
+  /// keyboard covers - see `sendViewport`.
+  private var lastViewport: NSDictionary?
+  private var keyboardInset: CGFloat = 0
+
+  /// The app-lifecycle observers, kept so `dispose` can take them down.
+  private var lifecycleObservers: [NSObjectProtocol] = []
 
   /// The container's bottom, held off the host view's bottom by however much of
   /// it the keyboard covers. UIKit does not move anything out from under the
@@ -257,6 +302,9 @@ class NativeUIRenderer {
           }
         }
         self?.initialize()
+        // Every initialise is a Dart side that has not heard the viewport yet
+        // - a hot restart keeps the container and loses everything else.
+        self?.sendViewport(force: true)
         result(nil)
       case "render":
         guard let args = call.arguments as? [String: Any] else {
@@ -277,7 +325,13 @@ class NativeUIRenderer {
   private func initialize() {
     guard rootContainer == nil else { return }
 
-    let container = UIView()
+    // A view of its own kind, because a `FlutterSlot` needs a hole in it: see
+    // `DnnRootContainerView`.
+    let container = DnnRootContainerView()
+    container.onLayout = { [weak self] in
+      self?.sendViewport()
+      self?.scheduleSlotUpdate()
+    }
     container.translatesAutoresizingMaskIntoConstraints = false
     // Pin the rendered subtree to the appearance the theme asked for, so the
     // system controls the renderer does not paint itself - a switch, a text
@@ -310,6 +364,70 @@ class NativeUIRenderer {
     controller.view.accessibilityElements = [container]
     rootContainer = container
     observeKeyboard()
+    observeLifecycle()
+  }
+
+  // MARK: - Renderer events
+
+  /**
+   Tells Dart how much room there is: `dnn:viewport`, sent once the renderer is
+   up and again whenever any of it changes.
+
+   The size is the host view's - the whole window - rather than the
+   container's, which the keyboard shortens: the keyboard is reported as
+   `keyboardInset` instead, the way Flutter's `MediaQuery` separates the two,
+   so an app subtracting the inset does not subtract it twice.
+   */
+  private func sendViewport(force: Bool = false) {
+    guard rootContainer != nil, let host = controller.view else { return }
+    let size = host.bounds.size
+    guard size.width > 0, size.height > 0 else { return }
+    let safe = host.safeAreaInsets
+    let data: [String: Any] = [
+      "width": Double(size.width),
+      "height": Double(size.height),
+      "paddingTop": Double(safe.top),
+      "paddingBottom": Double(safe.bottom),
+      "paddingLeft": Double(safe.left),
+      "paddingRight": Double(safe.right),
+      "keyboardInset": Double(keyboardInset),
+      "devicePixelRatio": Double(UIScreen.main.scale),
+      // The content size category, as the factor it scales body text by.
+      "textScale": Double(UIFontMetrics.default.scaledValue(for: 100) / 100),
+      "dark": controller.traitCollection.userInterfaceStyle == .dark,
+    ]
+    let boxed = data as NSDictionary
+    if !force, let last = lastViewport, last.isEqual(boxed) { return }
+    lastViewport = boxed
+    send(eventId: "dnn:viewport", data: data)
+  }
+
+  /// Forwards the application's lifecycle as `dnn:lifecycle`, and re-reads the
+  /// viewport when the text size setting changes.
+  private func observeLifecycle() {
+    guard lifecycleObservers.isEmpty else { return }
+    let centre = NotificationCenter.default
+    let states: [(NSNotification.Name, String)] = [
+      (UIApplication.didBecomeActiveNotification, "resumed"),
+      (UIApplication.willResignActiveNotification, "inactive"),
+      (UIApplication.willEnterForegroundNotification, "inactive"),
+      (UIApplication.didEnterBackgroundNotification, "paused"),
+      (UIApplication.willTerminateNotification, "detached"),
+    ]
+    for (name, state) in states {
+      let token = centre.addObserver(forName: name, object: nil, queue: .main) {
+        [weak self] _ in
+        self?.send(eventId: "dnn:lifecycle", data: ["state": state])
+        if state == "resumed" { self?.sendViewport() }
+      }
+      lifecycleObservers.append(token)
+    }
+    let sizeToken = centre.addObserver(
+      forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      self?.sendViewport()
+    }
+    lifecycleObservers.append(sizeToken)
   }
 
   // MARK: - Frame probe
@@ -406,6 +524,10 @@ class NativeUIRenderer {
       let inHost = host.convert(window.convert(end, from: nil), from: window)
       overlap = max(0, host.bounds.maxY - inHost.minY)
     }
+    if keyboardInset != overlap {
+      keyboardInset = overlap
+      sendViewport()
+    }
     guard bottom.constant != -overlap else { return }
     bottom.constant = -overlap
 
@@ -451,6 +573,13 @@ class NativeUIRenderer {
     releaseFrameProbe()
     keyboardObservers.forEach(NotificationCenter.default.removeObserver)
     keyboardObservers.removeAll()
+    lifecycleObservers.forEach(NotificationCenter.default.removeObserver)
+    lifecycleObservers.removeAll()
+    slotViews.removeAll()
+    slotReports.removeAll()
+    scrollOffsets.removeAll()
+    scrollVersions.removeAll()
+    lastViewport = nil
     containerBottom = nil
     rootContainer?.removeFromSuperview()
     rootContainer = nil
@@ -499,8 +628,26 @@ class NativeUIRenderer {
     guard let container = rootContainer else {
       return ["error": "Error: container not initialized"]
     }
-    let next = normalized(tree)
+    var next = normalized(tree)
     unknownTypes.removeAll()
+
+    // From here on an event is this tree's: a patch can raise one before it
+    // returns. The number rides beside the tree, not in it, so it is taken
+    // off before the diff - a root that differs only by it has not changed.
+    treeBuild = (tree["build"] as? NSNumber)?.intValue
+    next.removeValue(forKey: "build")
+
+    // The reading direction belongs to the screen, so it rides on the root and
+    // is taken off again here: nothing below needs to see it as a prop, and a
+    // root that differs only by it should not look changed to the diff. A
+    // change of direction rebuilds, for the reason a change of appearance does.
+    let rtl = (next["textDirection"] as? String) == "rtl"
+    next.removeValue(forKey: "textDirection")
+    if isRTL != rtl {
+      isRTL = rtl
+      currentTree = nil
+    }
+    container.semanticContentAttribute = rtl ? .forceRightToLeft : .forceLeftToRight
 
     // A colour is not a prop, so nothing in the tree changes when the device
     // switches appearance: the patch below would happily keep every view it
@@ -525,6 +672,9 @@ class NativeUIRenderer {
       tryPatch(oldRoot, old, next)
     {
       currentTree = next
+      // A patch builds new views too, and they need turning like the rest.
+      applyDirection(oldRoot)
+      finishRender(next)
       // A patch builds new views too - a lazy list's newly visible rows - so it
       // can meet an unknown type as readily as a rebuild can.
       return unknownTypes.isEmpty ? nil : ["unknownTypes": unknownTypes.sorted()]
@@ -555,11 +705,13 @@ class NativeUIRenderer {
     guard let view = rendered else {
       currentRoot = nil
       currentTree = nil
+      finishRender(next)
       return nil
     }
     view.frame = container.bounds
     view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     container.addSubview(view)
+    applyDirection(view)
     currentRoot = view
     currentTree = next
 
@@ -572,11 +724,50 @@ class NativeUIRenderer {
       }
     }
     restoringFocus = false
+    finishRender(next)
 
     // An unknown node type draws a placeholder rather than throwing, so report
     // it here instead of leaving it as a silent surprise. Structured, so Dart
     // can list the types rather than parse the sentence.
     return unknownTypes.isEmpty ? nil : ["unknownTypes": unknownTypes.sorted()]
+  }
+
+  /**
+   Tells [view] and everything under it which way the screen reads.
+
+   UIKit does not hand `semanticContentAttribute` down: each view answers for
+   itself, and one that was never told follows the *app's* language, which is
+   not the tree's. So every view is told, after each render - a stack view
+   then runs its arranged subviews from the right, leading and trailing
+   anchors swap sides, and a control puts its image on the other side of its
+   title. It is forced both ways, so a left-to-right screen on a phone set to
+   Arabic stays left to right, as the tree asked.
+
+   Text that states no alignment starts where reading starts. `.natural` means
+   the app's language rather than the view's, so it is spelt out.
+
+   A control, a label, a web page and a map are told and not entered: what is
+   inside them is theirs to arrange.
+   */
+  private func applyDirection(_ view: UIView) {
+    let wanted: UISemanticContentAttribute = isRTL ? .forceRightToLeft : .forceLeftToRight
+    if view.semanticContentAttribute != wanted { view.semanticContentAttribute = wanted }
+    if let label = view as? UILabel {
+      if isRTL, label.textAlignment == .natural { label.textAlignment = .right }
+      return
+    }
+    if let field = view as? UITextField {
+      if isRTL, field.textAlignment == .natural { field.textAlignment = .right }
+      return
+    }
+    if let text = view as? UITextView {
+      if isRTL, text.textAlignment == .natural { text.textAlignment = .right }
+      return
+    }
+    if view is UIControl || view is UITabBar || view is WKWebView || view is MKMapView {
+      return
+    }
+    for sub in view.subviews { applyDirection(sub) }
   }
 
   // MARK: - Reconciliation (the shape-preserving fast path)
@@ -587,23 +778,72 @@ class NativeUIRenderer {
   private func tryPatch(_ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any])
     -> Bool
   {
-    over(statedBackground(newNode)) { patchNode(view, oldNode, newNode) }
+    // An app bar's children are drawn in its foreground colour, which is not
+    // always the one that contrasts with its background: the app can state it.
+    let type = newNode["type"] as? String
+    if type == "AppBar" || type == "NavigationBar" {
+      let saved = textInForce
+      textInForce = appBarForeground(newNode)
+      defer { textInForce = saved }
+      return patchNode(view, oldNode, newNode)
+    }
+    // The colour in force inside the node changed - a card went from a light
+    // fill to a dark one. Everything below that states no colour of its own
+    // was painted in the old one, and a node whose own props did not change
+    // is not painted again. So this is a rebuild.
+    let stated = statedBackground(newNode) as? String
+    let before = statedBackground(oldNode) as? String
+    if stated != before {
+      let now = stated.map { textOn(color($0, fallback: $0)) }
+      let was = before.map { textOn(color($0, fallback: $0)) }
+      if now != was { return false }
+    }
+    return over(statedBackground(newNode)) { patchNode(view, oldNode, newNode) }
   }
 
   private func patchNode(_ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any])
     -> Bool
   {
     if (oldNode["type"] as? String) != (newNode["type"] as? String) { return false }
+    // The id and role the view was last given are taken off before anything is
+    // patched, and the new ones put on after: an id is not a prop the patch
+    // below looks at, and it can arrive, change or go on a view that is kept.
+    releaseIdentity(view, oldNode, newNode)
     // A lazy list frames its windowed rows by index rather than stacking them,
     // so it has its own keyed reconcile.
     if (newNode["type"] as? String) == "LazyList" {
-      return reconcileLazyList(view, oldNode, newNode)
+      guard reconcileLazyList(view, oldNode, newNode) else { return false }
+      identify(view, newNode)
+      return true
+    }
+    let type = newNode["type"] as? String
+    // The spinner of a pull-to-refresh stays for as long as the tree says so,
+    // and the tree that ends it need not differ from the one before the pull.
+    if type == "Scroll" {
+      (view as? DnnScrollView)?.setRefreshing(newNode["refreshing"] as? Bool ?? false)
     }
     if !patchSelf(view, oldNode, newNode) { return false }
+    identify(view, newNode)
+    // A live region says what it now reads as - once its children have been
+    // patched too, which is when this function returns.
+    defer { (view as? DnnBoxView)?.announceChanges() }
+    // A slot's child is its fallback, which this renderer never draws.
+    if type == "FlutterSlot" { return true }
 
     let oldKids = childNodes(oldNode)
     let newKids = childNodes(newNode)
     if oldKids.isEmpty && newKids.isEmpty { return true }
+
+    // A view that holds one child can swap it, so a child that cannot be
+    // patched is rebuilt where it stands rather than taking the screen with it.
+    if type == "Box" || type == "Canvas" || type == "Positioned" || type == "Scroll" {
+      guard let host = view as? DnnSingleChildHost else { return false }
+      return patchHostedChild(host, oldKids, newKids, in: newNode)
+    }
+    if type == "Stack" {
+      guard let layers = view as? DnnStackView else { return false }
+      return reconcileLayers(layers, oldKids, newKids)
+    }
 
     // A stacking container reconciles its children by id, so a row inserted,
     // removed or reordered moves the views already there instead of every row
@@ -631,7 +871,12 @@ class NativeUIRenderer {
     // A stack that spaces its children out carries a spacer *between* each
     // pair, so its arranged subviews no longer line up with the children one
     // to one; `childViews` filters those out and patches by position instead.
-    if node["mainAxisAlignment"] as? String == "spaceBetween" { return nil }
+    switch node["mainAxisAlignment"] as? String {
+    case "spaceBetween", "spaceAround", "spaceEvenly":
+      if node["mainAxisSize"] as? String != "min" { return nil }
+    default:
+      break
+    }
     switch node["type"] as? String {
     case "Column", "Row", "VStack", "HStack", "List", "ListView":
       return view as? UIStackView
@@ -765,7 +1010,23 @@ class NativeUIRenderer {
       rowExtents: rowExtents(newNode),
       startOffset: number(newNode["startOffset"]) ?? 0,
       totalExtent: number(newNode["totalExtent"]) ?? 0)
+    // The list lays out before it scrolls, so the jump is clamped to the
+    // height the new window gives it.
+    if let target = lazyListJump(newNode, id: newNode["id"] as? String ?? "") {
+      list.restoreOffset = target
+      list.setNeedsLayout()
+    }
     return true
+  }
+
+  /// The offset [node] asks its list to jump to, if it has not been obeyed.
+  private func lazyListJump(_ node: [String: Any], id: String) -> CGFloat? {
+    guard let target = number(node["scrollOffset"]) else { return nil }
+    let version = (node["scrollVersion"] as? NSNumber)?.intValue ?? 0
+    let key = "lazy:" + id
+    if scrollVersions[key] == version { return nil }
+    scrollVersions[key] = version
+    return max(0, target)
   }
 
   /// The views that hold [node]'s children, one per child in order, or nil if
@@ -788,8 +1049,21 @@ class NativeUIRenderer {
       let children = stack.arrangedSubviews.filter { !($0 is FlexibleSpacer) }
       return children.count == kids.count ? children : nil
     case "Center", "Padding", "Expanded", "Overlay", "AnimatedOpacity",
-      "AnimatedContainer":
+      "AnimatedContainer", "BottomBar":
       return view.subviews.count == kids.count ? view.subviews : nil
+    case "AppBar", "NavigationBar":
+      // The title subtree and the actions, which the bar remembers because
+      // they sit among views of its own - the leading button, the spacer.
+      guard let bar = view as? DnnAppBarView, bar.nodeViews.count == kids.count
+      else { return nil }
+      return bar.nodeViews
+    case "Image":
+      // The one child is the fallback, which stays in its host - hidden once
+      // the picture is in - so that it can still be found here.
+      guard let host = view.subviews.compactMap({ $0 as? ImageFallbackHost }).first,
+        host.subviews.count == kids.count
+      else { return nil }
+      return host.subviews
     case "SwipeActions":
       // The row sits inside the foreground layer; the action bar is the view
       // behind it. Without this case the row's view could never be patched, so
@@ -812,6 +1086,7 @@ class NativeUIRenderer {
     guard let column = view.subviews.first(where: { $0 is UIStackView }) as? UIStackView
     else { return nil }
     let fab = view.subviews.first(where: { !($0 is UIStackView) })
+    let bodyScrolls = node["bodyScrolls"] as? Bool ?? true
     var result: [UIView] = []
     var columnIndex = 0
     for child in childNodes(node) {
@@ -819,6 +1094,10 @@ class NativeUIRenderer {
       case "FloatingActionButton":
         guard let fab else { return nil }
         result.append(fab)
+      case "BottomBar":
+        // Always the last thing in the column, wherever it sits in the tree.
+        guard let last = column.arrangedSubviews.last else { return nil }
+        result.append(last)
       case "AppBar", "NavigationBar":
         guard columnIndex < column.arrangedSubviews.count else { return nil }
         result.append(column.arrangedSubviews[columnIndex])
@@ -827,7 +1106,7 @@ class NativeUIRenderer {
         guard columnIndex < column.arrangedSubviews.count else { return nil }
         let holder = column.arrangedSubviews[columnIndex]
         columnIndex += 1
-        if child["type"] as? String == "LazyList" {
+        if child["type"] as? String == "LazyList" || !bodyScrolls {
           result.append(holder)
         } else if let scroll = holder as? UIScrollView, let body = scroll.subviews.first {
           result.append(body)
@@ -848,8 +1127,18 @@ class NativeUIRenderer {
     if propsEqual(oldNode, newNode) { return true }
     switch newNode["type"] as? String {
     case "Text": return patchText(view, newNode)
-    case "Button", "MaterialButton": return patchButton(view, newNode)
-    case "AppBar", "NavigationBar": return patchAppBar(view, newNode)
+    case "Button", "MaterialButton": return patchButton(view, oldNode, newNode)
+    case "AppBar", "NavigationBar": return patchAppBar(view, oldNode, newNode)
+    case "Scaffold", "NavigationStack": return patchScaffold(view, oldNode, newNode)
+    case "IconButton": return patchIconButton(view, oldNode, newNode)
+    case "Box": return patchBox(view, newNode)
+    case "Canvas": return patchCanvas(view, oldNode, newNode)
+    case "Positioned": return patchPositioned(view, newNode)
+    case "Scroll": return patchScroll(view, newNode)
+    case "Icon": return patchIcon(view, newNode)
+    case "Dropdown": return patchDropdown(view, newNode)
+    case "BottomNavigation": return patchBottomNavigation(view, oldNode, newNode)
+    case "FlutterSlot": return patchFlutterSlot(view, newNode)
     case "TextField": return patchTextField(view, oldNode, newNode)
     case "Checkbox":
       return patchIconControl(view, newNode, key: "checked", on: "checkmark.square.fill", off: "square")
@@ -901,6 +1190,8 @@ class NativeUIRenderer {
     // Setting isOn programmatically does not fire valueChanged, so it is safe.
     toggle.setOn(newNode["enabled"] as? Bool ?? false, animated: false)
     toggle.isEnabled = !(newNode["disabled"] as? Bool ?? false)
+    toggle.accessibilityLabel =
+      newNode["label"] as? String ?? newNode["semanticLabel"] as? String
     bindings[toggle.hash] = newNode
     if let label = (view as? UIStackView)?.arrangedSubviews.compactMap({ $0 as? UILabel }).first {
       label.text = newNode["label"] as? String
@@ -948,60 +1239,51 @@ class NativeUIRenderer {
   }
 
   private func patchText(_ view: UIView, _ node: [String: Any]) -> Bool {
-    guard let label = view as? UILabel else { return false }
-    clampLines(label, node)
-    label.textColor = node["color"] == nil
-      ? (textInForce ?? color(nil, fallback: themeText))
-      : color(node["color"], fallback: themeText)
-    let size = number(node["fontSize"]) ?? 14
-    let weight = number(node["fontWeight"]) ?? 400
-    label.font = .systemFont(ofSize: size, weight: weight >= 600 ? .bold : .regular)
-    let content = node["content"] as? String ?? ""
-    switch node["decoration"] as? String {
-    case "lineThrough":
-      label.attributedText = NSAttributedString(
-        string: content, attributes: [.strikethroughStyle: NSUnderlineStyle.single.rawValue])
-    case "underline":
-      label.attributedText = NSAttributedString(
-        string: content, attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue])
-    default:
-      label.attributedText = nil
-      label.text = content
+    // Selectable text is a text view and the rest a label, so a change of mind
+    // about that is a different view.
+    let selectable = node["selectable"] as? Bool ?? false
+    if let textView = view as? UITextView {
+      guard selectable else { return false }
+      applySelectableText(textView, node)
+      return true
     }
+    guard !selectable, let label = view as? UILabel else { return false }
+    applyText(label, node)
     return true
   }
 
-  private func patchButton(_ view: UIView, _ node: [String: Any]) -> Bool {
+  private func patchButton(
+    _ view: UIView, _ oldNode: [String: Any], _ node: [String: Any]
+  ) -> Bool {
     guard let button = view as? UIButton else { return false }
-    button.setTitle(node["label"] as? String ?? "Button", for: .normal)
-    button.isEnabled = !(node["disabled"] as? Bool ?? false)
-    let variant = node["variant"] as? String ?? "primary"
-    let tint = color(
-      node["color"] ?? variantColor(variant), fallback: themePrimary)
-    switch variant {
-    case "secondary", "tertiary":
-      button.backgroundColor = .clear
-      button.setTitleColor(tint, for: .normal)
-    default:
-      button.backgroundColor = tint
-      button.setTitleColor(
-        node["color"] == nil
-          ? color(themeOnPrimary, fallback: themeOnPrimary)
-          : textOn(tint),
-        for: .normal)
+    // The tap is wired when the button is built, and so are the constraints
+    // behind its minimum size.
+    if (oldNode["eventId"] is String) != (node["eventId"] is String) { return false }
+    for key in ["size", "minHeight", "minWidth"]
+    where !valueEqual(oldNode[key], node[key]) {
+      return false
     }
+    styleButton(button, node)
     bindings[button.hash] = node
     return true
   }
 
-  private func patchAppBar(_ view: UIView, _ node: [String: Any]) -> Bool {
+  private func patchAppBar(
+    _ view: UIView, _ oldNode: [String: Any], _ node: [String: Any]
+  ) -> Bool {
+    // What the bar is made of - a leading button, a title subtree, a centred
+    // title - is decided when it is built.
+    for key in ["leading", "centerTitle", "hasTitleNode"]
+    where !valueEqual(oldNode[key], node[key]) {
+      return false
+    }
+    guard let bar = view as? DnnAppBarView else { return false }
     let tint = color(node["backgroundColor"], fallback: themePrimary)
     if #available(iOS 26.0, *),
       let effect = view.subviews.compactMap({ $0 as? UIVisualEffectView }).first
     {
       // Retint the glass only when the colour actually changed - reassigning the
-      // effect otherwise would flicker. The title lives in the effect's content
-      // view now, so find it by descent below.
+      // effect otherwise would flicker.
       if let glass = effect.effect as? UIGlassEffect, glass.tintColor != tint {
         let updated = UIGlassEffect()
         updated.tintColor = tint
@@ -1010,8 +1292,92 @@ class NativeUIRenderer {
     } else {
       view.backgroundColor = tint
     }
-    guard let title = firstDescendantLabel(view) else { return false }
-    title.text = node["title"] as? String ?? ""
+    let foreground = appBarForeground(node)
+    if let button = bar.leadingButton {
+      button.tintColor = foreground
+      if let eventId = node["leadingEventId"] as? String {
+        bindings[button.hash] = ["eventId": eventId]
+      }
+    }
+    if let title = bar.titleLabel {
+      title.text = node["title"] as? String ?? ""
+      title.textColor = foreground
+    }
+    return true
+  }
+
+  /// The colour an app bar's title, leading button and actions are drawn in:
+  /// the one the app stated, or the one that reads against the bar.
+  private func appBarForeground(_ node: [String: Any]) -> UIColor {
+    if let stated = statedColor(node["foregroundColor"]) { return stated }
+    // Over the theme's own primary it is the palette's onPrimary; over a
+    // colour the app stated it is whichever of black and white contrasts.
+    if node["backgroundColor"] == nil {
+      return color(themeOnPrimary, fallback: themeOnPrimary)
+    }
+    return textOn(color(node["backgroundColor"], fallback: themePrimary))
+  }
+
+  /// A scaffold's colour is its own to repaint; where its children go is not.
+  private func patchScaffold(
+    _ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any]
+  ) -> Bool {
+    for key in ["bodyScrolls", "safeArea"] where !valueEqual(oldNode[key], newNode[key]) {
+      return false
+    }
+    view.backgroundColor = statedColor(newNode["backgroundColor"])
+    return true
+  }
+
+  private func patchIconButton(
+    _ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any]
+  ) -> Bool {
+    guard let button = view as? UIButton else { return false }
+    if (oldNode["eventId"] is String) != (newNode["eventId"] is String) { return false }
+    styleIconButton(button, newNode)
+    bindings[button.hash] = newNode
+    return true
+  }
+
+  /// Patches the one child of a view that can swap it: in place when the old
+  /// child can become the new one, and by rebuilding just that child when not.
+  private func patchHostedChild(
+    _ host: DnnSingleChildHost, _ oldKids: [[String: Any]], _ newKids: [[String: Any]],
+    in node: [String: Any]
+  ) -> Bool {
+    guard let next = newKids.first else {
+      host.replaceChild(nil)
+      return true
+    }
+    if let before = oldKids.first, let existing = host.hostedChild,
+      tryPatch(existing, before, next)
+    {
+      return true
+    }
+    host.replaceChild(buildChild(next))
+    return true
+  }
+
+  /// Reconciles a `Stack`'s layers by position, rebuilding only the layers
+  /// that cannot be patched and adding or dropping the ones at the end.
+  private func reconcileLayers(
+    _ stack: DnnStackView, _ oldKids: [[String: Any]], _ newKids: [[String: Any]]
+  ) -> Bool {
+    if stack.subviews.count != oldKids.count { return false }
+    for i in newKids.indices {
+      if i < oldKids.count {
+        let existing = stack.subviews[i]
+        if tryPatch(existing, oldKids[i], newKids[i]) { continue }
+        existing.removeFromSuperview()
+        stack.addLayer(buildChild(newKids[i]), at: i)
+      } else {
+        stack.addLayer(buildChild(newKids[i]), at: nil)
+      }
+    }
+    while stack.subviews.count > newKids.count {
+      guard let last = stack.subviews.last else { break }
+      last.removeFromSuperview()
+    }
     return true
   }
 
@@ -1046,6 +1412,19 @@ class NativeUIRenderer {
       return false
     }
     field.isEnabled = !(newNode["enabled"] as? Bool == false)
+    // Only when one of them changed: the glyphs at the ends are views, and
+    // there is no call to remake them on every keystroke.
+    let fieldKeys = [
+      "keyboardType", "textCapitalization", "textAlign", "prefixIcon", "suffixIcon",
+      "suffixTappable",
+    ]
+    if fieldKeys.contains(where: { !valueEqual(oldNode[$0], newNode[$0]) }) {
+      configureField(field, newNode)
+    } else if let suffix = (isRTL ? field.leftView : field.rightView) as? UIButton {
+      // Only the suffix is a button; the prefix is a picture and sends nothing.
+      bindings[suffix.hash] = newNode
+    }
+    applyFieldHelper(view, newNode)
     // Sync the text when the user is not the one editing it, or when the app
     // itself changed the value - a controller.clear() after submitting bumps the
     // field's version, which the user's own typing never does. A re-render that
@@ -1114,8 +1493,108 @@ class NativeUIRenderer {
 
   // MARK: - Dispatch
 
-  // node-types:begin
+  /// Builds the view for [node], and tells accessibility which node it is.
   private func renderWidget(_ node: [String: Any]) -> UIView? {
+    guard let view = drawWidget(node) else { return nil }
+    identify(view, node)
+    return view
+  }
+
+  /**
+   Exposes the node's `id` - a widget's `Key` - as the view's
+   `accessibilityIdentifier`: what XCUITest matches, and what a device test's
+   `id` selector reads. It is the id as written, as on Android.
+
+   Called on every build and every patch, so an id that arrives or changes on
+   a view that is kept is followed; `releaseIdentity` takes off one that went.
+   A text field's id goes on the field itself rather than the stack around it,
+   and a dropdown's on its button, since those are what a test fills and
+   presses.
+
+   Nothing is made an accessibility element for having an id. An element hides
+   everything under it, and a view that only lays others out is still found by
+   its identifier without being one.
+
+   Only ever adds: a node with no id or role leaves the view as its own
+   render function made it.
+   */
+  private func identify(_ view: UIView, _ node: [String: Any]) {
+    let target = identityTarget(view, node)
+    var id = node["id"] as? String
+    if id?.isEmpty == true { id = nil }
+    // A field nobody keyed keeps the name `renderTree` restores its focus by.
+    // A keyed one is found by its key instead, which a rebuild does not change.
+    if id == nil, target is UITextField { id = node["eventId"] as? String }
+    if let id = id, target.accessibilityIdentifier != id {
+      target.accessibilityIdentifier = id
+    }
+
+    // What the node says it is, where the view's class would not: a text
+    // that is a heading, a box that is an image, a drawing with a name.
+    let role = roleTrait(node)
+    if !role.isEmpty {
+      if let box = target as? DnnBoxView {
+        if !box.roleTraits.contains(role) { box.roleTraits.insert(role) }
+      } else if !target.accessibilityTraits.contains(role) {
+        target.accessibilityTraits.insert(role)
+      }
+    }
+
+    // "Loading", said by name: a bare ring is announced as nothing.
+    if node["type"] as? String == "Loading", let name = node["semanticLabel"] as? String {
+      view.isAccessibilityElement = true
+      view.accessibilityLabel = name
+    }
+  }
+
+  /// Takes off [view] the id and the role [oldNode] gave it, where [newNode]
+  /// no longer gives the same - before the patch, so that a trait the patch
+  /// sets for itself is not the one removed.
+  private func releaseIdentity(
+    _ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any]
+  ) {
+    let target = identityTarget(view, oldNode)
+    if let stale = oldNode["id"] as? String, !stale.isEmpty,
+      (newNode["id"] as? String) != stale, target.accessibilityIdentifier == stale
+    {
+      target.accessibilityIdentifier = nil
+    }
+    let stale = roleTrait(oldNode)
+    if stale.isEmpty || stale == roleTrait(newNode) { return }
+    if let box = target as? DnnBoxView {
+      box.roleTraits.remove(stale)
+      return
+    }
+    // A trait the view has by its nature is not this function's to remove.
+    if stale == .button, target is UIControl { return }
+    if stale == .image, target is UIImageView { return }
+    target.accessibilityTraits.remove(stale)
+  }
+
+  /// The view a node's id and role belong on: the control somebody uses,
+  /// where the node's own view is only the layout around it.
+  private func identityTarget(_ view: UIView, _ node: [String: Any]) -> UIView {
+    let type = node["type"] as? String
+    if type == "TextField" { return findTextField(view) ?? view }
+    if type == "Dropdown" { return (view as? DnnDropdownView)?.control ?? view }
+    return view
+  }
+
+  /// The trait `semanticRole` asks for. A drawing with a name is an image.
+  private func roleTrait(_ node: [String: Any]) -> UIAccessibilityTraits {
+    var role = node["semanticRole"] as? String
+    if role == nil, node["type"] as? String == "Canvas", node["semanticLabel"] != nil {
+      role = "image"
+    }
+    if role == "heading" { return .header }
+    if role == "button" { return .button }
+    if role == "image" { return .image }
+    if role == "progress" { return .updatesFrequently }
+    return []
+  }
+
+  // node-types:begin
+  private func drawWidget(_ node: [String: Any]) -> UIView? {
     switch node["type"] as? String {
     // Structure
     case "Scaffold", "NavigationStack": return renderScaffold(node)
@@ -1171,6 +1650,26 @@ class NativeUIRenderer {
     case "Dialog": return renderDialog(node)
     case "BottomSheet": return renderBottomSheet(node)
     case "Snackbar": return renderSnackbar(node)
+    case "DatePicker": return renderPicker(node, time: false)
+    case "TimePicker": return renderPicker(node, time: true)
+
+    // Free-form composition
+    case "Box": return renderBox(node)
+    case "Stack": return renderLayers(node)
+    case "Positioned": return renderPositioned(node)
+    case "Scroll": return renderScroll(node)
+    case "Icon": return renderIcon(node)
+    case "Canvas": return renderCanvas(node)
+
+    // Choosing
+    case "Dropdown": return renderDropdown(node)
+
+    // App chrome along the bottom edge
+    case "BottomBar": return renderBottomBar(node)
+    case "BottomNavigation": return renderBottomNavigation(node)
+
+    // A region the Flutter view underneath paints
+    case "FlutterSlot": return renderFlutterSlot(node)
 
     default:
       unknownTypes.insert(node["type"] as? String ?? "?")
@@ -1193,7 +1692,17 @@ class NativeUIRenderer {
   private func fillsViewport(_ node: [String: Any]) -> Bool {
     switch node["type"] as? String {
     case "Center": return true
-    case "Column", "VStack": return node["mainAxisAlignment"] != nil
+    case "Column", "VStack":
+      // 'min' hugs the children whatever else was asked; 'max' fills without
+      // distributing anything.
+      let size = node["mainAxisSize"] as? String
+      if size == "min" { return false }
+      return node["mainAxisAlignment"] != nil || size == "max"
+    case "Stack":
+      return true
+    case "Box", "Canvas":
+      let expand = node["expand"] as? String
+      return expand == "height" || expand == "both"
     default: return false
     }
   }
@@ -1206,53 +1715,96 @@ class NativeUIRenderer {
     column.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(column)
 
+    // A scaffold that states its colour paints it, and what is drawn over it
+    // with no colour of its own reads against it.
+    let savedText = textInForce
+    defer { textInForce = savedText }
+    if let stated = statedColor(node["backgroundColor"]) {
+      container.backgroundColor = stated
+      textInForce = textOn(stated)
+    }
+
     // A bar at the top of the screen fills the status bar's strip with its own
     // colour, the way a UINavigationBar does - so the column starts at the very
     // top when there is one to fill it, and at the safe area when there is not,
     // because a body on its own must not run under the clock. The bar insets
     // its own title, so nothing lands behind the icons either way.
+    //
+    // The children are told apart by type: the bars, the button, and whatever
+    // is left is the body.
     let children = childNodes(node)
     let hasBar = children.contains { child in
       let type = child["type"] as? String
       return type == "AppBar" || type == "NavigationBar"
     }
+    let hasBottomBar = children.contains { child in
+      child["type"] as? String == "BottomBar"
+    }
+    // `safeArea: false` lets the body run under the system insets, and
+    // `bodyScrolls: false` hands it the height between the bars instead of a
+    // scroll view - which is what an Expanded, a Scroll or a Stack inside it
+    // needs to have something to divide.
+    let safeArea = node["safeArea"] as? Bool ?? true
+    let bodyScrolls = node["bodyScrolls"] as? Bool ?? true
+
+    let top = column.topAnchor.constraint(
+      equalTo: hasBar ? container.topAnchor
+        : (safeArea ? container.safeAreaLayoutGuide.topAnchor : container.topAnchor))
+
+    // The bottom stops at the safe area, so a body ends above the home
+    // indicator rather than running under it - which is what the Android
+    // side does against the navigation bar, and the point is that the two
+    // agree. iOS on its own would let a scroll view run under the indicator;
+    // this renderer draws one screen for four platforms, so the screen wins
+    // over the platform here.
+    //
+    // The keyboard still works out right: `keyboardChanged` shortens the
+    // container, which lifts it clear of the indicator, so the inset
+    // collapses to nothing exactly when the keyboard has taken that space.
+    //
+    // A bottom bar is the exception, as a top bar is: it runs to the very
+    // edge, fills the indicator's strip with its own colour and keeps its
+    // child above it.
+    let bottom: NSLayoutConstraint
+    if hasBottomBar || !safeArea {
+      bottom = column.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+    } else {
+      bottom = column.bottomAnchor.constraint(equalTo: container.safeAreaLayoutGuide.bottomAnchor)
+    }
 
     NSLayoutConstraint.activate([
-      column.topAnchor.constraint(
-        equalTo: hasBar ? container.topAnchor : container.safeAreaLayoutGuide.topAnchor),
+      top,
       column.leadingAnchor.constraint(equalTo: container.leadingAnchor),
       column.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-      // The bottom stops at the safe area, so a body ends above the home
-      // indicator rather than running under it - which is what the Android
-      // side does against the navigation bar, and the point is that the two
-      // agree. iOS on its own would let a scroll view run under the indicator;
-      // this renderer draws one screen for four platforms, so the screen wins
-      // over the platform here.
-      //
-      // The keyboard still works out right: `keyboardChanged` shortens the
-      // container, which lifts it clear of the indicator, so the inset
-      // collapses to nothing exactly when the keyboard has taken that space.
-      column.bottomAnchor.constraint(equalTo: container.safeAreaLayoutGuide.bottomAnchor),
+      bottom,
     ])
 
     var fab: UIView?
+    var fabExtended = false
+    var bottomBar: UIView?
     for child in children {
       switch child["type"] as? String {
       case "FloatingActionButton":
         fab = renderWidget(child)
+        fabExtended = child["label"] is String
       case "AppBar", "NavigationBar":
         if let bar = renderWidget(child) { column.addArrangedSubview(bar) }
+      case "BottomBar":
+        bottomBar = renderWidget(child)
       default:
         guard let body = renderWidget(child) else { continue }
         // A long list scrolls itself, and needs the bounded height a scroll
-        // view around it would take away.
-        if child["type"] as? String == "LazyList" {
+        // view around it would take away. So does a body that asked not to
+        // be scrolled: it is pinned between the bars and takes what is left.
+        if child["type"] as? String == "LazyList" || !bodyScrolls {
+          body.setContentHuggingPriority(UILayoutPriority(1), for: .vertical)
           column.addArrangedSubview(body)
           continue
         }
         // The body scrolls, so a screen taller than the window is reachable
         // rather than clipped.
         let scroll = UIScrollView()
+        if !safeArea { scroll.contentInsetAdjustmentBehavior = .never }
         body.translatesAutoresizingMaskIntoConstraints = false
         scroll.addSubview(body)
         NSLayoutConstraint.activate([
@@ -1275,15 +1827,24 @@ class NativeUIRenderer {
         column.addArrangedSubview(scroll)
       }
     }
+    // Under the body, wherever the tree listed it.
+    if let bottomBar { column.addArrangedSubview(bottomBar) }
+    // What a snackbar has to stay above - see SnackbarHost.
+    scaffoldBottomBar = bottomBar
+    scaffoldFab = fab
 
     if let fab {
       fab.translatesAutoresizingMaskIntoConstraints = false
       container.addSubview(fab)
+      // Above the bottom bar when there is one, and the home indicator when
+      // there is not. An extended button is a pill as wide as its label.
+      let fabFloor = bottomBar?.topAnchor ?? container.safeAreaLayoutGuide.bottomAnchor
       NSLayoutConstraint.activate([
         fab.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-        fab.bottomAnchor.constraint(
-          equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-        fab.widthAnchor.constraint(equalToConstant: 56),
+        fab.bottomAnchor.constraint(equalTo: fabFloor, constant: -16),
+        fabExtended
+          ? fab.widthAnchor.constraint(greaterThanOrEqualToConstant: 56)
+          : fab.widthAnchor.constraint(equalToConstant: 56),
         fab.heightAnchor.constraint(equalToConstant: 56),
       ])
     }
@@ -1291,22 +1852,15 @@ class NativeUIRenderer {
   }
 
   private func renderAppBar(_ node: [String: Any]) -> UIView {
-    let bar = UIView()
+    let bar = DnnAppBarView()
     let tint = color(node["backgroundColor"], fallback: themePrimary)
-
-    let title = UILabel()
-    title.text = node["title"] as? String ?? ""
-    // A title over a colour the app stated reads against that colour; over
-    // the theme's own primary it stays the palette's onPrimary.
-    title.textColor = node["backgroundColor"] == nil
-      ? color(themeOnPrimary, fallback: themeOnPrimary)
-      : textOn(tint)
-    title.font = .systemFont(ofSize: 20, weight: .medium)
-    title.translatesAutoresizingMaskIntoConstraints = false
+    // The title, the leading button and the actions share one colour: the one
+    // the app stated, or the one that reads against the bar.
+    let foreground = appBarForeground(node)
 
     // iOS 26 Liquid Glass: a translucent bar, tinted with the brand colour, that
     // the content behind it shows through - the native look. Older systems keep
-    // the opaque fill. The title's 12pt insets set the bar's height either way.
+    // the opaque fill.
     let host: UIView
     if #available(iOS 26.0, *), themeGlassChrome {
       let glass = UIGlassEffect()
@@ -1326,17 +1880,117 @@ class NativeUIRenderer {
       host = bar
     }
 
-    host.addSubview(title)
+    // One row: the leading button, the title, room, then the actions.
+    let row = UIStackView()
+    row.axis = .horizontal
+    row.alignment = .center
+    row.spacing = 8
+    row.translatesAutoresizingMaskIntoConstraints = false
+    host.addSubview(row)
+
+    let leading = node["leading"] as? String
+    if let leading {
+      // Drawn the platform's way, as SF Symbols.
+      let symbol: String
+      let spoken: String
+      switch leading {
+      case "close": (symbol, spoken) = ("xmark", "Close")
+      case "menu": (symbol, spoken) = ("line.3.horizontal", "Menu")
+      // Back points to where the screen came from: the start of the line,
+      // which is the right when it reads right to left. Named outright rather
+      // than left to `chevron.backward`, which turns with the app's language
+      // and not with the tree's.
+      default: (symbol, spoken) = (isRTL ? "chevron.right" : "chevron.left", "Back")
+      }
+      let button = UIButton(type: .system)
+      button.setImage(
+        UIImage(systemName: symbol) ?? UIImage(systemName: "chevron.left"), for: .normal)
+      button.tintColor = foreground
+      button.accessibilityLabel = spoken
+      button.translatesAutoresizingMaskIntoConstraints = false
+      NSLayoutConstraint.activate([
+        button.widthAnchor.constraint(equalToConstant: 40),
+        button.heightAnchor.constraint(equalToConstant: 36),
+      ])
+      if let eventId = node["leadingEventId"] as? String {
+        bindings[button.hash] = ["eventId": eventId]
+        button.addTarget(self, action: #selector(buttonTapped(_:)), for: .touchUpInside)
+      }
+      row.addArrangedSubview(button)
+      bar.leadingButton = button
+    }
+
+    // The title subtree, when there is one, is the first child; the rest are
+    // the actions. Both are drawn in the bar's foreground unless they say
+    // otherwise.
+    let savedText = textInForce
+    textInForce = foreground
+    defer { textInForce = savedText }
+
+    let kids = childNodes(node)
+    var actions = kids
+    let titleView: UIView
+    if node["hasTitleNode"] as? Bool == true, let first = kids.first {
+      titleView = buildChild(first)
+      // The title is the screen's heading, whichever way it was given: what
+      // "next heading" lands on, and what tells a reader which screen this is.
+      firstDescendantLabel(titleView)?.accessibilityTraits.insert(.header)
+      bar.nodeViews.append(titleView)
+      actions = Array(kids.dropFirst())
+    } else {
+      let title = DnnAppBarTitleLabel()
+      title.text = node["title"] as? String ?? ""
+      title.textColor = foreground
+      title.font = .systemFont(ofSize: 20, weight: .medium)
+      title.accessibilityTraits = .header
+      bar.titleLabel = title
+      titleView = title
+    }
+    // A long title gives way to the buttons beside it.
+    titleView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+    let centered = node["centerTitle"] as? Bool ?? false
+    if centered {
+      titleView.translatesAutoresizingMaskIntoConstraints = false
+      host.addSubview(titleView)
+    } else {
+      row.addArrangedSubview(titleView)
+    }
+
+    let gap = UIView()
+    gap.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+    gap.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
+    row.addArrangedSubview(gap)
+
+    for action in actions {
+      let view = buildChild(action)
+      view.setContentHuggingPriority(.required, for: .horizontal)
+      view.setContentCompressionResistancePriority(.required, for: .horizontal)
+      row.addArrangedSubview(view)
+      bar.nodeViews.append(view)
+    }
+
     NSLayoutConstraint.activate([
-      title.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 16),
-      title.trailingAnchor.constraint(lessThanOrEqualTo: host.trailingAnchor, constant: -16),
+      row.leadingAnchor.constraint(
+        equalTo: host.leadingAnchor, constant: leading == nil ? 16 : 4),
+      row.trailingAnchor.constraint(
+        equalTo: host.trailingAnchor, constant: actions.isEmpty ? -16 : -12),
       // Against the bar's *safe area* rather than its top edge: a bar sitting
       // at the top of the screen is that much taller and puts its title below
       // the clock, and one anywhere else has no inset and is unchanged. The
       // same trick as the Android bar's padding, spelt the way iOS spells it.
-      title.topAnchor.constraint(equalTo: host.safeAreaLayoutGuide.topAnchor, constant: 12),
-      title.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -12),
+      row.topAnchor.constraint(equalTo: host.safeAreaLayoutGuide.topAnchor, constant: 6),
+      row.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -6),
+      // The row's height is what sets the bar's: a title's line and its room.
+      row.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
     ])
+    if centered {
+      NSLayoutConstraint.activate([
+        titleView.centerXAnchor.constraint(equalTo: host.centerXAnchor),
+        titleView.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+        titleView.widthAnchor.constraint(lessThanOrEqualTo: host.widthAnchor, constant: -112),
+      ])
+    }
     return bar
   }
 
@@ -1379,7 +2033,12 @@ class NativeUIRenderer {
   private func renderRow(_ node: [String: Any]) -> UIView {
     let stack = RowStack()
     stack.axis = .horizontal
-    stack.alignment = .center
+    switch node["crossAxisAlignment"] as? String {
+    case "start": stack.alignment = .top
+    case "end": stack.alignment = .bottom
+    case "stretch": stack.alignment = .fill
+    default: stack.alignment = .center
+    }
     stack.spacing = number(node["spacing"]) ?? 0
     stack.distribution = .fill
     addArranged(stack, node)
@@ -1402,19 +2061,68 @@ class NativeUIRenderer {
   private func distribute(
     _ stack: UIStackView, _ node: [String: Any], axis: NSLayoutConstraint.Axis
   ) {
-    guard let alignment = node["mainAxisAlignment"] as? String else { return }
-    switch alignment {
+    // 'min' hugs the children even when an alignment was asked for, and with
+    // no room to spare there is nothing to distribute.
+    let size = node["mainAxisSize"] as? String
+    if size == "min" { return }
+    let count = stack.arrangedSubviews.count
+
+    func extent(_ view: UIView) -> NSLayoutDimension {
+      axis == .vertical ? view.heightAnchor : view.widthAnchor
+    }
+    /// A spacer between each pair of children, all of one size.
+    func spaceBetween() -> [UIView] {
+      var between: [UIView] = []
+      for i in stride(from: count - 1, to: 0, by: -1) {
+        let spacer = flexibleSpacer(axis: axis)
+        stack.insertArrangedSubview(spacer, at: i)
+        between.append(spacer)
+      }
+      if let first = between.first {
+        for other in between.dropFirst() {
+          extent(other).constraint(equalTo: extent(first)).isActive = true
+        }
+      }
+      return between
+    }
+
+    switch node["mainAxisAlignment"] as? String {
     case "center":
-      stack.insertArrangedSubview(flexibleSpacer(axis: axis), at: 0)
-      stack.addArrangedSubview(flexibleSpacer(axis: axis))
+      // Two spacers of one size, or the stack is free to give all the room
+      // to either and the children end up at an edge.
+      let before = flexibleSpacer(axis: axis)
+      let after = flexibleSpacer(axis: axis)
+      stack.insertArrangedSubview(before, at: 0)
+      stack.addArrangedSubview(after)
+      extent(after).constraint(equalTo: extent(before)).isActive = true
     case "end":
       stack.insertArrangedSubview(flexibleSpacer(axis: axis), at: 0)
     case "spaceBetween":
-      for i in stride(from: stack.arrangedSubviews.count - 1, to: 0, by: -1) {
-        stack.insertArrangedSubview(flexibleSpacer(axis: axis), at: i)
+      _ = spaceBetween()
+    case "spaceAround", "spaceEvenly":
+      guard count > 0 else { return }
+      // The gaps at the two ends are half a gap for 'around' and a whole one
+      // for 'evenly'.
+      let between = spaceBetween()
+      let before = flexibleSpacer(axis: axis)
+      let after = flexibleSpacer(axis: axis)
+      stack.insertArrangedSubview(before, at: 0)
+      stack.addArrangedSubview(after)
+      extent(after).constraint(equalTo: extent(before)).isActive = true
+      if let gap = between.first {
+        let share: CGFloat = node["mainAxisAlignment"] as? String == "spaceAround" ? 0.5 : 1
+        extent(before).constraint(equalTo: extent(gap), multiplier: share).isActive = true
       }
     default:
-      return
+      // No alignment, but asked to fill: the room left over goes after the
+      // children rather than into one of them - unless a child is there to
+      // take it.
+      let flexible = childNodes(node).contains { child in
+        let type = child["type"] as? String
+        return type == "Expanded" || type == "Spacer"
+      }
+      guard size == "max", count > 0, !flexible else { return }
+      stack.addArrangedSubview(flexibleSpacer(axis: axis))
     }
     // A stack that is distributing its children wants all the room it can get,
     // so anything able to stretch it should.
@@ -1426,6 +2134,8 @@ class NativeUIRenderer {
       hSpacing: CGFloat(number(node["spacing"]) ?? 0),
       vSpacing: CGFloat(number(node["runSpacing"]) ?? 0)
     )
+    flow.alignment = node["alignment"] as? String ?? "start"
+    flow.crossAlignment = node["crossAxisAlignment"] as? String ?? "start"
     for child in childNodes(node) {
       guard let view = renderWidget(child) else { continue }
       // The flow positions its children by frame, so they must not manage their
@@ -1504,6 +2214,24 @@ class NativeUIRenderer {
     }
     view.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(view)
+    if node["fit"] as? String == "loose" {
+      // Flutter's Flexible: the child may be smaller than its share, and sits
+      // at the start of it. The weak equalities let a share with nothing else
+      // sizing it across the axis hug the child.
+      let hugTrailing = view.trailingAnchor.constraint(equalTo: container.trailingAnchor)
+      hugTrailing.priority = UILayoutPriority(249)
+      let hugBottom = view.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+      hugBottom.priority = UILayoutPriority(249)
+      NSLayoutConstraint.activate([
+        view.topAnchor.constraint(equalTo: container.topAnchor),
+        view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+        view.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+        view.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
+        hugTrailing,
+        hugBottom,
+      ])
+      return container
+    }
     NSLayoutConstraint.activate([
       view.topAnchor.constraint(equalTo: container.topAnchor),
       view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
@@ -1643,38 +2371,137 @@ class NativeUIRenderer {
     switch node["type"] as? String {
     case "Card": return node["backgroundColor"]
     case "AnimatedContainer": return node["color"]
+    case "Scaffold", "NavigationStack": return node["backgroundColor"]
+    case "Box": return boxBackground(node)
     default: return nil
     }
   }
 
   private func renderText(_ node: [String: Any]) -> UIView {
+    // A label cannot be selected, so selectable text is a text view that
+    // neither edits nor scrolls - which sizes to its text as a label does.
+    if node["selectable"] as? Bool == true {
+      let textView = UITextView()
+      textView.isEditable = false
+      textView.isScrollEnabled = false
+      textView.backgroundColor = .clear
+      textView.textContainerInset = .zero
+      textView.textContainer.lineFragmentPadding = 0
+      applySelectableText(textView, node)
+      return textView
+    }
     let label = UILabel()
-    label.numberOfLines = 0
-    label.textColor = node["color"] == nil
+    applyText(label, node)
+    return label
+  }
+
+  /// The colour a run of text takes: the one it states, the one in force over
+  /// a stated background, or the theme's.
+  private func textColor(_ node: [String: Any]) -> UIColor {
+    node["color"] == nil
       ? (textInForce ?? color(nil, fallback: themeText))
       : color(node["color"], fallback: themeText)
+  }
 
+  /// 'left', 'center', 'right' or 'justify'; anything else follows the
+  /// reading direction - the tree's, which `.natural` would not: that follows
+  /// the language the app is running in. 'left' and 'right' are the sides they
+  /// name whichever way the screen reads.
+  private func textAlignment(_ value: Any?) -> NSTextAlignment {
+    switch value as? String {
+    case "left": return .left
+    case "center": return .center
+    case "right": return .right
+    case "justify": return .justified
+    default: return isRTL ? .right : .natural
+    }
+  }
+
+  /// Whether [node] says anything a plain label cannot: runs of their own,
+  /// letter spacing, a line height, a decoration.
+  private func isRichText(_ node: [String: Any]) -> Bool {
+    node["spans"] != nil || node["letterSpacing"] != nil || node["lineHeight"] != nil
+      || node["decoration"] != nil
+  }
+
+  /// [node]'s text with every style it states, each span inheriting from the
+  /// node whatever it does not state itself.
+  private func richText(_ node: [String: Any]) -> NSAttributedString {
     let size = number(node["fontSize"]) ?? 14
     let weight = number(node["fontWeight"]) ?? 400
-    label.font = .systemFont(ofSize: size, weight: weight >= 600 ? .bold : .regular)
+    let family = node["fontFamily"] as? String
+    let italic = node["italic"] as? Bool ?? false
+    let inherited = textColor(node)
 
-    let content = node["content"] as? String ?? ""
-    switch node["decoration"] as? String {
-    case "lineThrough":
-      label.attributedText = NSAttributedString(
-        string: content,
-        attributes: [.strikethroughStyle: NSUnderlineStyle.single.rawValue]
-      )
-    case "underline":
-      label.attributedText = NSAttributedString(
-        string: content,
-        attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue]
-      )
-    default:
-      label.text = content
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = textAlignment(node["textAlign"])
+    // A multiple of the font size, as CSS and Flutter both spell it.
+    if let multiple = number(node["lineHeight"]), multiple > 0 {
+      paragraph.minimumLineHeight = size * multiple
+      paragraph.maximumLineHeight = size * multiple
     }
+    var base: [NSAttributedString.Key: Any] = [.paragraphStyle: paragraph]
+    if let spacing = number(node["letterSpacing"]) {
+      base[.kern] = NSNumber(value: Double(spacing))
+    }
+
+    let result = NSMutableAttributedString()
+    var runs: [[String: Any]] = []
+    if let spans = node["spans"] as? [Any] {
+      runs = spans.compactMap { $0 as? [String: Any] }
+    }
+    if runs.isEmpty {
+      runs = [["text": node["content"] as? String ?? ""]]
+    }
+    for span in runs {
+      var attributes = base
+      attributes[.font] = dnnFont(
+        size: number(span["fontSize"]) ?? size,
+        weight: number(span["fontWeight"]) ?? weight,
+        family: family,
+        italic: span["italic"] as? Bool ?? italic)
+      attributes[.foregroundColor] =
+        span["color"] == nil ? inherited : color(span["color"], fallback: themeText)
+      let decoration = span["decoration"] as? String ?? node["decoration"] as? String
+      if decoration == "lineThrough" {
+        attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+      } else if decoration == "underline" {
+        attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+      }
+      result.append(
+        NSAttributedString(string: span["text"] as? String ?? "", attributes: attributes))
+    }
+    return result
+  }
+
+  /// Everything a Text node says, on a label - at build time and on a patch.
+  private func applyText(_ label: UILabel, _ node: [String: Any]) {
+    if isRichText(node) {
+      label.attributedText = richText(node)
+    } else {
+      label.attributedText = nil
+      label.textColor = textColor(node)
+      label.font = dnnFont(
+        size: number(node["fontSize"]) ?? 14,
+        weight: number(node["fontWeight"]) ?? 400,
+        family: node["fontFamily"] as? String,
+        italic: node["italic"] as? Bool ?? false)
+      label.text = node["content"] as? String ?? ""
+      label.textAlignment = textAlignment(node["textAlign"])
+    }
+    // After the text: a label applies its line breaking to an attributed
+    // string as it is set.
     clampLines(label, node)
-    return label
+  }
+
+  private func applySelectableText(_ textView: UITextView, _ node: [String: Any]) {
+    textView.attributedText = richText(node)
+    let maxLines = Int(number(node["maxLines"]) ?? 0)
+    textView.textContainer.maximumNumberOfLines = maxLines > 0 ? maxLines : 0
+    textView.textContainer.lineBreakMode =
+      maxLines > 0 && (node["overflow"] as? String) != "clip"
+      ? .byTruncatingTail
+      : .byWordWrapping
   }
 
   /// Caps a label at `maxLines`, ending it with an ellipsis when asked.
@@ -1697,21 +2524,63 @@ class NativeUIRenderer {
    source is looked up in the app's asset catalogue. A source that cannot be
    loaded leaves the alt text in place, which is also the view's accessibility
    label - so a broken image is still announced and still visible.
+
+   The node may carry one child: a fallback the app would rather show than the
+   alt text, while the image is on its way and for good if it never comes. It
+   takes the image's place - the same edges - and is hidden, not removed, once
+   the picture is in, so the reconciler still finds the view its child node
+   belongs to.
    */
   private func renderImage(_ node: [String: Any]) -> UIView {
     let alt = node["alt"] as? String ?? ""
     let container = UIView()
 
-    let fallback = UILabel()
-    fallback.text = alt
-    fallback.textColor = .secondaryLabel
-    fallback.textAlignment = .center
-    fallback.translatesAutoresizingMaskIntoConstraints = false
-    container.addSubview(fallback)
+    let fallback: UIView
+    var constraints: [NSLayoutConstraint] = []
+    if let child = firstChild(node) {
+      let host = ImageFallbackHost()
+      let view = buildChild(child)
+      view.translatesAutoresizingMaskIntoConstraints = false
+      host.addSubview(view)
+      host.translatesAutoresizingMaskIntoConstraints = false
+      container.addSubview(host)
+      // Held to the image's edges only while it stands in for it: an image
+      // with no stated size is as big as its picture once that arrives, not
+      // as big as whatever was shown in the meantime.
+      host.holds = [
+        host.topAnchor.constraint(equalTo: container.topAnchor),
+        host.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        host.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+        host.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      ]
+      constraints += host.holds
+      constraints += [
+        view.topAnchor.constraint(equalTo: host.topAnchor),
+        view.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+        view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+        view.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+      ]
+      fallback = host
+    } else {
+      let label = UILabel()
+      label.text = alt
+      label.textColor = .secondaryLabel
+      label.textAlignment = .center
+      label.translatesAutoresizingMaskIntoConstraints = false
+      container.addSubview(label)
+      constraints += [
+        label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+        label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+      ]
+      fallback = label
+    }
 
     let imageView = UIImageView()
-    imageView.accessibilityLabel = alt
-    imageView.isAccessibilityElement = true
+    // An image nobody described is decoration: there is nothing to say about
+    // it, and "image" on its own is noise.
+    imageView.isAccessibilityElement = !alt.isEmpty
+    imageView.accessibilityLabel = alt.isEmpty ? nil : alt
+    imageView.accessibilityTraits = .image
     imageView.clipsToBounds = true
     imageView.contentMode = {
       switch node["fit"] as? String {
@@ -1725,9 +2594,7 @@ class NativeUIRenderer {
     imageView.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(imageView)
 
-    var constraints = [
-      fallback.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      fallback.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+    constraints += [
       imageView.topAnchor.constraint(equalTo: container.topAnchor),
       imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
       imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -1745,27 +2612,109 @@ class NativeUIRenderer {
     return container
   }
 
-  /// Fills `view` from `src`, hiding `fallback` once it arrives.
+  /// Puts [image] in [view] and takes what stood in for it out of the way.
+  private func show(_ image: UIImage, in view: UIImageView, hiding fallback: UIView) {
+    view.image = image
+    fallback.isHidden = true
+    if let host = fallback as? ImageFallbackHost {
+      NSLayoutConstraint.deactivate(host.holds)
+    }
+  }
+
+  /**
+   Fills `view` from `src`, hiding `fallback` once it arrives.
+
+   A remote image already in `imageCache` is shown here and now, before this
+   returns - so a rebuild of a screen full of pictures never shows the alt
+   text or the fallback in between. One that is not is fetched once however
+   many views are waiting for it, decoded where it was fetched rather than on
+   the thread that draws, and remembered. The bytes themselves are the
+   session's to keep: `URLSession.shared` stores them in `URLCache.shared`, on
+   disk, for as long as the response's cache headers allow.
+   */
   private func load(_ src: String?, into view: UIImageView, hiding fallback: UIView) {
     guard let src, !src.isEmpty else { return }
 
     guard src.hasPrefix("http://") || src.hasPrefix("https://") else {
-      // An image that ships with the app.
-      if let bundled = UIImage(named: src) {
-        view.image = bundled
-        fallback.isHidden = true
+      if let bundled = localImage(src) {
+        show(bundled, in: view, hiding: fallback)
       }
       return
     }
 
+    if let cached = NativeUIRenderer.imageCache.object(forKey: src as NSString) {
+      show(cached, in: view, hiding: fallback)
+      return
+    }
+
     guard let url = URL(string: src) else { return }
+    // Weakly: a row scrolled away before its picture arrived owes it nothing.
+    let waiter: (UIImage?) -> Void = { [weak self, weak view, weak fallback] image in
+      guard let self, let image, let view, let fallback else { return }
+      self.show(image, in: view, hiding: fallback)
+    }
+    if NativeUIRenderer.imageWaiters[src] != nil {
+      NativeUIRenderer.imageWaiters[src]?.append(waiter)
+      return
+    }
+    NativeUIRenderer.imageWaiters[src] = [waiter]
+
     URLSession.shared.dataTask(with: url) { data, _, _ in
-      guard let data, let image = UIImage(data: data) else { return }
+      var decoded: UIImage?
+      if let data, let image = UIImage(data: data) {
+        decoded = image
+        // `UIImage(data:)` only reads the header; the pixels are decoded the
+        // first time the image is drawn, on the main thread. Do it here.
+        if #available(iOS 15.0, *), let prepared = image.preparingForDisplay() {
+          decoded = prepared
+        }
+      }
+      let result = decoded
       DispatchQueue.main.async {
-        view.image = image
-        fallback.isHidden = true
+        if let result {
+          let pixels = result.size.width * result.scale * result.size.height * result.scale
+          NativeUIRenderer.imageCache.setObject(
+            result, forKey: src as NSString, cost: Int(pixels * 4))
+        }
+        // A failure is told to the waiters too - they do nothing with it, and
+        // what stood in for the image stays - so the next render may try again.
+        let waiting = NativeUIRenderer.imageWaiters.removeValue(forKey: src) ?? []
+        for waiter in waiting { waiter(result) }
       }
     }.resume()
+  }
+
+  /**
+   An image that is not fetched: one that ships with the app, or one that
+   travels in the tree itself.
+
+   A path such as `assets/photo.jpg` is a *Flutter* asset: the build copies it
+   into the app's Flutter assets directory, not into the asset catalogue, so
+   `UIImage(named:)` alone never finds it. `lookupKey(forAsset:)` says where it
+   went - the same lookup the icon font uses. The asset catalogue and a plain
+   file path are tried after it, for an image the host app added natively.
+   */
+  private func localImage(_ src: String) -> UIImage? {
+    if src.hasPrefix("data:") {
+      guard let comma = src.firstIndex(of: ","),
+        src[src.startIndex..<comma].contains("base64"),
+        let data = Data(
+          base64Encoded: String(src[src.index(after: comma)...]),
+          options: .ignoreUnknownCharacters)
+      else { return nil }
+      return UIImage(data: data)
+    }
+    let key = FlutterDartProject.lookupKey(forAsset: src)
+    if let path = Bundle.main.path(forResource: key, ofType: nil),
+      let image = UIImage(contentsOfFile: path)
+    {
+      return image
+    }
+    if let named = UIImage(named: src) { return named }
+    if src.hasPrefix("file://"), let url = URL(string: src) {
+      return UIImage(contentsOfFile: url.path)
+    }
+    return src.hasPrefix("/") ? UIImage(contentsOfFile: src) : nil
   }
 
   private func renderLoading(_ node: [String: Any]) -> UIView {
@@ -2050,58 +2999,120 @@ class NativeUIRenderer {
   // MARK: - Controls
 
   private func renderButton(_ node: [String: Any]) -> UIView {
-    let button = UIButton(type: .system)
-    button.setTitle(node["label"] as? String ?? "Button", for: .normal)
-    button.isEnabled = !(node["disabled"] as? Bool ?? false)
+    let button = DnnButton(type: .system)
     // The one button scale, shared by every renderer - see UIBuilder.button.
-    let (height, fontSize, padding): (CGFloat, CGFloat, CGFloat)
+    let height: CGFloat
     switch node["size"] as? String {
-    case "sm": (height, fontSize, padding) = (28, 12, 12)
-    case "lg": (height, fontSize, padding) = (44, 16, 24)
-    default: (height, fontSize, padding) = (36, 14, 16)
+    case "sm": height = 28
+    case "lg": height = 44
+    default: height = 36
     }
     // The scale, then whatever the app stated instead of it.
-    let minHeight = CGFloat(number(node["minHeight"]) ?? Double(height))
-    let font = CGFloat(number(node["fontSize"]) ?? Double(fontSize))
-    let padH = CGFloat(number(node["paddingHorizontal"]) ?? Double(padding))
-    let padV = CGFloat(number(node["paddingVertical"]) ?? 0)
-    button.titleLabel?.font = .systemFont(ofSize: font, weight: .medium)
-    button.contentEdgeInsets = UIEdgeInsets(
-      top: padV, left: padH, bottom: padV, right: padH)
+    let minHeight = number(node["minHeight"]) ?? height
     button.heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight)
       .isActive = true
     if let minWidth = number(node["minWidth"]) {
       button.widthAnchor.constraint(
-        greaterThanOrEqualToConstant: CGFloat(minWidth)
+        greaterThanOrEqualToConstant: minWidth
       ).isActive = true
     }
     button.layer.cornerRadius = 4
-
-    let variant = node["variant"] as? String ?? "primary"
-    let tint = color(
-      node["color"] ?? variantColor(variant), fallback: themePrimary)
-    switch variant {
-    case "secondary", "tertiary":
-      button.setTitleColor(tint, for: .normal)
-    default:
-      button.backgroundColor = tint
-      button.setTitleColor(
-        node["color"] == nil
-          ? color(themeOnPrimary, fallback: themeOnPrimary)
-          : textOn(tint),
-        for: .normal)
-    }
+    styleButton(button, node)
     bindTap(button, node)
     return button
   }
 
+  /// A button's label, glyph, colours and padding - everything about it that a
+  /// patch can change without rebuilding it.
+  private func styleButton(_ button: UIButton, _ node: [String: Any]) {
+    let fontSize: CGFloat
+    let padding: CGFloat
+    switch node["size"] as? String {
+    case "sm": (fontSize, padding) = (12, 12)
+    case "lg": (fontSize, padding) = (16, 24)
+    default: (fontSize, padding) = (14, 16)
+    }
+    let font = number(node["fontSize"]) ?? fontSize
+    let padH = number(node["paddingHorizontal"]) ?? padding
+    let padV = number(node["paddingVertical"]) ?? 0
+
+    button.setTitle(node["label"] as? String ?? "Button", for: .normal)
+    button.titleLabel?.font = .systemFont(ofSize: font, weight: .medium)
+    button.isEnabled = !(node["disabled"] as? Bool ?? false)
+
+    let variant = node["variant"] as? String ?? "primary"
+    let tint = color(
+      node["color"] ?? variantColor(variant), fallback: themePrimary)
+    var foreground = tint
+    button.layer.borderWidth = 0
+    switch variant {
+    case "secondary", "tertiary":
+      button.backgroundColor = .clear
+    case "outlined":
+      // A border and no fill.
+      button.backgroundColor = .clear
+      button.layer.borderWidth = 1
+      button.layer.borderColor = tint.cgColor
+    case "tonal":
+      // A quiet fill of the same colour the label is drawn in.
+      button.backgroundColor = tint.withAlphaComponent(0.16)
+    default:
+      button.backgroundColor = tint
+      foreground =
+        node["color"] == nil
+        ? color(themeOnPrimary, fallback: themeOnPrimary)
+        : textOn(tint)
+    }
+    if let stated = statedColor(node["foregroundColor"]) { foreground = stated }
+    button.setTitleColor(foreground, for: .normal)
+    // The glyph is a template image, which a system button paints in its tint.
+    button.tintColor = foreground
+
+    var trailing = padH
+    if let glyph = iconImage(node["iconCodepoint"], size: font + 4) {
+      button.setImage(glyph, for: .normal)
+      // The gap between the glyph and the label, paid for at the far edge so
+      // the label is not clipped.
+      // These insets name sides, and the glyph is on the other one when the
+      // screen reads right to left.
+      button.titleEdgeInsets =
+        isRTL
+        ? UIEdgeInsets(top: 0, left: -6, bottom: 0, right: 6)
+        : UIEdgeInsets(top: 0, left: 6, bottom: 0, right: -6)
+      trailing += 6
+    } else {
+      button.setImage(nil, for: .normal)
+      button.titleEdgeInsets = .zero
+    }
+    button.contentEdgeInsets = UIEdgeInsets(
+      top: padV, left: isRTL ? trailing : padH, bottom: padV, right: isRTL ? padH : trailing)
+    // Fills the width it is offered instead of hugging its label.
+    (button as? DnnButton)?.expands = node["expand"] as? Bool ?? false
+  }
+
   private func renderIconButton(_ node: [String: Any]) -> UIView {
     let button = UIButton(type: .system)
-    // A dark glyph, since an icon button sits on the surface, not a fill.
-    applyIcon(button, node, color: color(themeTextSecondary, fallback: themeTextSecondary))
-    button.accessibilityLabel = node["tooltip"] as? String
+    styleIconButton(button, node)
     bindTap(button, node)
     return button
+  }
+
+  /// An icon button's glyph, colour, size and whether it can be pressed.
+  private func styleIconButton(_ button: UIButton, _ node: [String: Any]) {
+    // The colour it states; failing that the one in force around it - an app
+    // bar's foreground, the text over a coloured card - and failing that a
+    // quiet one, since an icon button usually sits on the surface.
+    let tint =
+      node["color"] == nil
+      ? (textInForce ?? color(themeTextSecondary, fallback: themeTextSecondary))
+      : color(node["color"], fallback: themeTextSecondary)
+    applyIcon(button, node, color: tint)
+    if let size = number(node["size"]), let font = iconFont {
+      button.titleLabel?.font = font.withSize(size)
+    }
+    button.setTitleColor(tint.withAlphaComponent(0.38), for: .disabled)
+    button.isEnabled = !(node["disabled"] as? Bool ?? false)
+    button.accessibilityLabel = node["tooltip"] as? String
   }
 
   private func renderFab(_ node: [String: Any]) -> UIView {
@@ -2110,6 +3121,38 @@ class NativeUIRenderer {
     applyIcon(button, node, color: color(themeOnPrimary, fallback: themeOnPrimary))
     button.accessibilityLabel = node["tooltip"] as? String
     bindTap(button, node)
+
+    // An extended button: the glyph and a label side by side, in a pill as
+    // wide as they need. The two are one attributed title, since they are set
+    // in different fonts.
+    if let label = node["label"] as? String {
+      let ink = color(themeOnPrimary, fallback: themeOnPrimary)
+      let title = NSMutableAttributedString()
+      if let glyph = button.title(for: .normal), let font = iconFont {
+        title.append(
+          NSAttributedString(
+            string: glyph,
+            attributes: [
+              .font: font, .foregroundColor: ink,
+              // The glyph is taller than the label's line; this sits the two
+              // on one centre line.
+              .baselineOffset: NSNumber(value: -5),
+            ]))
+        title.append(NSAttributedString(string: "  "))
+      }
+      title.append(
+        NSAttributedString(
+          string: label,
+          attributes: [
+            .font: UIFont.systemFont(ofSize: 15, weight: .medium), .foregroundColor: ink,
+          ]))
+      button.setTitle(nil, for: .normal)
+      button.setAttributedTitle(title, for: .normal)
+      button.contentEdgeInsets =
+        isRTL
+        ? UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 16)
+        : UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 20)
+    }
 
     // iOS 26 Liquid Glass: an interactive glass pill that lenses under the touch,
     // tinted with the brand colour. Older systems, or an app that opted its
@@ -2192,6 +3235,7 @@ class NativeUIRenderer {
     // What the return key says. UIKit has no traversal of its own, so what it
     // then does is `focusFieldAfter`.
     if node["textInputAction"] as? String == "next" { field.returnKeyType = .next }
+    configureField(field, node)
     // A field's own name. UIKit falls back to the placeholder, which is the
     // right answer only when there is no label drawn above it.
     field.accessibilityLabel =
@@ -2224,8 +3268,89 @@ class NativeUIRenderer {
     error.textColor = color(themeError, fallback: themeError)
     error.numberOfLines = 0
     applyFieldError(error, field, node["error"] as? String)
+
+    // The helper is always built too, for the same reason, and gives way to
+    // the error when there is one.
+    let helper = TextFieldHelperLabel()
+    helper.font = .systemFont(ofSize: 12)
+    helper.textColor = color(themeTextSecondary, fallback: themeTextSecondary)
+    helper.numberOfLines = 0
+    stack.addArrangedSubview(helper)
     stack.addArrangedSubview(error)
+    applyFieldHelper(stack, node)
     return stack
+  }
+
+  /// The parts of a field a patch can change as readily as a build can set
+  /// them: its keyboard, its capitalisation, its alignment and the glyphs at
+  /// its two ends.
+  private func configureField(_ field: UITextField, _ node: [String: Any]) {
+    switch node["keyboardType"] as? String {
+    case "number": field.keyboardType = .numberPad
+    case "decimal": field.keyboardType = .decimalPad
+    case "email": field.keyboardType = .emailAddress
+    case "phone": field.keyboardType = .phonePad
+    case "url": field.keyboardType = .URL
+    default: field.keyboardType = .default
+    }
+    switch node["textCapitalization"] as? String {
+    case "none": field.autocapitalizationType = .none
+    case "words": field.autocapitalizationType = .words
+    case "sentences": field.autocapitalizationType = .sentences
+    case "characters": field.autocapitalizationType = .allCharacters
+    default:
+      // Nobody wants an address capitalised for them.
+      let kind = node["keyboardType"] as? String
+      field.autocapitalizationType = kind == "email" || kind == "url" ? .none : .sentences
+    }
+    field.textAlignment = textAlignment(node["textAlign"])
+
+    let quiet = color(themeTextSecondary, fallback: themeTextSecondary)
+    // The prefix sits where the text starts and the suffix where it ends. A
+    // field's `leftView` and `rightView` are the sides they are named for, so
+    // which glyph goes in which depends on the way the screen reads.
+    var prefix: UIView?
+    var suffix: UIView?
+    if let glyph = iconImage(node["prefixIcon"], size: 20) {
+      let holder = UIImageView(image: glyph)
+      holder.tintColor = quiet
+      holder.contentMode = .center
+      holder.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+      prefix = holder
+    }
+    if let glyph = iconImage(node["suffixIcon"], size: 20) {
+      // A button, so a tap on it is the suffix's and not the field's.
+      let button = UIButton(type: .system)
+      button.setImage(glyph, for: .normal)
+      button.tintColor = quiet
+      button.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+      button.isUserInteractionEnabled = node["suffixTappable"] as? Bool ?? false
+      button.addTarget(self, action: #selector(fieldSuffixTapped(_:)), for: .touchUpInside)
+      bindings[button.hash] = node
+      suffix = button
+    }
+    let left = isRTL ? suffix : prefix
+    let right = isRTL ? prefix : suffix
+    field.leftView = left
+    field.leftViewMode = left == nil ? .never : .always
+    field.rightView = right
+    field.rightViewMode = right == nil ? .never : .always
+  }
+
+  /// Shows the helper under a field, unless an error is being shown instead.
+  private func applyFieldHelper(_ view: UIView, _ node: [String: Any]) {
+    guard let helper = findHelperLabel(view) else { return }
+    let text = node["helper"] as? String
+    helper.text = text
+    helper.isHidden = text == nil || (node["error"] as? String) != nil
+  }
+
+  private func findHelperLabel(_ view: UIView) -> TextFieldHelperLabel? {
+    if let label = view as? TextFieldHelperLabel { return label }
+    for sub in view.subviews {
+      if let found = findHelperLabel(sub) { return found }
+    }
+    return nil
   }
 
   /// Takes or gives up the keyboard when the app asks: once for `autofocus`,
@@ -2305,7 +3430,20 @@ class NativeUIRenderer {
   private func styleControlLabel(_ button: UIButton, _ node: [String: Any]) {
     button.setTitle(node["label"] as? String, for: .normal)
     button.setTitleColor(color(themeText, fallback: themeText), for: .normal)
-    button.isEnabled = !(node["disabled"] as? Bool ?? false)
+    // A control with no text of its own is named by the node - a list tile's
+    // title, usually - or it is announced as "button" and no more. One with a
+    // title is left to say it, which is what nil means here.
+    button.accessibilityLabel =
+      node["label"] is String ? nil : node["semanticLabel"] as? String
+    // A disabled control takes no tap and says so to a screen reader, which
+    // `isEnabled` does on its own. It does not look it, though: the glyph's
+    // colour is baked into the image and the title's is set outright, so
+    // neither dims the way a system button's would. Faded as a whole instead,
+    // to the 38% Material draws a disabled control at. Set both ways, because
+    // this runs on a patch too and the control may have just come back.
+    let disabled = node["disabled"] as? Bool ?? false
+    button.isEnabled = !disabled
+    button.alpha = disabled ? 0.38 : 1
   }
 
   private func renderCheckbox(_ node: [String: Any]) -> UIView {
@@ -2667,6 +3805,9 @@ class NativeUIRenderer {
     toggle.onTintColor = color(themePrimary, fallback: themePrimary)
     toggle.isOn = node["enabled"] as? Bool ?? false
     toggle.isEnabled = !(node["disabled"] as? Bool ?? false)
+    // A switch has no text of its own: it is named by the label drawn beside
+    // it, or by the node - a list tile's title - when there is none.
+    toggle.accessibilityLabel = node["label"] as? String ?? node["semanticLabel"] as? String
     bindings[toggle.hash] = node
     toggle.addTarget(self, action: #selector(toggleChanged(_:)), for: .valueChanged)
 
@@ -2741,6 +3882,12 @@ class NativeUIRenderer {
     // The views are new on every render, so the offset the user scrolled to
     // is put back once the list has a size.
     list.restoreOffset = listOffsets[id] ?? 0
+    // "Scroll there" is a moment, carried by a version like a field's focus:
+    // obeyed the first time it is seen and whenever it changes.
+    if let target = lazyListJump(node, id: id) {
+      list.restoreOffset = target
+      listOffsets[id] = target
+    }
     // Takes whatever height the stack it sits in has left.
     list.setContentHuggingPriority(UILayoutPriority(1), for: .vertical)
 
@@ -2942,7 +4089,12 @@ class NativeUIRenderer {
    `reason: timeout`, once per snackbar however often it is rendered.
    */
   private func renderSnackbar(_ node: [String: Any]) -> UIView {
-    let host = PassthroughView()
+    // Above the scaffold's bottom bar and floating button, not over them.
+    let host = SnackbarHost()
+    host.below = { [weak self] in
+      [self?.scaffoldBottomBar, self?.scaffoldFab].compactMap { $0 }
+    }
+    snackbarHost = host
 
     let bar = UIView()
     bar.backgroundColor = color(inversePalette.surface, fallback: inversePalette.surface)
@@ -2955,7 +4107,10 @@ class NativeUIRenderer {
     stack.alignment = .center
     stack.spacing = 8
     stack.isLayoutMarginsRelativeArrangement = true
-    stack.layoutMargins = UIEdgeInsets(top: 6, left: 16, bottom: 6, right: 8)
+    // More room before the message than after the action, whichever side each
+    // is on.
+    stack.directionalLayoutMargins = NSDirectionalEdgeInsets(
+      top: 6, leading: 16, bottom: 6, trailing: 8)
 
     let message = UILabel()
     message.text = node["message"] as? String ?? ""
@@ -3168,6 +4323,831 @@ class NativeUIRenderer {
     }
   }
 
+  // MARK: - Free-form composition
+
+  /// A colour the tree states, or nil when it states none (or one that does
+  /// not parse). `#rrggbb` and `#aarrggbb` both.
+  private func statedColor(_ value: Any?) -> UIColor? {
+    (value as? String).flatMap { UIColor(hex: $0) }
+  }
+
+  /// `[left, top, right, bottom]` as insets; one number is all four edges.
+  private func insets(_ value: Any?) -> UIEdgeInsets {
+    if let all = number(value) {
+      return UIEdgeInsets(top: all, left: all, bottom: all, right: all)
+    }
+    guard let list = value as? [Any], list.count >= 4 else { return .zero }
+    return UIEdgeInsets(
+      top: number(list[1]) ?? 0, left: number(list[0]) ?? 0,
+      bottom: number(list[3]) ?? 0, right: number(list[2]) ?? 0)
+  }
+
+  /// An `[x, y]` pair.
+  private func point(_ value: Any?) -> CGPoint? {
+    guard let list = value as? [Any], list.count >= 2 else { return nil }
+    return CGPoint(x: number(list[0]) ?? 0, y: number(list[1]) ?? 0)
+  }
+
+  /// A length that can be a constraint's constant: infinity cannot.
+  private func finite(_ value: Any?) -> CGFloat? {
+    guard let parsed = number(value), parsed.isFinite else { return nil }
+    return parsed
+  }
+
+  /// The background a Box states, when it is solid enough to read text
+  /// against - a faint tint over something else says nothing about what the
+  /// text is over.
+  private func boxBackground(_ node: [String: Any]) -> Any? {
+    guard node["gradient"] == nil, let stated = statedColor(node["color"]),
+      stated.cgColor.alpha >= 0.5
+    else { return nil }
+    return node["color"]
+  }
+
+  /// Everything a Box (or a Canvas, which is sized and touched like one) says
+  /// about itself.
+  private func boxStyle(_ node: [String: Any]) -> DnnBoxStyle {
+    var style = DnnBoxStyle()
+
+    let expand = node["expand"] as? String
+    style.expandWidth = expand == "width" || expand == "both"
+    style.expandHeight = expand == "height" || expand == "both"
+    // An infinite width is Flutter's way of saying "all of it".
+    if let width = number(node["width"]) {
+      if width.isFinite { style.width = width } else { style.expandWidth = true }
+    }
+    if let height = number(node["height"]) {
+      if height.isFinite { style.height = height } else { style.expandHeight = true }
+    }
+    style.minWidth = finite(node["minWidth"])
+    style.maxWidth = finite(node["maxWidth"])
+    style.minHeight = finite(node["minHeight"])
+    style.maxHeight = finite(node["maxHeight"])
+    style.aspectRatio = finite(node["aspectRatio"])
+    style.padding = insets(node["padding"])
+    style.margin = insets(node["margin"])
+    style.alignment = point(node["alignment"])
+
+    style.color = statedColor(node["color"])
+    if let gradient = node["gradient"] as? [String: Any] {
+      style.gradientColors = (gradient["colors"] as? [Any] ?? []).compactMap {
+        statedColor($0)
+      }
+      style.gradientStops = (gradient["stops"] as? [Any] ?? []).compactMap { number($0) }
+      style.gradientRadial = gradient["type"] as? String == "radial"
+      // Alignments run from -1 to 1; a layer's unit space from 0 to 1.
+      func unit(_ alignment: CGPoint) -> CGPoint {
+        CGPoint(x: (alignment.x + 1) / 2, y: (alignment.y + 1) / 2)
+      }
+      let begin = point(gradient["begin"])
+      let end = point(gradient["end"])
+      if style.gradientRadial {
+        // `begin` is the centre and `end` a point the last colour is reached
+        // at. A radial layer wants the corner of the ellipse's box instead.
+        let centre = unit(begin ?? CGPoint(x: 0, y: 0))
+        var reach = CGSize(width: 0.5, height: 0.5)
+        if let end = end {
+          let edge = unit(end)
+          let dx = abs(edge.x - centre.x)
+          let dy = abs(edge.y - centre.y)
+          let radius = max(dx, dy)
+          if radius > 0.0001 {
+            reach = CGSize(width: dx > 0.0001 ? dx : radius, height: dy > 0.0001 ? dy : radius)
+          }
+        }
+        style.gradientStart = centre
+        style.gradientEnd = CGPoint(x: centre.x + reach.width, y: centre.y + reach.height)
+      } else {
+        style.gradientStart = unit(begin ?? CGPoint(x: -1, y: 0))
+        style.gradientEnd = unit(end ?? CGPoint(x: 1, y: 0))
+      }
+    }
+
+    style.borderWidth = max(0, finite(node["borderWidth"]) ?? 0)
+    style.borderColor = statedColor(node["borderColor"])
+    if style.borderWidth == 0, style.borderColor != nil { style.borderWidth = 1 }
+    if let radii = node["borderRadii"] as? [Any], radii.count >= 4 {
+      style.radii = radii.prefix(4).map { finite($0) ?? 0 }
+    } else if let radius = finite(node["borderRadius"]) {
+      style.radii = [radius, radius, radius, radius]
+    }
+    style.circle = node["shape"] as? String == "circle"
+    if let shadow = node["shadow"] as? [String: Any] {
+      style.shadowColor =
+        statedColor(shadow["color"]) ?? UIColor.black.withAlphaComponent(0.25)
+      style.shadowBlur = max(0, finite(shadow["blur"]) ?? 0)
+      style.shadowOffset = CGSize(
+        width: finite(shadow["dx"]) ?? 0, height: finite(shadow["dy"]) ?? 0)
+    }
+    style.clip = node["clip"] as? Bool ?? false
+    style.opacity = finite(node["opacity"]) ?? 1
+    if let transform = node["transform"] as? [String: Any] {
+      // About the centre, which is where a view's transform already pivots:
+      // scaled, then turned, then moved.
+      let scale = finite(transform["scale"]) ?? 1
+      style.transform = CGAffineTransform(
+        translationX: finite(transform["dx"]) ?? 0, y: finite(transform["dy"]) ?? 0
+      )
+      .rotated(by: finite(transform["rotate"]) ?? 0)
+      .scaledBy(x: scale, y: scale)
+    }
+
+    style.tapEventId = node["tapEventId"] as? String
+    style.doubleTapEventId = node["doubleTapEventId"] as? String
+    style.longPressEventId = node["longPressEventId"] as? String
+    style.panEventId = node["panEventId"] as? String
+    style.ripple = node["ripple"] as? Bool ?? false
+    style.dragData = node["dragData"] as? String
+    style.dropEventId = node["dropEventId"] as? String
+    style.sizeEventId = node["sizeEventId"] as? String
+    style.semanticLabel = node["semanticLabel"] as? String
+    style.semanticValue = node["semanticValue"] as? String
+    style.tooltip = node["tooltip"] as? String
+    style.liveRegion = node["liveRegion"] as? Bool ?? false
+    style.excludeSemantics = node["excludeSemantics"] as? Bool ?? false
+    style.disabled = node["disabled"] as? Bool ?? false
+    style.selected = node["selected"] as? Bool
+    style.ignorePointer = node["ignorePointer"] as? Bool ?? false
+    return style
+  }
+
+  private func configureBox(_ box: DnnBoxView, _ node: [String: Any]) {
+    box.onEvent = { [weak self] eventId, data in
+      self?.send(eventId: eventId, data: data)
+    }
+    box.apply(boxStyle(node))
+  }
+
+  /// A decorated box around at most one child - see `DnnBoxView`.
+  private func renderBox(_ node: [String: Any]) -> UIView {
+    let box = DnnBoxView()
+    configureBox(box, node)
+    if let child = firstChild(node) {
+      box.replaceChild(over(boxBackground(node)) { buildChild(child) })
+    }
+    // Only notes what a live region says to begin with; see `announceChanges`.
+    box.announceChanges()
+    return box
+  }
+
+  /// Restyles a box in place - moving there over `animateMs` when the tree
+  /// asks for motion, and landing at once when it does not.
+  private func patchBox(_ view: UIView, _ node: [String: Any]) -> Bool {
+    guard let box = view as? DnnBoxView else { return false }
+    let duration = Double(number(node["animateMs"]) ?? 0) / 1000
+    guard duration > 0, box.window != nil else {
+      configureBox(box, node)
+      return true
+    }
+    // Laid out from the top of the tree: a box that grows moves whatever is
+    // around it, and that has to move at the same time or it jumps. Settled
+    // first, so nothing but this change is carried along.
+    var root: UIView = box
+    while let parent = root.superview { root = parent }
+    root.layoutIfNeeded()
+    UIView.animate(
+      withDuration: duration, delay: 0,
+      options: [curve(node), .allowUserInteraction, .beginFromCurrentState],
+      animations: {
+        self.configureBox(box, node)
+        root.layoutIfNeeded()
+      }, completion: nil)
+    return true
+  }
+
+  /// A surface drawn by a list of commands - see `DnnCanvasDrawingView`.
+  private func renderCanvas(_ node: [String: Any]) -> UIView {
+    let canvas = DnnCanvasView()
+    configureBox(canvas, node)
+    canvas.drawing.set(
+      commands: node["commands"] as? [Any] ?? [], paints: node["paints"] as? [Any] ?? [])
+    if let child = firstChild(node) {
+      canvas.replaceChild(buildChild(child))
+    }
+    canvas.announceChanges()
+    return canvas
+  }
+
+  /// Repaints a canvas in place. A render that changes only the picture - a
+  /// game's frame - touches nothing but the picture.
+  private func patchCanvas(
+    _ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any]
+  ) -> Bool {
+    guard let canvas = view as? DnnCanvasView else { return false }
+    var before = oldNode["props"] as? [String: Any] ?? [:]
+    var after = newNode["props"] as? [String: Any] ?? [:]
+    for key in ["commands", "paints"] {
+      before[key] = nil
+      after[key] = nil
+    }
+    if !mapEqual(before, after) { configureBox(canvas, newNode) }
+    canvas.drawing.set(
+      commands: newNode["commands"] as? [Any] ?? [],
+      paints: newNode["paints"] as? [Any] ?? [])
+    return true
+  }
+
+  /// Children drawn over one another - see `DnnStackView`. (`renderStack` is
+  /// the VStack/HStack one.)
+  private func renderLayers(_ node: [String: Any]) -> UIView {
+    let stack = DnnStackView()
+    stack.configure(
+      // An alignment the tree states names a side. With none stated the
+      // layers gather at the top *start*, which is the right-hand corner when
+      // the screen reads right to left.
+      alignment: point(node["alignment"]) ?? CGPoint(x: isRTL ? 1 : -1, y: -1),
+      expand: node["fit"] as? String == "expand",
+      clip: node["clip"] as? Bool ?? true)
+    for child in childNodes(node) {
+      stack.addLayer(buildChild(child), at: nil)
+    }
+    return stack
+  }
+
+  /// A child pinned inside a Stack; outside one it is just its child.
+  private func renderPositioned(_ node: [String: Any]) -> UIView {
+    let wrapper = DnnPositionedView()
+    if let child = firstChild(node) {
+      wrapper.replaceChild(buildChild(child))
+    }
+    applyPosition(wrapper, node)
+    return wrapper
+  }
+
+  private func applyPosition(_ view: DnnPositionedView, _ node: [String: Any]) {
+    view.setPosition(
+      left: finite(node["left"]), top: finite(node["top"]), right: finite(node["right"]),
+      bottom: finite(node["bottom"]), width: finite(node["width"]),
+      height: finite(node["height"]))
+  }
+
+  private func patchPositioned(_ view: UIView, _ node: [String: Any]) -> Bool {
+    guard let wrapper = view as? DnnPositionedView else { return false }
+    applyPosition(wrapper, node)
+    return true
+  }
+
+  /// One child, scrolled along one axis - see `DnnScrollView`.
+  private func renderScroll(_ node: [String: Any]) -> UIView {
+    let scroll = DnnScrollView()
+    configureScroll(scroll, node)
+    if let child = firstChild(node) {
+      scroll.replaceChild(buildChild(child))
+    }
+    // The views are new on a rebuild, so the offset the user scrolled to is
+    // put back once the scroller has content - for a scroller with an id to
+    // remember it by.
+    let id = node["id"] as? String
+    if let id, let saved = scrollOffsets[id] {
+      scroll.restoreOffset = saved
+    }
+    scroll.onScrolled = { [weak self] offset in
+      guard let id else { return }
+      self?.scrollOffsets[id] = offset
+    }
+    applyScrollJump(scroll, node)
+    return scroll
+  }
+
+  private func configureScroll(_ scroll: DnnScrollView, _ node: [String: Any]) {
+    let horizontal = node["axis"] as? String == "horizontal"
+    scroll.configure(
+      horizontal: horizontal,
+      padding: insets(node["padding"]),
+      shrinkWrap: node["shrinkWrap"] as? Bool ?? false,
+      reverse: node["reverse"] as? Bool ?? false)
+    // Pull-to-refresh is a vertical gesture.
+    let refreshId = node["refreshEventId"] as? String
+    scroll.setRefresh(
+      enabled: refreshId != nil && !horizontal,
+      tint: color(themePrimary, fallback: themePrimary))
+    scroll.onRefresh = { [weak self] in
+      guard let refreshId else { return }
+      self?.send(eventId: refreshId, data: [:])
+    }
+    scroll.setRefreshing(node["refreshing"] as? Bool ?? false)
+    // Set on every patch: the id is a prop like any other, and names a
+    // different callback from one build to the next.
+    if let scrolledId = node["scrollEventId"] as? String {
+      scroll.onReport = { [weak self] offset, maxExtent, viewport in
+        self?.send(
+          eventId: scrolledId,
+          data: [
+            "offset": Double(offset), "maxExtent": Double(maxExtent),
+            "viewport": Double(viewport),
+          ])
+      }
+    } else {
+      scroll.onReport = nil
+    }
+  }
+
+  /// Jumps to `scrollOffset` the first time its `scrollVersion` is seen, and
+  /// again whenever the version changes - a moment carried as a state, like a
+  /// field's `focusVersion`.
+  private func applyScrollJump(_ scroll: DnnScrollView, _ node: [String: Any]) {
+    guard let offset = finite(node["scrollOffset"]) else { return }
+    let version = (node["scrollVersion"] as? NSNumber)?.intValue ?? 0
+    if let id = node["id"] as? String {
+      // Remembered past a rebuild, so a new view for the same scroller does
+      // not obey the same ask twice.
+      if scrollVersions[id] == version { return }
+      scrollVersions[id] = version
+    } else if scroll.appliedScrollVersion == version {
+      return
+    }
+    scroll.appliedScrollVersion = version
+    scroll.jump(to: offset)
+  }
+
+  private func patchScroll(_ view: UIView, _ node: [String: Any]) -> Bool {
+    guard let scroll = view as? DnnScrollView else { return false }
+    configureScroll(scroll, node)
+    applyScrollJump(scroll, node)
+    return true
+  }
+
+  /// One glyph of an icon font: Material Icons, which the app already
+  /// bundles, unless the node names another family UIKit knows.
+  private func renderIcon(_ node: [String: Any]) -> UIView {
+    let label = UILabel()
+    label.textAlignment = .center
+    label.setContentHuggingPriority(.required, for: .horizontal)
+    label.setContentHuggingPriority(.required, for: .vertical)
+    label.setContentCompressionResistancePriority(.required, for: .horizontal)
+    label.setContentCompressionResistancePriority(.required, for: .vertical)
+    applyGlyph(label, node)
+    return label
+  }
+
+  private func applyGlyph(_ label: UILabel, _ node: [String: Any]) {
+    let size = number(node["size"]) ?? 24
+    var font = iconFont?.withSize(size)
+    if let family = node["fontFamily"] as? String, family != "MaterialIcons",
+      let named = UIFont(name: family, size: size)
+    {
+      font = named
+    }
+    if let font, let codepoint = number(node["codepoint"]), codepoint >= 0,
+      let scalar = UnicodeScalar(UInt32(codepoint))
+    {
+      label.font = font
+      label.text = String(scalar)
+    } else {
+      label.text = nil
+    }
+    // The colour it states, or the one in force around it - an app bar's
+    // foreground, the text over a coloured box - or the theme's text colour.
+    label.textColor = textColor(node)
+    if let spoken = node["semanticLabel"] as? String {
+      label.isAccessibilityElement = true
+      label.accessibilityLabel = spoken
+      label.accessibilityTraits = .image
+    } else {
+      // A glyph is a private-use character; read aloud it is noise.
+      label.isAccessibilityElement = false
+    }
+  }
+
+  private func patchIcon(_ view: UIView, _ node: [String: Any]) -> Bool {
+    guard let label = view as? UILabel else { return false }
+    applyGlyph(label, node)
+    return true
+  }
+
+  /// A Material Icons glyph as a template image, for the places UIKit wants an
+  /// image rather than text: a tab bar item, a button's icon, a field's ends.
+  private func iconImage(_ codepoint: Any?, size: CGFloat) -> UIImage? {
+    guard let value = number(codepoint), value >= 0,
+      let scalar = UnicodeScalar(UInt32(value)), let font = iconFont?.withSize(size)
+    else { return nil }
+    let glyph = String(scalar) as NSString
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: font, .foregroundColor: UIColor.black,
+    ]
+    let measured = glyph.size(withAttributes: attributes)
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+    let image = renderer.image { _ in
+      glyph.draw(
+        at: CGPoint(x: (size - measured.width) / 2, y: (size - measured.height) / 2),
+        withAttributes: attributes)
+    }
+    return image.withRenderingMode(.alwaysTemplate)
+  }
+
+  // MARK: - Choosing
+
+  /// One of a list, chosen from a pull-down menu - see `DnnDropdownView`.
+  private func renderDropdown(_ node: [String: Any]) -> UIView {
+    let dropdown = DnnDropdownView()
+    configureDropdown(dropdown, node)
+    return dropdown
+  }
+
+  private func configureDropdown(_ dropdown: DnnDropdownView, _ node: [String: Any]) {
+    let eventId = node["eventId"] as? String
+    let payload = node["data"] as? [String: Any] ?? [:]
+    dropdown.onPick = { [weak self] index in
+      guard let eventId else { return }
+      var data = payload
+      data["index"] = index
+      self?.send(eventId: eventId, data: data)
+    }
+    dropdown.configure(
+      items: (node["items"] as? [Any])?.map { "\($0)" } ?? [],
+      selected: (node["selectedIndex"] as? NSNumber)?.intValue,
+      label: node["label"] as? String,
+      hint: node["hint"] as? String,
+      error: node["error"] as? String,
+      enabled: (node["enabled"] as? Bool ?? true) && eventId != nil,
+      outlined: node["outlined"] as? Bool ?? true,
+      text: color(themeText, fallback: themeText),
+      quiet: color(themeTextSecondary, fallback: themeTextSecondary),
+      border: color(themeDivider, fallback: themeDivider),
+      danger: color(themeError, fallback: themeError))
+  }
+
+  private func patchDropdown(_ view: UIView, _ node: [String: Any]) -> Bool {
+    guard let dropdown = view as? DnnDropdownView else { return false }
+    configureDropdown(dropdown, node)
+    return true
+  }
+
+  /**
+   The platform's date or time picker, as an overlay.
+
+   Presented the way a Dialog is: a scrim over everything and a surface on it,
+   in the tree for as long as it is open. Done sends the value, Cancel and a tap
+   on the scrim send the dismiss event, and the app closes it by rendering a
+   tree without it.
+   */
+  private func renderPicker(_ node: [String: Any], time: Bool) -> UIView {
+    let container = modalContainer(node)
+
+    let surface = UIView()
+    surface.layer.cornerRadius = 16
+    surface.clipsToBounds = true
+    surface.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(surface)
+    applyModalSurface(surface)
+
+    let panel = DnnPickerPanel(
+      title: node["title"] as? String,
+      confirm: node["confirmLabel"] as? String ?? "Done",
+      cancel: node["cancelLabel"] as? String ?? "Cancel",
+      tint: color(themePrimary, fallback: themePrimary))
+    pin(panel, to: surface)
+
+    let picker = panel.picker
+    if time {
+      picker.datePickerMode = .time
+      if #available(iOS 13.4, *) { picker.preferredDatePickerStyle = .wheels }
+      // A picker takes its clock from its locale; the tree can say which.
+      if let use24Hour = node["use24Hour"] as? Bool {
+        picker.locale = Locale(identifier: use24Hour ? "en_GB" : "en_US")
+      }
+      let hour = (node["hour"] as? NSNumber)?.intValue ?? 0
+      let minute = (node["minute"] as? NSNumber)?.intValue ?? 0
+      if let date = Calendar.current.date(
+        bySettingHour: min(max(hour, 0), 23), minute: min(max(minute, 0), 59), second: 0,
+        of: Date())
+      {
+        picker.date = date
+      }
+    } else {
+      picker.datePickerMode = .date
+      if #available(iOS 14.0, *) {
+        picker.preferredDatePickerStyle = .inline
+      } else if #available(iOS 13.4, *) {
+        picker.preferredDatePickerStyle = .wheels
+      }
+      let first = day(node["first"] as? String)
+      let last = day(node["last"] as? String)
+      if let first, let last, first <= last {
+        picker.minimumDate = first
+        picker.maximumDate = last
+      }
+      if let initial = day(node["initial"] as? String) { picker.date = initial }
+    }
+
+    let eventId = node["eventId"] as? String
+    let dismissId = node["dismissEventId"] as? String
+    panel.onCancel = { [weak self] in
+      guard let dismissId else { return }
+      self?.send(eventId: dismissId, data: ["reason": "cancel"])
+    }
+    panel.onDone = { [weak self] date in
+      guard let self, let eventId else { return }
+      if time {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        self.send(
+          eventId: eventId, data: ["hour": parts.hour ?? 0, "minute": parts.minute ?? 0])
+      } else {
+        self.send(eventId: eventId, data: ["value": self.dayFormatter.string(from: date)])
+      }
+    }
+
+    let safe = container.safeAreaLayoutGuide
+    let preferredWidth = surface.widthAnchor.constraint(
+      equalTo: container.widthAnchor, constant: -32)
+    preferredWidth.priority = .defaultHigh
+    NSLayoutConstraint.activate([
+      surface.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+      surface.centerYAnchor.constraint(equalTo: safe.centerYAnchor),
+      surface.widthAnchor.constraint(lessThanOrEqualToConstant: 400),
+      surface.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -32),
+      preferredWidth,
+      surface.topAnchor.constraint(greaterThanOrEqualTo: safe.topAnchor, constant: 16),
+      surface.bottomAnchor.constraint(lessThanOrEqualTo: safe.bottomAnchor, constant: -16),
+    ])
+    return container
+  }
+
+  /// `yyyy-mm-dd`, in the device's own time zone: a day, not an instant.
+  private lazy var dayFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter
+  }()
+
+  private func day(_ value: String?) -> Date? {
+    guard let value else { return nil }
+    return dayFormatter.date(from: value)
+  }
+
+  // MARK: - App chrome along the bottom edge
+
+  /**
+   Holds its child along the bottom edge of a scaffold.
+
+   The bar itself runs to the very edge of the screen and paints the home
+   indicator's strip; its child stops at the safe area. Anywhere but the bottom
+   of the screen there is no inset and it is simply its child on a surface.
+   */
+  private func renderBottomBar(_ node: [String: Any]) -> UIView {
+    let bar = UIView()
+    bar.backgroundColor = surfaceColor()
+    guard let child = firstChild(node) else { return bar }
+    let view = buildChild(child)
+    view.translatesAutoresizingMaskIntoConstraints = false
+    bar.addSubview(view)
+    NSLayoutConstraint.activate([
+      view.topAnchor.constraint(equalTo: bar.topAnchor),
+      view.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+      view.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+      view.bottomAnchor.constraint(equalTo: bar.safeAreaLayoutGuide.bottomAnchor),
+    ])
+    return bar
+  }
+
+  /// A BottomNavigation's destinations, their glyphs drawn from the icon font.
+  private func navItems(_ node: [String: Any]) -> [DnnNavItem] {
+    var items: [DnnNavItem] = []
+    for raw in node["items"] as? [Any] ?? [] {
+      guard let item = raw as? [String: Any] else { continue }
+      items.append(
+        DnnNavItem(
+          label: item["label"] as? String ?? "",
+          icon: iconImage(item["icon"], size: 24),
+          selectedIcon: iconImage(item["selectedIcon"], size: 24)))
+    }
+    return items
+  }
+
+  /// What a tap on a destination sends.
+  private func navHandler(_ node: [String: Any]) -> (Int) -> Void {
+    let eventId = node["eventId"] as? String
+    let payload = node["data"] as? [String: Any] ?? [:]
+    return { [weak self] index in
+      guard let eventId else { return }
+      var data = payload
+      data["index"] = index
+      self?.send(eventId: eventId, data: data)
+    }
+  }
+
+  /**
+   The destinations of an app, one selected: a tab bar, which is how iOS draws
+   them, or the same destinations down the leading edge when the tree asks for
+   a rail.
+
+   The selection is the app's: a tap reports the index and the next tree says
+   which destination is selected.
+   */
+  private func renderBottomNavigation(_ node: [String: Any]) -> UIView {
+    let items = navItems(node)
+    let selected = Int(number(node["selectedIndex"]) ?? 0)
+    let tint = color(themePrimary, fallback: themePrimary)
+    let idle = color(themeTextSecondary, fallback: themeTextSecondary)
+
+    if node["rail"] as? Bool == true {
+      let rail = DnnRailView()
+      rail.configure(items: items, tint: tint, idle: idle, background: surfaceColor())
+      rail.selectIndex(selected)
+      rail.onSelect = navHandler(node)
+      return rail
+    }
+
+    let bar = DnnTabBar()
+    var tabs: [UITabBarItem] = []
+    for (index, item) in items.enumerated() {
+      let tab = UITabBarItem(
+        title: item.label, image: item.icon, selectedImage: item.selectedIcon ?? item.icon)
+      tab.tag = index
+      tabs.append(tab)
+    }
+    bar.items = tabs
+    bar.tintColor = tint
+    bar.unselectedItemTintColor = idle
+    bar.barTintColor = surfaceColor()
+    bar.isTranslucent = false
+    bar.selectIndex(selected)
+    bar.onSelect = navHandler(node)
+    return bar
+  }
+
+  private func patchBottomNavigation(
+    _ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any]
+  ) -> Bool {
+    // Different destinations are a different bar; only the selection moves in
+    // place, which is what a tap changes.
+    for key in ["items", "rail"] where !valueEqual(oldNode[key], newNode[key]) {
+      return false
+    }
+    let selected = Int(number(newNode["selectedIndex"]) ?? 0)
+    if let rail = view as? DnnRailView {
+      rail.selectIndex(selected)
+      rail.onSelect = navHandler(newNode)
+      return true
+    }
+    if let bar = view as? DnnTabBar {
+      bar.selectIndex(selected)
+      bar.onSelect = navHandler(newNode)
+      return true
+    }
+    return false
+  }
+
+  // MARK: - FlutterSlot
+
+  /**
+   A region the Flutter view underneath paints.
+
+   The renderer's container sits *over* the Flutter view, so the slot draws
+   nothing: it only takes up the room the tree gives it. `updateSlotRects` cuts
+   a hole in the container where it is, and tells Dart where that is, so the
+   Flutter side can paint the widget registered under `slotId` into the same
+   rectangle. The node's child is the fallback for renderers with no Flutter
+   engine, and is not drawn here.
+   */
+  private func renderFlutterSlot(_ node: [String: Any]) -> UIView {
+    let slot = DnnFlutterSlotView()
+    slot.slotId = node["slotId"] as? String ?? ""
+    slot.setSize(width: finite(node["width"]), height: finite(node["height"]) ?? 0)
+    slot.onMoved = { [weak self] in self?.updateSlotRects() }
+    return slot
+  }
+
+  private func patchFlutterSlot(_ view: UIView, _ node: [String: Any]) -> Bool {
+    guard let slot = view as? DnnFlutterSlotView,
+      slot.slotId == node["slotId"] as? String ?? ""
+    else { return false }
+    slot.setSize(width: finite(node["width"]), height: finite(node["height"]) ?? 0)
+    return true
+  }
+
+  /// What every render ends with: the slots found again, and the viewport
+  /// re-read in case the appearance changed under it.
+  private func finishRender(_ tree: [String: Any]) {
+    // The bar under a snackbar may have changed without the snackbar's own
+    // layer being laid out again.
+    snackbarHost?.setNeedsLayout()
+    refreshSlots(tree)
+    sendViewport()
+  }
+
+  private func collectSlots(_ view: UIView, into slots: inout [DnnFlutterSlotView]) {
+    for subview in view.subviews {
+      if let slot = subview as? DnnFlutterSlotView {
+        slots.append(slot)
+      } else {
+        collectSlots(subview, into: &slots)
+      }
+    }
+  }
+
+  /// Whether [node]'s tree holds an overlay that covers the screen.
+  private func hasModal(_ node: [String: Any]) -> Bool {
+    let type = node["type"] as? String ?? ""
+    if ["Dialog", "BottomSheet", "DatePicker", "TimePicker"].contains(type) { return true }
+    for child in childNodes(node) where hasModal(child) { return true }
+    return false
+  }
+
+  /// Finds the slots the render left on screen. A tree with none costs one
+  /// walk of the views and nothing else.
+  private func refreshSlots(_ tree: [String: Any]) {
+    guard let container = rootContainer else { return }
+    var found: [DnnFlutterSlotView] = []
+    collectSlots(container, into: &found)
+    if found.isEmpty && slotViews.isEmpty && slotReports.isEmpty { return }
+    slotViews = found
+    // A dialog or a sheet is drawn above the slot, so there is nothing to
+    // show through it while one is up.
+    slotsCovered = !found.isEmpty && hasModal(tree)
+    // The render changed constraints; the frames follow at the next layout
+    // pass, and the rectangles are read from the frames.
+    container.layoutIfNeeded()
+    updateSlotRects()
+  }
+
+  /// Re-reads the slots after a layout the renderer did not cause - a
+  /// rotation, the keyboard - once that layout has reached them.
+  private func scheduleSlotUpdate() {
+    guard !slotViews.isEmpty else { return }
+    DispatchQueue.main.async { [weak self] in
+      self?.updateSlotRects()
+    }
+  }
+
+  /// The part of [slot] that is actually visible, in [container]'s own
+  /// coordinates: cut by every clipping view above it, so a slot scrolled half
+  /// under an app bar opens a hole only where it shows.
+  private func visibleRect(of slot: UIView, in container: UIView) -> CGRect {
+    var rect = slot.bounds
+    var current: UIView = slot
+    while current !== container, let parent = current.superview {
+      rect = parent.convert(rect, from: current)
+      if parent.clipsToBounds || parent === container {
+        rect = rect.intersection(parent.bounds)
+      }
+      if rect.isNull { return rect }
+      current = parent
+    }
+    return rect
+  }
+
+  /**
+   Opens a hole in the container over each visible slot, and sends
+   `dnn:slotRect` for each slot whose rectangle changed since it was last sent.
+
+   The rectangle is in points from the Flutter view's top-left corner - the
+   whole slot, even where it is scrolled out of sight, because that is where
+   Flutter has to paint; the hole is only the part that shows. `visible` is
+   false for a slot with no window, no size, or nothing showing.
+   */
+  private func updateSlotRects() {
+    guard let container = rootContainer, let host = controller.view else { return }
+    var holes: [CGRect] = []
+    var seen = Set<String>()
+    for slot in slotViews {
+      seen.insert(slot.slotId)
+      var rect = CGRect.zero
+      var visible = false
+      if slot.window != nil, slot.isDescendant(of: container) {
+        rect = slot.convert(slot.bounds, to: host)
+        let showing = visibleRect(of: slot, in: container)
+        if !showing.isNull, showing.width > 0, showing.height > 0 {
+          visible = true
+          holes.append(showing)
+        }
+      }
+      reportSlot(slot.slotId, rect, visible: visible)
+    }
+    // A slot the tree no longer holds is told so once.
+    for slotId in slotReports.keys.filter({ !seen.contains($0) }) {
+      slotReports[slotId] = nil
+      send(
+        eventId: "dnn:slotRect",
+        data: [
+          "slotId": slotId, "x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0,
+          "visible": false,
+        ])
+    }
+    container.setHoles(slotsCovered ? [] : holes)
+  }
+
+  private func reportSlot(_ slotId: String, _ rect: CGRect, visible: Bool) {
+    // Half a point is below anything a layout means, and above the noise a
+    // scroll's deceleration makes.
+    func snap(_ value: CGFloat) -> Double { Double((value * 2).rounded() / 2) }
+    let x = snap(rect.minX)
+    let y = snap(rect.minY)
+    let width = snap(rect.width)
+    let height = snap(rect.height)
+    let signature = "\(x),\(y),\(width),\(height),\(visible)"
+    if slotReports[slotId] == signature { return }
+    slotReports[slotId] = signature
+    send(
+      eventId: "dnn:slotRect",
+      data: [
+        "slotId": slotId, "x": x, "y": y, "width": width, "height": height,
+        "visible": visible,
+      ])
+  }
+
   // MARK: - Events
 
   /// Hears when a map settles, so the app is told where it ended up rather
@@ -3197,6 +5177,14 @@ class NativeUIRenderer {
   private lazy var textFieldDelegate: TextFieldDelegate = {
     let delegate = TextFieldDelegate()
     delegate.onNext = { [weak self] field in self?.focusFieldAfter(field) ?? false }
+    delegate.nodeFor = { [weak self] field in self?.bindings[field.hash] }
+    delegate.onTap = { [weak self] field in
+      // The renderer putting the focus back after a rebuild is not a tap.
+      guard let self, !self.restoringFocus,
+        let eventId = self.bindings[field.hash]?["eventId"] as? String
+      else { return }
+      self.send(eventId: "\(eventId)_tap", data: [:])
+    }
     return delegate
   }()
 
@@ -3251,6 +5239,11 @@ class NativeUIRenderer {
 
   @objc private func textChanged(_ sender: UITextField) {
     sendFieldEvent(sender, suffix: "change")
+  }
+
+  @objc private func fieldSuffixTapped(_ sender: UIButton) {
+    guard let eventId = bindings[sender.hash]?["eventId"] as? String else { return }
+    send(eventId: "\(eventId)_suffix", data: [:])
   }
 
   @objc private func editingBegan(_ sender: UITextField) {
@@ -3323,11 +5316,23 @@ class NativeUIRenderer {
    this is the whole of the return path.
    */
   private func send(eventId: String, data: [String: Any]) {
-    methodChannel?.invokeMethod(
-      NativeUIRenderer.eventMethod,
-      arguments: ["eventId": eventId, "data": data]
-    )
+    // `build` names the tree the views are showing. An id allocated by order
+    // means something else after a rebuild that allocated a different number
+    // before it, and Dart may have built several times since this tree was
+    // sent. Left out when Dart gave none, which Dart reads as "the latest".
+    var arguments: [String: Any] = ["eventId": eventId, "data": data]
+    if let treeBuild { arguments["build"] = treeBuild }
+    methodChannel?.invokeMethod(NativeUIRenderer.eventMethod, arguments: arguments)
   }
+
+  /// The number Dart gave the tree being shown; nil if it gave none.
+  private var treeBuild: Int?
+
+  /// The bottom bar and floating button of the scaffold last drawn, and the
+  /// snackbar layer that keeps clear of them.
+  private weak var scaffoldBottomBar: UIView?
+  private weak var scaffoldFab: UIView?
+  private weak var snackbarHost: SnackbarHost?
 
   // MARK: - Helpers
 
@@ -3383,8 +5388,11 @@ class NativeUIRenderer {
       // edge would otherwise hand each of them only what it asked for. That is
       // how a card's row of an email and a button came out email-wide, with
       // the space the app asked to put between them nowhere to go.
+      // Unless it said `mainAxisSize: 'min'`, which is a row as wide as its
+      // children.
       if stack.axis == .vertical, stack.alignment != .fill,
-        ["Row", "HStack"].contains(child["type"] as? String ?? "")
+        ["Row", "HStack"].contains(child["type"] as? String ?? ""),
+        child["mainAxisSize"] as? String != "min"
       {
         (view as? RowStack)?.takeTheWidthOffered()
       }
@@ -3459,6 +5467,38 @@ private class TextFieldDelegate: NSObject, UITextFieldDelegate {
   /// Moves to the next field, answering whether there was one.
   var onNext: ((UITextField) -> Bool)?
 
+  /// The node a field was built from, for what it says about typing.
+  var nodeFor: ((UITextField) -> [String: Any]?)?
+
+  /// A field that asked to hear about it was tapped.
+  var onTap: ((UITextField) -> Void)?
+
+  /// A tap on a field is the field about to take the keyboard. A `tappable`
+  /// one reports it, and a `readOnly` one stops there: it shows its value and
+  /// opens whatever the app opens, without a keyboard coming up over it.
+  func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
+    guard let node = nodeFor?(textField) else { return true }
+    if node["tappable"] as? Bool == true { onTap?(textField) }
+    return !(node["readOnly"] as? Bool ?? false)
+  }
+
+  /// Refuses typing into a read-only field, and past a field's `maxLength`.
+  func textField(
+    _ textField: UITextField, shouldChangeCharactersIn range: NSRange,
+    replacementString string: String
+  ) -> Bool {
+    guard let node = nodeFor?(textField) else { return true }
+    if node["readOnly"] as? Bool == true { return false }
+    guard let limit = (node["maxLength"] as? NSNumber)?.intValue, limit > 0 else {
+      return true
+    }
+    let current = (textField.text ?? "") as NSString
+    guard range.location + range.length <= current.length else { return true }
+    let next = current.replacingCharacters(in: range, with: string)
+    // Deleting is always allowed, so a value already too long can be fixed.
+    return next.count <= limit || next.count <= (textField.text ?? "").count
+  }
+
   func textFieldShouldReturn(_ textField: UITextField) -> Bool {
     if textField.returnKeyType == .next, onNext?(textField) == true {
       // Handled: the caret is in the next field and the keyboard stayed up.
@@ -3494,6 +5534,40 @@ private class PassthroughView: UIView {
   override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     let hit = super.hitTest(point, with: event)
     return hit === self ? nil : hit
+  }
+}
+
+/**
+ The layer a snackbar sits in, which keeps it clear of what the scaffold under
+ it has at the bottom: Material shows a snackbar above the bottom bar and the
+ floating button, never over them.
+
+ The snackbar is drawn beside the scaffold, not inside it, so it cannot be
+ constrained to those views; it is moved up by however far it would reach into
+ them instead. `below` answers the views to stay above.
+ */
+private class SnackbarHost: PassthroughView {
+  var below: (() -> [UIView])?
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    guard let bar = subviews.first else { return }
+    var ceiling = CGFloat.greatestFiniteMagnitude
+    for view in below?() ?? [] where view.window != nil && !view.isHidden
+      && view.bounds.height > 0
+    {
+      ceiling = min(ceiling, view.convert(view.bounds, to: self).minY)
+    }
+    // From the centre and the bounds, which a transform leaves alone.
+    let bottom = bar.center.y + bar.bounds.height / 2
+    let lift = ceiling == CGFloat.greatestFiniteMagnitude ? 0 : max(0, bottom + 8 - ceiling)
+    bar.transform = lift > 0 ? CGAffineTransform(translationX: 0, y: -lift) : .identity
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    // Once more when everything beside it has been laid out too.
+    DispatchQueue.main.async { [weak self] in self?.setNeedsLayout() }
   }
 }
 
@@ -3620,14 +5694,25 @@ private class SwipeActionsView: UIView, UIGestureRecognizerDelegate {
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+  /// 1, or -1 when the row reads right to left.
+  ///
+  /// The offsets here are counted towards the *end* of the row: negative
+  /// uncovers the trailing actions. The bars are pinned by leading and
+  /// trailing anchors and so change sides with the reading direction; the
+  /// finger and the transform are in screen coordinates and have to be turned
+  /// to match, or a swipe would slide the row over the bar it meant to show.
+  private var directionSign: CGFloat {
+    effectiveUserInterfaceLayoutDirection == .rightToLeft ? -1 : 1
+  }
+
   @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-    let translation = gesture.translation(in: self).x
+    let translation = gesture.translation(in: self).x * directionSign
     let next = min(
       max(offset + translation, openOffset * 1.8),
       openLeadingOffset * 1.8)
     switch gesture.state {
     case .changed:
-      foreground.transform = CGAffineTransform(translationX: next, y: 0)
+      foreground.transform = CGAffineTransform(translationX: next * directionSign, y: 0)
     case .ended, .cancelled:
       if next <= openOffset * 1.6, let first = actions.first {
         onFire(first.eventId)
@@ -3649,8 +5734,9 @@ private class SwipeActionsView: UIView, UIGestureRecognizerDelegate {
 
   private func settle(to value: CGFloat) {
     offset = value
+    let sign = directionSign
     UIView.animate(withDuration: 0.2) {
-      self.foreground.transform = CGAffineTransform(translationX: value, y: 0)
+      self.foreground.transform = CGAffineTransform(translationX: value * sign, y: 0)
     }
   }
 
@@ -3826,7 +5912,9 @@ private extension UIColor {
   }
 }
 
-/// Lays its subviews out left to right, wrapping onto the next line when the
+/// Lays its subviews out from the start of the line to its end - left to
+/// right, or right to left when the view has been told the screen reads that
+/// way - wrapping onto the next line when the
 /// current one runs out of width, and sizes itself to the height that takes.
 /// UIKit has no wrapping stack, so a Wrap node is drawn with one of these.
 /// Equal cells in `columns` columns, each `aspectRatio` wide over tall.
@@ -3840,6 +5928,13 @@ private extension UIColor {
 /// own so the reconciler can tell it apart from a child - see
 /// `flexibleSpacer(axis:)`.
 private final class FlexibleSpacer: UIView {}
+
+/// What an `Image` node's fallback child is drawn in. A type of its own so the
+/// reconciler can find the child's view, and so the loader knows which
+/// constraints to let go of when the picture arrives - see `renderImage`.
+private final class ImageFallbackHost: UIView {
+  var holds: [NSLayoutConstraint] = []
+}
 
 /// A row, which can be asked to take all the width it is offered.
 ///
@@ -3880,6 +5975,10 @@ private final class RowStack: UIStackView {
 /// its own so a patch can find it without counting subviews - see
 /// `applyFieldError`.
 private final class TextFieldErrorLabel: UILabel {}
+
+/// The label under a text field that says what it is for, found by its type
+/// for the same reason - see `applyFieldHelper`.
+private final class TextFieldHelperLabel: UILabel {}
 
 private final class AnimatedBoxView: UIView {
   private var widthConstraint: NSLayoutConstraint?
@@ -3944,11 +6043,15 @@ private final class GridView: UIView {
     let cellWidth =
       (width - hSpacing * CGFloat(columns - 1)) / CGFloat(columns)
     let cellHeight = cellWidth / aspectRatio
+    let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
     for (index, sub) in subviews.enumerated() {
       let column = index % columns
       let row = index / columns
+      // The first cell of a row is at the start of it, which is the right
+      // when the screen reads right to left.
+      let fromStart = CGFloat(column) * (cellWidth + hSpacing)
       sub.frame = CGRect(
-        x: CGFloat(column) * (cellWidth + hSpacing),
+        x: rtl ? width - fromStart - cellWidth : fromStart,
         y: CGFloat(row) * (cellHeight + vSpacing),
         width: cellWidth,
         height: cellHeight
@@ -4104,6 +6207,13 @@ private final class FlowView: UIView {
   private let vSpacing: CGFloat
   private var heightConstraint: NSLayoutConstraint?
 
+  /// Where the children sit along each line: 'start', 'center', 'end' or
+  /// 'spaceBetween'.
+  var alignment = "start"
+  /// Where a child shorter than its line sits across it: 'start', 'center' or
+  /// 'end'.
+  var crossAlignment = "start"
+
   init(hSpacing: CGFloat, vSpacing: CGFloat) {
     self.hSpacing = hSpacing
     self.vSpacing = vSpacing
@@ -4125,21 +6235,70 @@ private final class FlowView: UIView {
     super.layoutSubviews()
     let maxWidth = bounds.width
     guard maxWidth > 0 else { return }
+    let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
+
+    // Which children share a line comes first; where each sits on its line
+    // needs the whole line.
+    var lines: [[UIView]] = [[]]
+    var sizes: [[CGSize]] = [[]]
     var x: CGFloat = 0
-    var y: CGFloat = 0
-    var rowHeight: CGFloat = 0
     for sub in subviews {
       let size = sub.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
       if x > 0, x + size.width > maxWidth {
+        lines.append([])
+        sizes.append([])
         x = 0
-        y += rowHeight + vSpacing
-        rowHeight = 0
       }
-      sub.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+      lines[lines.count - 1].append(sub)
+      sizes[sizes.count - 1].append(size)
       x += size.width + hSpacing
-      rowHeight = max(rowHeight, size.height)
     }
-    let total = y + rowHeight
+
+    var y: CGFloat = 0
+    var total: CGFloat = 0
+    for (index, line) in lines.enumerated() where !line.isEmpty {
+      let lineSizes = sizes[index]
+      var lineWidth = hSpacing * CGFloat(line.count - 1)
+      var lineHeight: CGFloat = 0
+      for size in lineSizes {
+        lineWidth += size.width
+        lineHeight = max(lineHeight, size.height)
+      }
+      let free = max(0, maxWidth - lineWidth)
+      var cursor: CGFloat = 0
+      var gap = hSpacing
+      switch alignment {
+      case "center":
+        cursor = free / 2
+      case "end":
+        cursor = free
+      case "spaceBetween":
+        if line.count > 1 { gap = hSpacing + free / CGFloat(line.count - 1) }
+      default:
+        break
+      }
+      for (position, sub) in line.enumerated() {
+        let size = lineSizes[position]
+        var top = y
+        switch crossAlignment {
+        case "center":
+          top = y + (lineHeight - size.height) / 2
+        case "end":
+          top = y + lineHeight - size.height
+        default:
+          break
+        }
+        // `cursor` counts from the start of the line; the frame wants the
+        // distance from the left.
+        sub.frame = CGRect(
+          x: rtl ? maxWidth - cursor - size.width : cursor,
+          y: top, width: size.width, height: size.height)
+        cursor += size.width + gap
+      }
+      total = y + lineHeight
+      y += lineHeight + vSpacing
+    }
+
     if let constraint = heightConstraint {
       if abs(constraint.constant - total) > 0.5 { constraint.constant = total }
     } else {

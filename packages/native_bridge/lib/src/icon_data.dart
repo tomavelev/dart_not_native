@@ -1,9 +1,9 @@
 /// The icon an app names, as a codepoint in the Material Icons font.
 ///
 /// Flutter's own `IconData` carries a font family and package as well; the
-/// renderers here draw from one font (the bundled `MaterialIcons-Regular`) or
-/// from the name (the web's icon ligatures), so the codepoint and the name are
-/// all that travel.
+/// renderers here all draw from one font (Flutter's `MaterialIcons-Regular`,
+/// which the web shell ships too), so the codepoint and the name are all that
+/// travel.
 library;
 
 class IconData {

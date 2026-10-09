@@ -62,7 +62,7 @@ class _Themed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        body: Text(Theme.of(context).primary, key: const ValueKey('primary')),
+        body: Text(Theme.of(context).appTheme.primary, key: const ValueKey('primary')),
       );
 }
 

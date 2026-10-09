@@ -4,7 +4,7 @@
 /// Run with: flutter test --platform chrome
 library;
 
-import 'package:dart_not_native/core.dart' hide Route, Router, RouterConfig;
+import 'package:dart_not_native/core.dart' hide Router;
 import 'package:dart_not_native/routing/route.dart';
 import 'package:dart_not_native/web_ui/browser_history.dart';
 import 'package:flutter_test/flutter_test.dart';

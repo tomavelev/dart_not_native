@@ -1,0 +1,25 @@
+name: dart_not_native_bloc
+description: >-
+  flutter_bloc's widgets - BlocProvider, BlocBuilder, BlocListener and
+  context.read - for dart_not_native's widget layer.
+version: 0.1.0
+homepage: https://programtom.com
+# Not published until dart_not_native itself is hosted; see TODO.md.
+publish_to: none
+
+environment:
+  sdk: ^3.10.8
+  flutter: '>=3.38.0'
+
+# No Flutter here, on purpose: an app built on this compiles with plain
+# `dart compile js`, so everything it imports has to as well. `bloc` is the
+# pure-Dart half of the bloc library; flutter_bloc is the half this replaces.
+dependencies:
+  bloc: ^9.0.0
+  dart_not_native:
+    path: ../native_bridge
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

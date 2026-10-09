@@ -1,11 +1,15 @@
 {
   "type": "Scaffold",
-  "props": {},
+  "props": {
+    "bodyScrolls": false
+  },
   "children": [
     {
       "type": "AppBar",
       "props": {
-        "title": "Inbox (6667 unread)"
+        "title": "Inbox (6667 unread)",
+        "backgroundColor": "#ffffff",
+        "foregroundColor": "#212121"
       },
       "children": null
     },
@@ -49,6 +53,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -141,6 +146,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -233,6 +239,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -325,6 +332,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -417,6 +425,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -509,6 +518,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -601,6 +611,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -693,6 +704,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -785,6 +797,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -877,6 +890,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -969,6 +983,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1061,6 +1076,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1153,6 +1169,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1245,6 +1262,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1337,6 +1355,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1429,6 +1448,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1521,6 +1541,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1613,6 +1634,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1705,6 +1727,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1797,6 +1820,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1889,6 +1913,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -1981,6 +2006,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -2073,6 +2099,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -2165,6 +2192,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -2257,6 +2285,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -2349,6 +2378,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -2441,6 +2471,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -2533,6 +2564,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -2625,6 +2657,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [
@@ -2717,6 +2750,7 @@
                   "type": "Row",
                   "props": {
                     "mainAxisAlignment": "start",
+                    "mainAxisSize": "max",
                     "spacing": 12.0
                   },
                   "children": [

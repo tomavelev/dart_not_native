@@ -19,8 +19,9 @@ Complete multi-language support system with 6 pre-built language packs, pluraliz
 ### 1. Initialize I18n
 
 ```dart
-import 'package:dart_not_native/material.dart';
 import 'package:dart_not_native/i18n/translation_bundles.dart';
+import 'package:dart_not_native/i18n/translations.dart';
+import 'package:dart_not_native/widgets.dart';
 
 void main() {
   // Initialize with English default
@@ -118,12 +119,59 @@ const Locale('en', 'GB');  // British English
 const Locale('zh', 'CN');  // Simplified Chinese
 const Locale('zh', 'TW');  // Traditional Chinese
 
-// Language + Region + Script
-const Locale('zh', 'CN', 'Hans');  // Simplified Chinese
+// Language + Script + Region - a script can only be named part by part
+const Locale.fromSubtags(
+  languageCode: 'zh',
+  scriptCode: 'Hans',
+  countryCode: 'CN',
+);
 
 // From string
-Locale.fromString('en_US');  // Parses to Locale('en', 'US')
+Locale.fromString('en_US');       // Locale('en', 'US')
+Locale.fromString('zh_Hans_CN');  // language zh, script Hans, region CN
 ```
+
+`Locale` is Flutter's shape - positional `Locale('en', 'US')`, with
+`languageCode`, `countryCode`, `scriptCode` and `toLanguageTag()`. The older
+`language`, `region` and `script` getters are still there; the named `region:`
+and `script:` constructor parameters are gone.
+
+### The locale a `MaterialApp` shows, and right-to-left
+
+The widget layer's `MaterialApp` takes `locale` and `supportedLocales` as
+Flutter's does, and `Localizations.localeOf(context)` answers with the app's
+`locale`; failing that the first of its `supportedLocales` in the device's
+language; failing that the device's own.
+
+That locale also decides the reading direction. For Arabic, Persian, Hebrew,
+Pashto, Sindhi and Urdu (Flutter's six) and Uyghur, Yiddish and Dhivehi, the
+whole screen is laid out right to left: rows run from the right, an app bar's
+leading and actions swap ends, the floating button moves to the bottom left,
+and `EdgeInsetsDirectional`, `AlignmentDirectional` and `TextAlign.start`
+resolve against it. What names a side stays on it - `EdgeInsets.only(left:)`
+is still the left. Override it from `MaterialApp.builder` with a
+`Directionality`, as in Flutter.
+
+One limit: only the *screen's* direction reaches the renderers. A
+`Directionality` deep in a screen turns the values and rows below it, not the
+platform's own controls there. And one platform note: the Android and iOS
+halves of right-to-left are built and pinned by source-level tests; the
+changelog records no device run for Android, and the iOS Swift has not been
+compiled.
+
+Nothing ties the two systems together automatically: the `I18n` table has its
+own current locale (`getI18n().setLocale`), and `MaterialApp(locale:)` is
+what turns the screen. An app switching language sets both.
+
+### An app that already uses gen-l10n
+
+An existing Flutter app keeps its ARB files and `flutter gen-l10n`, and does
+not need the `I18n` table at all. The generated `AppLocalizations` classes are
+plain objects; a few lines read `Localizations.localeOf(context)` and look
+them up with the generated `lookupAppLocalizations`. `MaterialApp`'s
+`localizationsDelegates` is accepted and ignored. The bridge, and its two
+catches (choose the fallback locale on purpose; the generated code imports
+Flutter, so it is mobile-only), are in `INTEGRATION.md` §8.4.
 
 ### Translation Structure
 
@@ -536,22 +584,23 @@ final alert = DSAlert.success(
 
 ### With State Management
 
-```dart
-// Dispatch i18n change actions
-i18n.addListener(() {
-  store.dispatch(LocaleChangedAction(i18n.currentLocale));
-});
+`I18n` is a `Listenable`, so it is followed like any other store:
 
-// Re-render when locale changes
+```dart
+// Tell something else when the language changes
+i18n.addListener(() => analytics.setLanguage(i18n.currentLocale.languageCode));
+
+// Re-render when the locale changes
 @override
 Widget build(BuildContext context) {
-  return ScopedModelDescendant<AppModel>(
-    builder: (context, child, model) {
-      return Text(t('common.ok'));
-    },
+  return ListenableBuilder(
+    listenable: getI18n(),
+    builder: (context, _) => Text(t('common.ok')),
   );
 }
 ```
+
+For a key, `const Tr('common.ok')` is the same thing in one widget.
 
 ## 📋 Best Practices
 
@@ -676,12 +725,12 @@ final languages = [
 
 ```
 packages/native_bridge/lib/i18n/
-├── translations.dart       (Core i18n system - 358 lines)
-├── translation_bundles.dart (6 language packs - 500+ lines)
-└── i18n_preferences.dart   (Persistence layer - 90 lines)
+├── translations.dart        (I18n, Locale, t(), Tr's lookup)
+├── translation_bundles.dart (6 language packs)
+└── i18n_preferences.dart    (Persistence layer)
 
-lib/examples/
-└── i18n_example.dart       (Complete demo app - 300+ lines)
+lib/examples/apps/
+└── i18n_example_app.dart    (The demo app, written against widgets.dart)
 
 I18N_GUIDE.md (This file)
 ```

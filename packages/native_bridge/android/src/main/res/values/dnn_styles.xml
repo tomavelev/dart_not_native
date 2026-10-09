@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Overlays the renderer wraps a context in to build a Dropdown.
+
+      A TextInputLayout takes its whole look - the box, the arrow at the end,
+      the style of the AutoCompleteTextView inside it - from the style its
+      context's theme names as `textInputStyle`, read once in its constructor.
+      There is no setter that turns a built layout into an exposed dropdown
+      menu, so the style has to be in the theme before the view exists, and a
+      theme can only be written here.
+    -->
+    <style name="DnnDropdownOutlined" parent="">
+        <item name="textInputStyle">@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu</item>
+    </style>
+
+    <style name="DnnDropdownFilled" parent="">
+        <item name="textInputStyle">@style/Widget.Material3.TextInputLayout.FilledBox.ExposedDropdownMenu</item>
+    </style>
+
+    <!--
+      A text field's, for the same reason: the Material 3 theme the renderer
+      builds against makes a TextInputLayout an outlined box unless told, and
+      a field here is the filled one - the label floats inside the box, which
+      is what the editor's padding is written for.
+    -->
+    <style name="DnnTextFieldFilled" parent="">
+        <item name="textInputStyle">@style/Widget.Material3.TextInputLayout.FilledBox</item>
+    </style>
+
+    <!--
+      The overlay a tab bar is built in, for the same reason: a TabLayout
+      reads its label style once, in its constructor, and has no setter for
+      it. Material's default writes every label in capitals; a tab's label is
+      drawn as the app wrote it.
+    -->
+    <style name="DnnTabs" parent="">
+        <item name="tabStyle">@style/DnnTabLayout</item>
+    </style>
+
+    <style name="DnnTabLayout" parent="Widget.Material3.TabLayout">
+        <item name="tabTextAppearance">@style/DnnTabText</item>
+    </style>
+
+    <style name="DnnTabText" parent="TextAppearance.Design.Tab">
+        <item name="textAllCaps">false</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <!-- A navigation destination's label: Material 3's, without the tracking. -->
+    <style name="DnnNavigationLabel" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:letterSpacing">0</item>
+    </style>
+</resources>

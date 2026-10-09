@@ -9,6 +9,7 @@ import 'package:dart_not_native/core.dart';
 import 'package:dart_not_native/widgets.dart';
 import 'package:dart_not_native_example/examples/apps/calculator_app.dart';
 import 'package:dart_not_native_example/examples/apps/components_showcase_app.dart';
+import 'package:dart_not_native_example/examples/apps/controls_gallery_app.dart';
 import 'package:dart_not_native_example/examples/apps/counter_app.dart';
 import 'package:dart_not_native_example/examples/apps/design_system_showcase_app.dart';
 import 'package:dart_not_native_example/examples/apps/i18n_example_app.dart';
@@ -25,6 +26,7 @@ import 'fake_storage.dart';
 final Map<String, NativeUIApp Function()> exampleApps = {
   'calculator': () => hostApp(const CalculatorApp()),
   'components_showcase': () => hostApp(const ComponentsShowcaseApp()),
+  'controls_gallery': () => hostApp(const ControlsGalleryApp()),
   'counter': () => hostApp(const CounterApp()),
   'design_system_showcase': () => hostApp(const DesignSystemShowcaseApp()),
   'i18n': () => hostApp(I18nExampleApp(setUpDemoI18n())),
