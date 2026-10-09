@@ -943,7 +943,8 @@ while the screen behind it scrolled, was covered while a pushed page was open
 and came back on Back, and taps elsewhere on the screen kept working. Tapping
 the ad itself was not tested. The slot was pinned, so the scroll lag above was
 not exercised either. That is one emulator, not a range of devices, and the
-iOS hole has never been on a screen: no example has a slot.
+iOS hole has only drawn its fallback, in the device lane: no Flutter widget
+has shown through it there.
 
 ### 8.7 A web target
 

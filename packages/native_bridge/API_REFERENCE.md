@@ -190,9 +190,9 @@ Colours on a node are `#rrggbb`, or `#aarrggbb` with alpha. Alignments are
 
 The bold rows are the twelve types added since 0.1.0. On Android they have
 been drawn on an emulator - all but `DatePicker` and `TimePicker`, which no
-app there opened. **On iOS eight of them have been drawn on a simulator, by
-the example apps and unlooked at; `Dropdown`, `DatePicker`, `TimePicker` and
-`FlutterSlot` have not been drawn at all.**
+app there opened. **On iOS all twelve are drawn by the device lane on a
+simulator, and the controls gallery, a dropdown and both pickers have been
+looked at by hand; a `FlutterSlot` has drawn only its fallback.**
 
 ### The newer nodes
 

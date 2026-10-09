@@ -88,11 +88,11 @@ with them.
   since the last iOS run, for right-to-left, the image cache, the
   `FlutterSlot` hole, scroll reporting and the event build number compiles
   in CI, and on 2026-10-09 it passed the device check on a simulator: the
-  five flows and every example app drawn with nothing left undrawn. Nobody
-  has looked at those screens, a dropdown, the two pickers and a
-  `FlutterSlot` were not on any of them, and none of the three migrated apps
-  has run on it. Assume it needs work before it draws a real screen
-  correctly.
+  five flows and every example app drawn with nothing left undrawn. One
+  screen was then looked at - the controls gallery - and it had five layout
+  bugs the green run had not shown, fixed since. None of the three migrated
+  apps has run on it, and a `FlutterSlot` has only drawn its fallback.
+  Assume a real screen will find more.
 - **Animation you drive yourself.** No `AnimationController`, no page
   transitions; a `Hero` compiles and does not fly. Implicit animations of size, colour, opacity and
   transform are done by the renderer; a `Ticker` is a 16 ms timer.
@@ -205,7 +205,7 @@ your screens  ──  package:dart_not_native/widgets.dart      Flutter's API, p
 | Target | Drawn by | Flutter engine | Evidence |
 |---|---|---|---|
 | **Android** | `NativeUIRenderer.kt`: Material and platform views | hosts Dart and plugins | a phone and an emulator; three migrated apps on the emulator |
-| **iOS** | `NativeUIRenderer.swift`: UIKit | hosts Dart and plugins | simulator and iPad for the earlier vocabulary; **current Swift: the examples on a simulator, unlooked at** |
+| **iOS** | `NativeUIRenderer.swift`: UIKit | hosts Dart and plugins | simulator and iPad for the earlier vocabulary; **current Swift: the examples on a simulator, one screen of them looked at** |
 | **Web** | `WebUIRenderer`: DOM, styled by a CSS kit | none | browser test suite, markup goldens, Maestro flows |
 | **Any Flutter host** | `FlutterUIRenderer`: Flutter widgets | paints | widget tests; every example rendered and checked for overflow |
 

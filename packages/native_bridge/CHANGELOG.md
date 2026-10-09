@@ -103,8 +103,32 @@ Flutter, it now agrees, and these are the places existing code has to change:
   nothing reported undrawn). The examples put eight of the twelve new node
   types through it: `Box`, `Stack`, `Positioned`, `Scroll`, `Icon`, `Canvas`,
   `BottomBar` and `BottomNavigation`. `Dropdown`, `DatePicker`, `TimePicker`
-  and `FlutterSlot` are on none of those screens. Nobody looked at what was
-  drawn, and none of the three migrated apps has run on iOS.
+  and `FlutterSlot` are on none of those screens.
+- Then the controls gallery was looked at, tab by tab, with every control on
+  it driven, and five things were wrong that no test had said:
+  - **Whatever takes the width it is offered had none in a column that
+    aligns to one side.** Only a `Row` was told to fill. A `Stack` of layers
+    in a box with a height drew nothing at all, a slider was a thumb with no
+    track, a linear progress bar was a few points long, and a text field and
+    a card were as wide as their words. The rule is the Kotlin renderer's
+    `fillsWidth`, widened to boxes, layers, sliders and progress bars, and
+    it holds on a patch as well as a build.
+  - **The app bar took whatever height the body did not**: over a scroller
+    with little in it the bar was a third of the screen, and a different
+    height on each page of one app.
+  - **An `Expanded` lost its room to a button beside it** - a card's star
+    sat in the middle of the card.
+  - **A disabled button looked like one that works.** It is drawn at
+    Material's 12% and 38% now.
+  - **A scroller longer than its content stretched the content** to match,
+    one list tile taking all of the slack.
+- `Dropdown`, `DatePicker` and `TimePicker` were opened by hand there and
+  gave back what was chosen. `native_renderer_test.dart` now draws the twelve
+  new node types as well (17 tests): a free-form tree, and a screen under
+  each picker. Green on the simulator; **not run on Android**, where no
+  emulator was to hand. A `FlutterSlot` has only drawn its fallback - no
+  Flutter widget has shown through the hole on iOS - and none of the three
+  migrated apps has run there.
 
 ### Three real apps on an Android emulator
 

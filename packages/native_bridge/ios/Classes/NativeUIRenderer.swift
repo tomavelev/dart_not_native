@@ -919,7 +919,9 @@ class NativeUIRenderer {
         } else if (before?["id"] as? String) != nil {
           // A new keyed row among keyed ones: insert rather than overwrite a row
           // still wanted further down.
-          stack.insertArrangedSubview(buildChild(node), at: i + lead)
+          let inserted = buildChild(node)
+          stack.insertArrangedSubview(inserted, at: i + lead)
+          takeWidthOffered(inserted, node, in: stack)
           standing.insert(node, at: i)
           continue
         }
@@ -942,6 +944,7 @@ class NativeUIRenderer {
         stack.insertArrangedSubview(created, at: count + lead)
         standing.append(node)
       }
+      takeWidthOffered(created, node, in: stack)
     }
 
     while count > newKids.count {
@@ -1984,6 +1987,13 @@ class NativeUIRenderer {
       // The row's height is what sets the bar's: a title's line and its room.
       row.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
     ])
+    // And no more than that unless what is in it needs it. "At least" alone
+    // left the bar free to take whatever the body did not: over a scroller
+    // with little in it the bar came out a third of the screen tall, and a
+    // different height on every page of one app.
+    let snug = row.heightAnchor.constraint(equalToConstant: 36)
+    snug.priority = UILayoutPriority(740)
+    snug.isActive = true
     if centered {
       NSLayoutConstraint.activate([
         titleView.centerXAnchor.constraint(equalTo: host.centerXAnchor),
@@ -2158,10 +2168,21 @@ class NativeUIRenderer {
     let kids = childNodes(node)
     var anchor: UIView?
     var anchorFlex = 1
+    let flexible = kids.contains { $0["type"] as? String == "Expanded" }
     for (index, kid) in kids.enumerated() {
-      guard kid["type"] as? String == "Expanded",
-        index < stack.arrangedSubviews.count
-      else { continue }
+      guard index < stack.arrangedSubviews.count else { continue }
+      guard kid["type"] as? String == "Expanded" else {
+        // The room left over is the Expanded's, so what sits beside one
+        // keeps to its own size. An Expanded's container has no size to hug,
+        // which leaves the stack weighing the label inside it against the
+        // button beside it - and a button hugs a notch less than a label, so
+        // the button got the room: a card's star came out in the middle of
+        // the card, in a button as wide as the title should have been.
+        if flexible {
+          stack.arrangedSubviews[index].setContentHuggingPriority(.defaultHigh, for: axis)
+        }
+        continue
+      }
       let view = stack.arrangedSubviews[index]
       let flex = kid["flex"] as? Int ?? 1
       // An Expanded grows on the main axis only; on the cross axis it should hug
@@ -3064,6 +3085,19 @@ class NativeUIRenderer {
         : textOn(tint)
     }
     if let stated = statedColor(node["foregroundColor"]) { foreground = stated }
+    if !button.isEnabled {
+      // Material's disabled button: what it is drawn on at 12%, its label at
+      // 38%. Left in its own colours it looked exactly like one that works.
+      let on = color(themeText, fallback: themeText)
+      if button.backgroundColor != .clear {
+        button.backgroundColor = on.withAlphaComponent(0.12)
+      }
+      if button.layer.borderWidth > 0 {
+        button.layer.borderColor = on.withAlphaComponent(0.12).cgColor
+      }
+      foreground = on.withAlphaComponent(0.38)
+      button.setTitleColor(foreground, for: .disabled)
+    }
     button.setTitleColor(foreground, for: .normal)
     // The glyph is a template image, which a system button paints in its tint.
     button.tintColor = foreground
@@ -5383,19 +5417,60 @@ class NativeUIRenderer {
     for child in childNodes(node) {
       guard let view = renderWidget(child) else { continue }
       stack.addArrangedSubview(view)
-      // A row takes all the width it is offered, as Flutter's does: its
-      // `mainAxisSize` is max, and a column that aligns its children at one
-      // edge would otherwise hand each of them only what it asked for. That is
-      // how a card's row of an email and a button came out email-wide, with
-      // the space the app asked to put between them nowhere to go.
-      // Unless it said `mainAxisSize: 'min'`, which is a row as wide as its
-      // children.
-      if stack.axis == .vertical, stack.alignment != .fill,
-        ["Row", "HStack"].contains(child["type"] as? String ?? ""),
-        child["mainAxisSize"] as? String != "min"
-      {
-        (view as? RowStack)?.takeTheWidthOffered()
+      takeWidthOffered(view, child, in: stack)
+    }
+  }
+
+  /// Lets [view], just arranged in [stack] as [child], be as wide as the
+  /// stack when it is something that takes the width it is offered.
+  ///
+  /// A column that aligns its children at one edge hands each of them only
+  /// what it asks for, and several things ask for nothing: a slider and a
+  /// progress bar have no width of their own, a box that expands has none
+  /// until something gives it one, and a row's `mainAxisSize` is max. In
+  /// Flutter all of those take the column's width. Here they came out a
+  /// thumb with no track, a bar a few points long, and a `Stack` of layers
+  /// with no size at all - nothing on screen where the layers should be.
+  private func takeWidthOffered(_ view: UIView, _ child: [String: Any], in stack: UIStackView) {
+    guard stack.axis == .vertical, stack.alignment != .fill, fillsWidth(child) else { return }
+    // A row is as wide as its children until told otherwise, so it is the
+    // one that has to ask; that was how a card's row of an email and a
+    // button came out email-wide, with the space between them nowhere to go.
+    (view as? RowStack)?.takeTheWidthOffered()
+    // Below required, so a width the child states for itself still wins.
+    let fill = view.widthAnchor.constraint(equalTo: stack.widthAnchor)
+    fill.priority = UILayoutPriority(999)
+    fill.isActive = true
+  }
+
+  /// Whether [node] takes all the width it is offered rather than the width
+  /// of what is in it - Flutter's rule for each, and the Kotlin renderer's
+  /// `fillsWidth`.
+  private func fillsWidth(_ node: [String: Any]) -> Bool {
+    switch node["type"] as? String {
+    case "Row", "HStack":
+      // Unless it said `mainAxisSize: 'min'`: a row as wide as its children.
+      return node["mainAxisSize"] as? String != "min"
+    case "TextField", "Slider", "Wrap", "Divider":
+      return true
+    case "Loading":
+      return prop(node, "type") as? String == "progress-linear"
+    case "Box", "Canvas":
+      if let width = number(node["width"]) { return !width.isFinite }
+      let expand = node["expand"] as? String
+      if expand == "width" || expand == "both" { return true }
+      return firstChild(node).map(fillsWidth) ?? false
+    case "Padding", "Expanded":
+      return firstChild(node).map(fillsWidth) ?? false
+    case "Column", "VStack", "Card":
+      return childNodes(node).contains(where: fillsWidth)
+    case "Stack":
+      // A layer that is not pinned is what sizes the stack.
+      return childNodes(node).contains {
+        $0["type"] as? String != "Positioned" && fillsWidth($0)
       }
+    default:
+      return false
     }
   }
 

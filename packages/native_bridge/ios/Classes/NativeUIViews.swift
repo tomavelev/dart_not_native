@@ -1631,7 +1631,11 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
           equalTo: frameGuide.widthAnchor, constant: -(padding.left + padding.right)))
       along = frameGuide.heightAnchor.constraint(equalTo: contentGuide.heightAnchor)
     }
-    along.priority = UILayoutPriority(shrinkWrap ? 999 : 100)
+    // Weaker than a box hugging its child (100): a scroller that *was* given
+    // a length longer than its content otherwise met this by stretching the
+    // content to match - one list tile on a short page came out half as tall
+    // again as the ones beside it.
+    along.priority = UILayoutPriority(shrinkWrap ? 999 : 50)
     next.append(along)
     childConstraints = next
     NSLayoutConstraint.activate(next)

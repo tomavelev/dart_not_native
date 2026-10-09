@@ -219,6 +219,124 @@ WidgetNode _navigationTree() => iOSUIBuilder.navigationStack(
       ),
     );
 
+/// The twelve node types the widget layer is built on - boxes, layers, a
+/// scroller, an icon, a canvas, the choosers and the bars - which the two
+/// trees above were written before.
+///
+/// The pickers are overlays, and a platform shows one modal picker at a time,
+/// so each gets a tree of its own ([_pickerTree]).
+WidgetNode _freeFormTree() => UIBuilder.scaffold(
+      bodyScrolls: false,
+      appBar: UIBuilder.appBar(title: 'Free form'),
+      body: UIBuilder.scroll(
+        id: 'free_form_scroll',
+        padding: const [16, 16, 16, 16],
+        child: UIBuilder.column(
+          crossAxisAlignment: 'start',
+          children: [
+            UIBuilder.box(
+              padding: const [12, 8, 12, 8],
+              color: '#e3f2fd',
+              borderRadius: 8,
+              child: UIBuilder.text('A box'),
+            ),
+            // A box with a height and nothing to say how wide it is, around
+            // layers one of which expands: the case that came out with no
+            // size at all on iOS.
+            UIBuilder.box(
+              height: 96,
+              child: UIBuilder.stack(
+                id: 'layers',
+                children: [
+                  UIBuilder.box(expand: 'both', color: '#fff3e0'),
+                  UIBuilder.positioned(
+                    left: 12,
+                    top: 12,
+                    child: UIBuilder.text('Underneath'),
+                  ),
+                  UIBuilder.positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: UIBuilder.icon(codepoint: 0xe047, size: 24),
+                  ),
+                ],
+              ),
+            ),
+            UIBuilder.canvas(
+              width: 72,
+              height: 40,
+              semanticLabel: 'Three bars',
+              paints: const [
+                {'color': '#1976d2'},
+              ],
+              commands: const [
+                ['rect', 0, 27, 20, 13, 0],
+                ['rect', 26, 13, 20, 27, 0],
+                ['rect', 52, 0, 20, 40, 0],
+              ],
+            ),
+            UIBuilder.dropdown(
+              id: 'fruit',
+              items: const ['Apple', 'Banana', 'Cherry'],
+              selectedIndex: 0,
+              label: 'Fruit',
+              onChanged: (_) {},
+            ),
+            // No Flutter widget is registered under this id, so each renderer
+            // draws the hole and what it has to put in it.
+            UIBuilder.flutterSlot(
+              slotId: 'nothing_registered',
+              height: 50,
+              fallback: UIBuilder.text('Where a Flutter widget would be'),
+            ),
+          ],
+        ),
+      ),
+      bottomBar: UIBuilder.bottomBar(
+        child: UIBuilder.bottomNavigation(
+          id: 'pages',
+          selectedIndex: 0,
+          onChanged: (_) {},
+          items: const [
+            (label: 'Home', icon: 0xe318, selectedIcon: null),
+            (label: 'Settings', icon: 0xe57f, selectedIcon: null),
+          ],
+        ),
+      ),
+    );
+
+/// A screen with one picker open over it.
+WidgetNode _pickerTree(WidgetNode picker) => UIBuilder.overlay(
+      child: UIBuilder.scaffold(
+        appBar: UIBuilder.appBar(title: 'Choosing'),
+        body: UIBuilder.text('Under a picker'),
+      ),
+      overlays: [picker],
+    );
+
+WidgetNode _datePickerTree() => _pickerTree(
+      UIBuilder.datePicker(
+        id: 'date',
+        initial: '2026-10-09',
+        first: '2026-01-01',
+        last: '2027-12-31',
+        title: 'Pick a date',
+        onPicked: (_) {},
+        onDismiss: () {},
+      ),
+    );
+
+WidgetNode _timePickerTree() => _pickerTree(
+      UIBuilder.timePicker(
+        id: 'time',
+        hour: 9,
+        minute: 30,
+        title: 'Pick a time',
+        onPicked: (_, _) {},
+        onDismiss: () {},
+      ),
+    );
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -268,6 +386,24 @@ void main() {
 
   testWidgets('draws the navigation vocabulary too', (tester) async {
     final errors = await drawErrors(_EveryNodeApp(_navigationTree));
+
+    expect(errors, isEmpty, reason: describe(errors));
+  }, skip: !native);
+
+  testWidgets('draws the free-form vocabulary too', (tester) async {
+    final errors = await drawErrors(_EveryNodeApp(_freeFormTree));
+
+    expect(errors, isEmpty, reason: describe(errors));
+  }, skip: !native);
+
+  testWidgets('opens a date picker', (tester) async {
+    final errors = await drawErrors(_EveryNodeApp(_datePickerTree));
+
+    expect(errors, isEmpty, reason: describe(errors));
+  }, skip: !native);
+
+  testWidgets('opens a time picker', (tester) async {
+    final errors = await drawErrors(_EveryNodeApp(_timePickerTree));
 
     expect(errors, isEmpty, reason: describe(errors));
   }, skip: !native);

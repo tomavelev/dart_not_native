@@ -257,7 +257,7 @@ should), but has never run there · ❌ missing, or a stub
 | Feature | Android | iOS | Web | Notes |
 |---|---|---|---|---|
 | UI renderer - the vocabulary as of 2026-09-24 (47 node types) | ✅ | ✅ | ✅ | Android is device-verified on a physical Android phone (Android 17, 2026-09-18): all seven example apps run natively with events round-tripping (see 1.1). iOS caught up on 2026-09-21: six example apps driven by hand on a simulator, two layout bugs found and fixed - the screens have been *looked* at now, though on a simulator rather than a phone, and the iPad pass before it covered three of them on real hardware. Web is tested in Chrome with DOM goldens (1.1) | **The iOS ✅ is for the Swift as it was then; the file has since grown by the rows below, which have had one automated simulator run and no eyes (§6.1)**
-| The twelve node types added 2026-10-03: `Box`, `Stack`, `Positioned`, `Scroll`, `Icon`, `Canvas`, `Dropdown`, `DatePicker`, `TimePicker`, `BottomBar`, `BottomNavigation`, `FlutterSlot` | ✅ | 🟡 | ✅ | Android: on a Pixel 8 emulator (API 35, debug builds), by hand, through three migrated apps walked screen by screen - boxes, stacks, scrollers, icons and dropdowns throughout; `Canvas` as a timer-driven game, the other game boards and a donut chart; bottom navigation, and its rail in landscape; a long-press drag onto a drop target; an AdMob test banner through the `FlutterSlot` hole at its 320×50dp. **`DatePicker` and `TimePicker` were not exercised: no app opened one.** Not on a phone, and not in the device lane, whose "one of every node type" tree predates them (§6.3). iOS: **on an iPhone 18 Pro simulator (iOS 27.0, 2026-10-09) the device check drew every example app with nothing undrawn, which takes in eight of the twelve - not `Dropdown`, `DatePicker`, `TimePicker` or `FlutterSlot` - and nobody looked at the screens**. Web: browser tests per family (`box_test`, `stack_scroll_test`, `canvas_test`, `choosing_test`, `app_chrome_test`); a `FlutterSlot` draws its fallback there. The Flutter renderer has widget tests for all of them |
+| The twelve node types added 2026-10-03: `Box`, `Stack`, `Positioned`, `Scroll`, `Icon`, `Canvas`, `Dropdown`, `DatePicker`, `TimePicker`, `BottomBar`, `BottomNavigation`, `FlutterSlot` | ✅ | 🟡 | ✅ | Android: on a Pixel 8 emulator (API 35, debug builds), by hand, through three migrated apps walked screen by screen - boxes, stacks, scrollers, icons and dropdowns throughout; `Canvas` as a timer-driven game, the other game boards and a donut chart; bottom navigation, and its rail in landscape; a long-press drag onto a drop target; an AdMob test banner through the `FlutterSlot` hole at its 320×50dp. **`DatePicker` and `TimePicker` were not exercised: no app opened one.** Not on a phone. In the device lane since 2026-10-09 (a free-form tree and a screen under each picker), which has not yet run on Android. iOS: **on an iPhone 18 Pro simulator (iOS 27.0, 2026-10-09) the device lane draws all twelve; the controls gallery was walked by hand, which found and fixed five layout bugs (§6.1), and a dropdown and both pickers were opened and returned a choice. A `FlutterSlot` has drawn only its fallback, and no migrated app has run**. Web: browser tests per family (`box_test`, `stack_scroll_test`, `canvas_test`, `choosing_test`, `app_chrome_test`); a `FlutterSlot` draws its fallback there. The Flutter renderer has widget tests for all of them |
 | Right-to-left (`RootProps.textDirection`) | ✅ | 🟡 | ✅ | Web and the Flutter host are tested (`text_direction_test`, `flutter_text_direction_test`). Android: looked at on the emulator under an Arabic locale (2026-10-03) - app bar, bottom-navigation order, list tiles, tabs, calendar and switch all mirrored; swipe actions are not (§6.3 item 6). The Swift compiles; right-to-left has not been looked at on iOS |
 | Remote image cache, and an image's fallback child | 🟡 | 🟡 | ✅ | Tested on web and Flutter. Android: remote images loaded in list rows on the emulator; what the disk cache does offline or at expiry was not examined, which is why this stays 🟡. Compiled and not examined on iOS |
 | An event answered by the build it was raised against | ✅ | 🟡 | ✅ | Android sends the tree's build number back with each event (found on the emulator, where a list's size report was landing on a row's tap). The Swift to do the same compiles; the stale-callback case has not been tried on iOS. The web and Flutter renderers name the build they are showing too - the Flutter host builds its widgets a frame after a render |
@@ -555,7 +555,8 @@ cache does offline or at expiry.
 What that pass was not: a physical phone, an automated run, or iOS. The
 Maestro flows and the integration lane were not extended to the new screens,
 so nothing re-checks them. And the iOS half of all of it is Swift that has
-drawn the examples once, on a simulator, unlooked at (2026-10-09) -
+drawn the examples on a simulator, with one screen of them looked at
+(2026-10-09) -
 the "Done when" above was met for the examples on 2026-09-24 and is open again
 for the vocabulary as it stands. §6.1.)*
 
@@ -1931,10 +1932,11 @@ What is known to be open now that three real apps run on the widget layer.
 Every item traces to the code, a doc comment or the changelog - the place is
 named - and the order inside each group is the order I would do them in.
 
-### 6.1 iOS: the Swift compiles and draws the examples; look at it
+### 6.1 iOS: the gallery has been looked at; the three apps have not
 
-**The iOS renderer as it stands has passed the device check on a simulator
-and has not been looked at.** The last iOS anyone watched - five flows on a
+**The iOS renderer as it stands passes the device check on a simulator, and
+one screen of the new vocabulary has been looked at.** The last iOS anyone
+watched before that - five flows on a
 simulator, the release build on an iPad, 2026-09-24 - was the 47-node
 vocabulary. Since then
 `ios/Classes/NativeUIRenderer.swift` gained about 2,100 lines and
@@ -1954,11 +1956,29 @@ new node types - `Box`, `Stack`, `Positioned`, `Scroll`, `Icon`, `Canvas`,
 `BottomBar`, `BottomNavigation` - so those have been through the Swift.
 `Dropdown`, `DatePicker`, `TimePicker` and `FlutterSlot` have not.
 
-That is a renderer saying it drew everything, not a person saying it drew it
-right: the flows predate the new nodes and nobody looked at the new screens.
-So every iOS claim about how the new node types, right-to-left, the image
-cache, the disabled controls and the Flutter slot *behave* is still a claim
-about text. In order:
+That was a renderer saying it drew everything, not a person saying it drew
+it right, and the difference showed the same day. The controls gallery was
+walked on that simulator - three tabs, every control driven - and five things
+were wrong that the green run had not said: a `Stack` of layers that drew
+nothing, a slider with no track, a progress bar a few points long and a field
+and a card as wide as their words (one cause: only a `Row` was told to take
+the width of a column that aligns to one side); an app bar a third of the
+screen tall over a short page; a card's star in the middle of the card; a
+disabled button that looked enabled; a list tile stretched to fill a short
+scroller. All five are fixed in the Swift (changelog, "The iOS renderer runs
+again"). The dropdown, the date picker and the time picker were opened by
+hand and returned what was chosen.
+
+The device lane's tree has the twelve new node types now:
+`native_renderer_test.dart` draws a free-form tree and a screen under each
+picker (17 tests), green on the simulator. **Those three tests have not run
+on Android** - there was no emulator to run them on - so the first Android
+run of `device_check.sh` is also their first.
+
+What is still a claim about text on iOS: right-to-left, the image cache, a
+`FlutterSlot` with a real Flutter widget behind it (the lane draws only its
+fallback), drag and drop, the scroll reports, and every screen but the
+gallery. In order:
 
 1. ~~`flutter build ios --simulator --debug --no-codesign`~~ - done by the
    `native.yml` lane, 2026-10-05, which repeats it whenever the renderers
@@ -2011,8 +2031,9 @@ the scroll reports, the snackbar's position and the scrolling rail that
 Android gained on the emulator: written for iOS, compiled, not checked.
 
 **Done when:** the Swift builds (done), `device_check.sh ios` is green (done,
-2026-10-09), the device lane's tree includes the new node types (§6.3), and the three apps have been
-looked at on a simulator.
+2026-10-09), the device lane's tree includes the new node types (done,
+2026-10-09, and unrun on Android), and the three apps have been looked at on
+a simulator.
 
 ### 6.2 What the widget layer accepts and does not do
 
