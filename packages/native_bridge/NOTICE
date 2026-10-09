@@ -32,7 +32,7 @@ Roboto
 Material Icons
     Copyright Google LLC
     The font Flutter bundles (MaterialIcons-Regular.otf from its
-    material_fonts artifact), unaltered apart from being wrapped as WOFF.
+    material_fonts artifact), unaltered apart from being wrapped as WOFF2.
     Creative Commons Attribution 4.0 International, the licence that
     artifact carries; Google publishes the icons themselves under the
     Apache License, Version 2.0.

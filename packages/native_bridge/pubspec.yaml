@@ -33,6 +33,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  brotli: ^0.6.0
 
 # Shipping the native halves as a plugin is what lets a consuming app get the
 # renderer and the system back gesture by adding the dependency, with no files

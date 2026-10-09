@@ -19,8 +19,9 @@
 /// web build. A variant is reached as `Icons.home_outlined.codePoint`.
 ///
 /// The web shell gets the same font file, so a codepoint draws the same
-/// picture in a browser: it is rewrapped as WOFF (each table deflated, nothing
-/// altered) into `web_shell/vendor/material-icons/`, with its licence.
+/// picture in a browser: it is rewrapped as WOFF2 (the tables compressed,
+/// nothing altered) into `web_shell/vendor/material-icons/`, with its licence.
+/// That step needs the `brotli` command.
 library;
 
 import 'dart:io';
@@ -149,11 +150,38 @@ abstract final class Icons {
   ).writeAsStringSync(buffer.toString());
 }
 
-/// Puts Flutter's icon font where the web shell serves it from, as WOFF.
+/// The tags WOFF2 gives a number to, in the order it numbers them; any other
+/// table is written with its tag in full.
+const _knownTags = [
+  'cmap', 'head', 'hhea', 'hmtx', 'maxp', 'name', 'OS/2', 'post', 'cvt ',
+  'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG', 'EBDT', 'EBLC', 'gasp',
+  'hdmx', 'kern', 'LTSH', 'PCLT', 'VDMX', 'vhea', 'vmtx', 'BASE', 'GDEF',
+  'GPOS', 'GSUB', 'EBSC', 'JSTF', 'MATH', 'CBDT', 'CBLC', 'COLR', 'CPAL',
+  'SVG ', 'sbix', 'acnt', 'avar', 'bdat', 'bloc', 'bsln', 'cvar', 'fdsc',
+  'feat', 'fmtx', 'fvar', 'gvar', 'hsty', 'just', 'lcar', 'mort', 'morx',
+  'opbd', 'prop', 'trak', 'Zapf', 'Silf', 'Glat', 'Gloc', 'Feat', 'Sill', //
+];
+
+/// [value] as WOFF2 writes a length: seven bits to a byte, most significant
+/// first, the top bit set on every byte but the last.
+List<int> _base128(int value) {
+  final bytes = [value & 0x7f];
+  for (var rest = value >> 7; rest > 0; rest >>= 7) {
+    bytes.insert(0, (rest & 0x7f) | 0x80);
+  }
+  return bytes;
+}
+
+/// Puts Flutter's icon font where the web shell serves it from, as WOFF2.
 ///
-/// WOFF is the same tables, each deflated, behind a directory that says how
-/// big they were - about a third of the size on the wire, and nothing a
-/// browser cannot undo exactly.
+/// WOFF2 is the same tables end to end in one Brotli stream, behind a
+/// directory that says how big each was: about a quarter of the font's size
+/// on the wire, three quarters of what WOFF made of it, and nothing a browser
+/// cannot undo exactly. The tables are stored as they are - the transforms
+/// WOFF2 offers are for TrueType outlines, and these are CFF.
+///
+/// Brotli is not in the Dart SDK, so this runs the `brotli` command
+/// (`brew install brotli`, `apt install brotli`). Only this tool needs it.
 void _writeWebFont(String flutterRoot) {
   const fonts = 'bin/cache/artifacts/material_fonts';
   const vendor = 'packages/native_bridge/web_shell/vendor/material-icons';
@@ -170,51 +198,77 @@ void _writeWebFont(String flutterRoot) {
   final tables = [
     for (var i = 0; i < count; i++)
       (
-        tag: header.getUint32(12 + 16 * i),
-        checksum: header.getUint32(16 + 16 * i),
+        tag: String.fromCharCodes(sfnt, 12 + 16 * i, 16 + 16 * i),
         offset: header.getUint32(20 + 16 * i),
         length: header.getUint32(24 + 16 * i),
       ),
   ];
+  for (final table in tables) {
+    // Stored untransformed, which for these two WOFF2 has to be told.
+    if (table.tag == 'glyf' || table.tag == 'loca') {
+      stderr.writeln('${otf.path} has TrueType outlines; this writes CFF.');
+      exit(2);
+    }
+  }
   int padded(int length) => (length + 3) & ~3;
 
-  final directory = ByteData(20 * count);
+  final directory = BytesBuilder();
   final body = BytesBuilder();
-  var at = 44 + directory.lengthInBytes;
   var sfntSize = 12 + 16 * count;
-  for (final (i, table) in tables.indexed) {
-    final raw = Uint8List.sublistView(
-      sfnt,
-      table.offset,
-      table.offset + table.length,
-    );
-    final deflated = ZLibEncoder(level: 9).convert(raw);
-    // A table that does not shrink is stored as it is.
-    final data = deflated.length < raw.length ? deflated : raw;
+  for (final table in tables) {
+    final known = _knownTags.indexOf(table.tag);
     directory
-      ..setUint32(20 * i, table.tag)
-      ..setUint32(20 * i + 4, at)
-      ..setUint32(20 * i + 8, data.length)
-      ..setUint32(20 * i + 12, table.length)
-      ..setUint32(20 * i + 16, table.checksum);
-    body
-      ..add(data)
-      ..add(Uint8List(padded(data.length) - data.length));
-    at += padded(data.length);
+      ..addByte(known < 0 ? 63 : known)
+      ..add(known < 0 ? table.tag.codeUnits : const [])
+      ..add(_base128(table.length));
+    body.add(
+      Uint8List.sublistView(sfnt, table.offset, table.offset + table.length),
+    );
     sfntSize += padded(table.length);
   }
 
-  final woff = ByteData(44)
-    ..setUint32(0, 0x774F4646) // 'wOFF'
+  final scratch = Directory.systemTemp.createTempSync('material_icons');
+  final List<int> compressed;
+  try {
+    final plain = File('${scratch.path}/tables')
+      ..writeAsBytesSync(body.takeBytes());
+    final packed = File('${scratch.path}/tables.br');
+    final ProcessResult brotli;
+    try {
+      brotli = Process.runSync('brotli', [
+        '--quality=11',
+        '--lgwin=24',
+        '--output=${packed.path}',
+        plain.path,
+      ]);
+    } on ProcessException {
+      stderr.writeln('No `brotli` command - install it to write the web font.');
+      exit(2);
+    }
+    if (brotli.exitCode != 0) {
+      stderr.writeln('brotli failed: ${brotli.stderr}');
+      exit(2);
+    }
+    compressed = packed.readAsBytesSync();
+  } finally {
+    scratch.deleteSync(recursive: true);
+  }
+
+  final entries = directory.takeBytes();
+  final length = padded(48 + entries.length + compressed.length);
+  final woff2 = ByteData(48)
+    ..setUint32(0, 0x774F4632) // 'wOF2'
     ..setUint32(4, header.getUint32(0)) // the flavour: 'OTTO', CFF outlines
-    ..setUint32(8, at)
+    ..setUint32(8, length)
     ..setUint16(12, count)
-    ..setUint32(16, sfntSize);
-  final out = File('$vendor/MaterialIcons-Regular.woff')
+    ..setUint32(16, sfntSize)
+    ..setUint32(20, compressed.length);
+  final out = File('$vendor/MaterialIcons-Regular.woff2')
     ..writeAsBytesSync([
-      ...woff.buffer.asUint8List(),
-      ...directory.buffer.asUint8List(),
-      ...body.takeBytes(),
+      ...woff2.buffer.asUint8List(),
+      ...entries,
+      ...compressed,
+      ...Uint8List(length - 48 - entries.length - compressed.length),
     ]);
   File(
     '$flutterRoot/$fonts/MaterialIcons_LICENSE.txt',

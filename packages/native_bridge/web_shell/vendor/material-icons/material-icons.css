@@ -1,5 +1,5 @@
 /* Flutter's own icon font - the MaterialIcons-Regular.otf that
-   `uses-material-design: true` bundles, rewrapped as WOFF by
+   `uses-material-design: true` bundles, rewrapped as WOFF2 by
    tool/generate_material_icons.dart. An icon is drawn as the character at
    its codepoint, so `Icons.x` is the same picture here as on a device, the
    outlined, rounded and sharp ones included: they are all in this one file.
@@ -9,7 +9,7 @@
   font-style: normal;
   font-weight: 400;
   font-display: block;
-  src: url("./MaterialIcons-Regular.woff") format("woff");
+  src: url("./MaterialIcons-Regular.woff2") format("woff2");
 }
 .material-icons {
   font-family: "Material Icons";

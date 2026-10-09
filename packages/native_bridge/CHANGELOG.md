@@ -444,8 +444,9 @@ inner control is not hidden. The Flutter renderer was not touched.
   Flutter's own font, which is what the native renderers draw from; the web
   shell's icon font had the same names at other codepoints, so `Icons.home`
   drew a caps-lock key. The shell now ships Flutter's font itself
-  (`MaterialIcons-Regular.otf`, rewrapped as WOFF by
-  `tool/generate_material_icons.dart`) and the web renderer draws every icon -
+  (`MaterialIcons-Regular.otf`, rewrapped as WOFF2 by
+  `tool/generate_material_icons.dart` - 423 KB, where WOFF made 557 KB of
+  it; the tool needs the `brotli` command for that) and the web renderer draws every icon -
   an `Icon`, a button's, a destination's, a text field's - as the character at
   its codepoint, as the other three renderers do. That font has no ligatures
   for the names, so an icon button's name is drawn through the codepoint the

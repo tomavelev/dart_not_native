@@ -271,7 +271,7 @@ dnn.css                        layout primitives (column, row, box, stack, text�
 kits/mdl.css, kits/materialize.css
 vendor/mdl/, vendor/materialize/          the CSS frameworks
 vendor/roboto/                            self-hosted Roboto, no CDN
-vendor/material-icons/                    Flutter's own MaterialIcons font, as WOFF
+vendor/material-icons/                    Flutter's own MaterialIcons font, as WOFF2
 ```
 
 Use your own `index.html` if you prefer - it needs only `<div id="app">` and
@@ -1198,7 +1198,7 @@ changes need a rebuild.
 | An ad or other slot widget lags behind while scrolling | a `FlutterSlot` inside a scroller; pin it - §8.6 |
 | `Unknown widget: X` / a placeholder on the page | the renderer has no case for that node type - with the iOS renderer, see §6 |
 | Web page renders unstyled | `web_shell/` was not copied, or the page has no `<div id="app">` |
-| Icons on web are boxes or wrong pictures | an old `web_shell/` - it must be the one shipping `MaterialIcons-Regular.woff` |
+| Icons on web are boxes or wrong pictures | an old `web_shell/` - it must be the one shipping `MaterialIcons-Regular.woff2` |
 | `Render error: MissingPluginException` on mobile | the plugin did not register - check the dependency is in `pubspec.yaml` and rebuild, since plugin registration is generated at build time |
 | `Handler not found for <eventId>` | protocol layer: the node's `eventId` has no `on(...)` in `init()` |
 
