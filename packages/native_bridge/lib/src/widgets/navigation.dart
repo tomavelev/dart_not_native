@@ -1611,8 +1611,22 @@ class _MaterialAppState extends State<MaterialApp> {
     nav.router.onRouteChange((_) {
       if (mounted) setState(() {});
     });
-    nav.bindSystemBack();
+    // Into the platform's history, where it keeps one: in a browser each
+    // named route is an entry and a fragment in the URL, so Back pops a page
+    // instead of leaving the site.
+    final history =
+        HistoryAdapter.platform ?? platform_binding.platformHistory();
+    // Read before binding, which writes the first route over it.
+    final asked = history.currentPath;
+    nav.bindSystemBack(adapter: history);
     _nav = nav;
+    // A reload, or a link straight to a page: that page, over the first
+    // one, so Back from it is the app's first screen - as Flutter builds it.
+    if (asked != null &&
+        asked != nav.router.currentPath &&
+        nav.router.config.findByPath(asked) != null) {
+      unawaited(nav.router.navigate(asked));
+    }
   }
 
   @override

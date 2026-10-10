@@ -3,6 +3,16 @@ library;
 
 import 'package:web/web.dart' as web;
 
+import '../../routing/history_sync.dart';
+import '../../web_ui/browser_history.dart';
+
+/// The browser's history, with its Back button wired to the app: asking for
+/// it is what starts listening, and asking again does not start twice.
+HistoryAdapter platformHistory() {
+  bindBrowserBack();
+  return BrowserHistoryAdapter();
+}
+
 /// Nothing to initialise: the DOM is there when the script runs.
 void ensureInitialized() {}
 

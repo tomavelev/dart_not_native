@@ -100,6 +100,23 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### The browser's Back button, with nothing to wire
+
+- **`MaterialApp(routes:)` is in the browser's history.** Each named route
+  is an entry and a fragment in the URL (`#/settings`); Back pops it; a
+  reload or a link straight to a route opens it over the first one. It was
+  bound to the back gesture with no history behind it, so on the web Back
+  left the site and the URL never changed.
+- **Back pops a page pushed with `Navigator.push`.** The URL does not change
+  - the page has no name - but while a navigator has a pushed page the app
+  keeps one history entry of its own behind it for Back to land on. Where a
+  router is already mirrored, its entries do that.
+- `HistoryAdapter.platform` puts another history in the way of both - a fake
+  in a test, or one that writes paths instead of fragments - and
+  `HistoryAdapter.currentPath` is what an adapter says the app was opened at.
+- Not done: Forward does not bring back what Back popped, and a dialog over
+  the app's first screen still has nothing behind it.
+
 ### Swipe actions follow the reading direction
 
 - A `SwipeActions` row's trailing actions are at the end of the row and its

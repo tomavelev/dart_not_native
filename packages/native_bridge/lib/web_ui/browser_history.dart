@@ -36,6 +36,7 @@ class BrowserHistoryAdapter extends HistoryAdapter {
   bool get hasStack => true;
 
   /// The path in the current URL, or null when the fragment holds none.
+  @override
   String? get currentPath {
     final fragment = _window.location.hash;
     if (fragment.length < 2) return null;

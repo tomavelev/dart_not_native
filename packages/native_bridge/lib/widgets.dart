@@ -800,6 +800,12 @@ class _Owner {
     }
     SystemBack.removeHandler(_handleBack);
     _backBound = false;
+    if (_guardBound) {
+      SystemBack.removeFilter(_swallowGuardPop);
+      SystemBack.removeListener(_keepGuard);
+      _guardBound = false;
+    }
+    _guard = false;
   }
 
   /// The viewport as the renderer last reported it - see [MediaQuery].
@@ -846,6 +852,20 @@ class _Owner {
   /// to the innermost one that has a page to pop.
   final List<NavigatorState> _navigators = [];
   bool _backBound = false;
+
+  /// Whether a history entry of this app's is standing between its pushed
+  /// pages and whatever the browser was showing before - see [_syncGuard].
+  bool _guard = false;
+  bool _guardBound = false;
+
+  /// Platform pops this owner asked for itself, to take its guard away, which
+  /// are not the user pressing Back.
+  int _guardPops = 0;
+
+  /// True while a page is being popped because the platform said Back: the
+  /// browser has already left the guard's entry, so the rebuild that pop
+  /// causes must not go and take it away again.
+  bool _poppingForPlatform = false;
 
   /// The overlay being built right now, so a dialog can bind its dismiss to the
   /// entry it belongs to.
@@ -1068,6 +1088,63 @@ class _Owner {
       SystemBack.removeHandler(_handleBack);
       _backBound = false;
     }
+    _syncGuard(wanted);
+  }
+
+  /// The platform's history - the browser's, in a browser - or whatever the
+  /// app put in its place.
+  HistoryAdapter get _history =>
+      HistoryAdapter.platform ?? platform_binding.platformHistory();
+
+  /// Keeps one history entry of this app's in the browser while a navigator
+  /// has a page to pop, so that Back has something to come back *to*.
+  ///
+  /// A page pushed with `Navigator.push` has no name to write in the URL,
+  /// and the browser only tells an app about Back when the entry it lands on
+  /// is the app's own: with nothing of this app's behind it, Back left the
+  /// site with the pushed page still open. So the first push writes an entry
+  /// for where the app already is - the guard - and each Back that pops a
+  /// page puts it back for the next. It goes when the last page does.
+  ///
+  /// Not while a router is mirroring itself into the history
+  /// ([HistoryAdapter.mirrors]): its entries are already behind the page, and
+  /// it puts back the one a Back spends on a pushed page.
+  void _syncGuard(bool wanted) {
+    if (wanted == _guard || _poppingForPlatform) return;
+    final history = _history;
+    if (!history.hasStack) return;
+    if (wanted) {
+      if (HistoryAdapter.mirrors > 0) return;
+      if (!_guardBound) {
+        SystemBack.addFilter(_swallowGuardPop);
+        SystemBack.addListener(_keepGuard);
+        _guardBound = true;
+      }
+      history.push(history.currentPath ?? '/');
+      _guard = true;
+    } else {
+      // The app popped its last page itself - an in-app back button - so the
+      // guard is still in the browser. Taken away, and the pop the browser
+      // reports for that is not the user's.
+      _guard = false;
+      _guardPops++;
+      history.back();
+    }
+  }
+
+  bool _swallowGuardPop() {
+    if (_guardPops == 0) return false;
+    _guardPops--;
+    return true;
+  }
+
+  /// Puts the guard back when a Back was spent on something else - a dialog
+  /// over a pushed page. The browser has already left the guard's entry by
+  /// the time it reports Back, and the pages it was guarding are still open.
+  void _keepGuard(SystemBackHandler? consumedBy) {
+    if (!_guard || consumedBy == null || consumedBy == _handleBack) return;
+    final history = _history;
+    history.push(history.currentPath ?? '/');
   }
 
   bool _handleBack() {
@@ -1075,7 +1152,23 @@ class _Owner {
     if (_overlays.isNotEmpty) return false;
     for (final navigator in _navigators.reversed) {
       if (navigator._routes.isEmpty) continue;
-      navigator._popRoute(null);
+      _poppingForPlatform = true;
+      try {
+        navigator._popRoute(null);
+      } finally {
+        _poppingForPlatform = false;
+      }
+      if (_guard) {
+        // The browser spent the guard on this. With pages still to pop it
+        // goes back for the next Back; with none it has done its job, and
+        // is already gone.
+        if (_navigators.any((navigator) => navigator._routes.isNotEmpty)) {
+          final history = _history;
+          history.push(history.currentPath ?? '/');
+        } else {
+          _guard = false;
+        }
+      }
       return true;
     }
     return false;

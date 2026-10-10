@@ -10,6 +10,12 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/widgets.dart' as flutter;
 
+import '../../routing/history_sync.dart';
+
+/// No history to mirror into. A Flutter host has a back gesture and no stack
+/// of its own - and on the web, where there is one, it is Flutter's to keep.
+HistoryAdapter platformHistory() => const NoHistoryAdapter();
+
 /// Starts Flutter's binding, so platform channels work before `runApp`.
 void ensureInitialized() => flutter.WidgetsFlutterBinding.ensureInitialized();
 

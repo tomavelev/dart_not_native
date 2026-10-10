@@ -296,8 +296,7 @@ styles - the renderer keeps the layout, ids, events and reconciliation.
 
 ### 4.4 Browser Back, the URL and deep links
 
-Without wiring, the browser's Back button leaves the page. What wires it
-depends on how the app routes:
+What puts the app in the browser's history depends on how it routes:
 
 **`GoRouter` (`router.dart`)** - hand it the browser's history:
 
@@ -330,10 +329,11 @@ mixes in `NavigationHost`; by hand it is
 `app.nav.bindSystemBack(adapter: BrowserHistoryAdapter())` and
 `bindBrowserBack()`.
 
-**`MaterialApp(routes:)` and `Navigator.push`** - neither is mirrored into
-the browser's history. In-app back buttons work; the browser's Back button
-leaves the page and the URL does not change. A web app that needs Back and
-deep links routes with `GoRouter`. (Open item in `TODO.md`.)
+**`MaterialApp(routes:)` and `Navigator.push`** - nothing to wire. A named
+route is a history entry and a fragment in the URL, Back pops it, and a link
+straight to it opens it over the first route. A page pushed with
+`Navigator.push` leaves the URL alone, and Back pops it. Forward does not
+bring back what Back popped. `ROUTING_GUIDE.md` has the detail.
 
 ### 4.5 Storage on web
 
@@ -1186,7 +1186,7 @@ changes need a rebuild.
 | A release build fails in the icon tree shaker | `--no-tree-shake-icons` is missing - §5.2 |
 | The platform buttons, or a hand-built `UIBuilder.appBar`, are the default blue | the theme went to `MaterialApp` only; pass `appTheme: theme.toAppTheme()` to `runApp` - §8.2 |
 | Back closes the app on Android | `MainActivity` still extends `FlutterActivity`, which owns no `OnBackPressedDispatcher` - §5.1 |
-| The browser's Back button leaves the page | no history attached: `GoRouter.attachHistory` + `bindBrowserBack()`; `MaterialApp(routes:)` and `Navigator.push` are not mirrored - §4.4 |
+| The browser's Back button leaves the page | no history attached: `GoRouter.attachHistory` + `bindBrowserBack()`; `MaterialApp(routes:)` and `Navigator.push` need nothing - §4.4 |
 | `dart compile js` fails on `dart:ui` or a plugin | a Flutter or plugin import is reachable from the web entry; put it behind a conditional import - §8.7 |
 | Both `package:flutter/material.dart` and `widgets.dart` define `X` | a file imports both unprefixed; use `show` or a prefix on the Flutter one - §8.3 |
 | A screen taller than the window is cut off | a `Scaffold`'s body does not scroll; wrap it in a `SingleChildScrollView` |

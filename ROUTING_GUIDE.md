@@ -175,8 +175,9 @@ router back, and on the first screen hand control back to the platform (the
 app closes or backgrounds). Android needs `MainActivity` to extend
 `FlutterFragmentActivity` - INTEGRATION.md §5.1.
 
-**On the web it depends on how the app routes.** Only `GoRouter` is mirrored
-into the browser's history, and only once it is handed the adapter:
+**On the web it depends on how the app routes.** `MaterialApp(routes:)` and
+`Navigator.push` reach the browser's history with nothing to wire (below).
+`GoRouter` is mirrored once it is handed the adapter:
 
 ```dart
 // lib/main_web.dart
@@ -196,11 +197,22 @@ Every `go` and `push` then becomes a history entry written to the URL
 fragment (`#/guests/7`), so a reload or a deep link lands on the same screen
 and the browser's Back button pops in-app navigation before leaving the page.
 
-`MaterialApp(routes:)` and `Navigator.push` are **not** mirrored: in-app back
-buttons work, but the browser's Back button leaves the page and the URL does
-not change. (An earlier version of this guide said otherwise. It is an open
-item - `TODO.md` §6.3.) A web app that needs Back and deep links routes with
-`GoRouter`.
+`MaterialApp(routes:)` is mirrored by itself. Each named route is a history
+entry and a fragment in the URL (`#/settings`), the browser's Back button pops
+it, and a reload or a link straight to `#/settings` opens that page over the
+first one, so Back from it is the app's first screen.
+
+A page pushed with `Navigator.push` has no name to put in the URL, so the URL
+does not change - but Back pops it. While a navigator has a pushed page the
+app keeps one history entry of its own behind it, which is what Back lands
+on; it goes when the last page does. Where a router is already in the
+history, its entries do that job.
+
+Two things this does not do. The browser's **Forward** button does not bring
+back a page that Back popped. And a dialog or sheet over
+the app's *first* screen has nothing behind it, so Back there still leaves
+the page. An app that wants its own history - paths instead of fragments -
+sets `HistoryAdapter.platform` before `runApp`.
 
 ## A complete example
 

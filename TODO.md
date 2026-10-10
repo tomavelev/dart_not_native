@@ -2162,12 +2162,16 @@ event, and then the same work in four renderers.
    still reports its visible range of rows and nothing finer, which is the
    remainder of §6.2 item 5.
 10. **`NavigationRail`'s `leading`, `trailing` and `extended`** are not drawn.
-11. **`MaterialApp(routes:)` and `Navigator.push` are not in the browser's
-    history.** `_MaterialAppState` binds the back gesture with no history
-    adapter and `runWebApp` binds none for a widget host, so on web the
-    browser's Back button leaves the page and the URL never changes. Only
-    `GoRouter.attachHistory` mirrors. `ROUTING_GUIDE.md` said otherwise until
-    2026-10-03.
+11. ~~**`MaterialApp(routes:)` and `Navigator.push` are not in the browser's
+    history.**~~ In it since 2026-10-10, with nothing for the app to wire: a
+    named route is an entry and a fragment in the URL, a link straight to one
+    opens it, and Back pops a pushed page. Tested against a fake history and
+    against Chrome's own. Still open: Forward does not bring back what Back
+    popped; a dialog over the app's *first* screen has no entry behind it, so
+    Back there leaves the page; `runApp(systemBack: false)` does not turn
+    this off; and nobody has pressed Back in a compiled web build - the
+    examples compile, and the tests run under Flutter's web runner, where the
+    browser's history is put in by hand.
 12. ~~**The device lane's "one of every node type" is 47 of 59.**~~ Closed
     2026-10-09: `integration_test/native_renderer_test.dart` draws the twelve
     new types as well - a free-form tree and a screen under each picker -
@@ -2252,8 +2256,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 1947 tests
-  (1032 in the package, 388 for the example apps and goldens, 484 in the browser,
+  contracts, the plugin system and the design system are covered by 1966 tests
+  (1047 in the package, 388 for the example apps and goldens, 488 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native

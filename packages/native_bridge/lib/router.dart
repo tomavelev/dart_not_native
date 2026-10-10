@@ -887,7 +887,10 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
       ..clear()
       ..add(_stack);
     _trailAt = 0;
-    if (_history.hasStack) _history.replace(_stack.last.list.location);
+    if (_history.hasStack) {
+      HistoryAdapter.mirrors++;
+      _history.replace(_stack.last.list.location);
+    }
     SystemBack.addHandler(_backHandler);
     SystemBack.addFilter(_swallowSelfInflictedPop);
     SystemBack.addListener(_restoreEntryConsumedElsewhere);
@@ -896,6 +899,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
   void _unbindBack() {
     if (!_backBound) return;
     _backBound = false;
+    if (_history.hasStack) HistoryAdapter.mirrors--;
     SystemBack.removeHandler(_backHandler);
     SystemBack.removeFilter(_swallowSelfInflictedPop);
     SystemBack.removeListener(_restoreEntryConsumedElsewhere);

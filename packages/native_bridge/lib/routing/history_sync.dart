@@ -17,9 +17,27 @@ import 'route.dart';
 abstract class HistoryAdapter {
   const HistoryAdapter();
 
+  /// The history the widget layer mirrors into, in place of the platform's
+  /// own - the browser's, in a browser; none anywhere else.
+  ///
+  /// `MaterialApp(routes:)` and `Navigator.push` reach the platform's history
+  /// without being handed an adapter, so this is how one is put in their way:
+  /// a fake in a test, or an adapter that writes paths where the browser's
+  /// writes fragments. Set it before `runApp`. Null is the platform's.
+  static HistoryAdapter? platform;
+
+  /// How many routers are mirroring themselves into a history stack right
+  /// now. While one is, it is that router which puts an entry back when a
+  /// Back was spent on something else, and nothing else should.
+  static int mirrors = 0;
+
   /// Whether this platform keeps a history stack that must be mirrored.
   /// False on Android and iOS, where back is only a gesture.
   bool get hasStack;
+
+  /// The path the platform is showing as the app starts - a reload, a link
+  /// straight to a page - or null where there is none to read.
+  String? get currentPath => null;
 
   /// Pushes [path] onto the platform stack.
   void push(String path);
@@ -80,6 +98,7 @@ class RouterHistorySync {
   void bind() {
     if (_bound) return;
     _bound = true;
+    if (adapter.hasStack) HistoryAdapter.mirrors++;
     if (adapter.hasStack) adapter.replace(router.currentPath);
     router.onRouteChange(_onRouteChange);
     SystemBack.addHandler(handleBack);
@@ -91,6 +110,7 @@ class RouterHistorySync {
   void unbind() {
     if (!_bound) return;
     _bound = false;
+    if (adapter.hasStack) HistoryAdapter.mirrors--;
     router.removeListener(_onRouteChange);
     SystemBack.removeHandler(handleBack);
     SystemBack.removeFilter(_swallowSelfInflictedPop);
