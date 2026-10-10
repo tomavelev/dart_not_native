@@ -209,8 +209,9 @@ app keeps one history entry of its own behind it, which is what Back lands
 on; it goes when the last of them does. Where a router is already in the
 history, its entries do that job.
 
-What this does not do: the browser's **Forward** button does not bring back
-what Back closed.
+The browser's **Forward** button brings back a named route that Back left,
+and under `GoRouter` the page it left. It cannot bring back a page pushed
+with `Navigator.push`, or a dialog: those are gone once they are closed.
 
 An app that should stay out of the browser's history - one embedded in
 someone else's page - passes `runApp(app, systemBack: false)`. One that wants

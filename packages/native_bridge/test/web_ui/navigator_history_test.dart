@@ -161,5 +161,12 @@ void main() {
 
     expect(showing(), 'Home');
     expect(web.window.location.hash, '#/');
+
+    // And Forward brings the page back.
+    web.window.history.forward();
+    await settle();
+
+    expect(showing(), 'Details');
+    expect(web.window.location.hash, '#/details');
   });
 }

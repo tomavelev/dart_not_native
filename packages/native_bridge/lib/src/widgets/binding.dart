@@ -400,9 +400,34 @@ extension _RendererEvents on _Owner {
     final KeyEvent event = data['down'] == false
         ? KeyUpEvent(logicalKey: key)
         : KeyDownEvent(logicalKey: key, character: character);
-    for (final listener in List.of(_keyListeners)) {
-      listener(event);
+    for (final listener in _keyHearers()) {
+      listener.handler(event);
     }
+  }
+
+  /// The listeners a key goes to, of those on screen.
+  ///
+  /// A dialog or a sheet has the keyboard while it is open: only listeners
+  /// inside the topmost one hear, and with none of them there, nobody does -
+  /// the page underneath is not steered through a dialog. Among those left,
+  /// one whose [FocusNode] was asked for focus (`requestFocus`, or
+  /// `autofocus`) hears alone, the most recently asked if there are several.
+  /// With no such ask they all hear, which is the one-listener game this
+  /// began as.
+  List<_KeyListener> _keyHearers() {
+    final top = _overlays.isEmpty ? null : _overlays.last;
+    final inScope = [
+      for (final listener in _keyListeners)
+        if (identical(listener.overlay, top)) listener,
+    ];
+    _KeyListener? focused;
+    for (final listener in inScope) {
+      final asked = listener.node._askedAt;
+      if (asked > 0 && asked > (focused?.node._askedAt ?? 0)) {
+        focused = listener;
+      }
+    }
+    return focused == null ? inScope : [focused];
   }
 }
 
@@ -829,9 +854,14 @@ class KeyRepeatEvent extends KeyEvent {
 ///
 /// Flutter routes keys through a focus tree and this listener hears them only
 /// while its [focusNode] has focus. The protocol has no focus tree for
-/// anything but text fields, so every `KeyboardListener` in the visible tree
-/// hears every key: [focusNode] and [autofocus] are accepted and not
-/// consulted. A game has one listener, which is the case this is for.
+/// anything but text fields, so "has focus" is read from what the app asked:
+/// a listener whose [focusNode] was sent `requestFocus()`, or that says
+/// [autofocus], hears alone - the most recently asked, when several were.
+/// With no such ask, every listener on screen hears every key, which is all
+/// a game with one listener needs.
+///
+/// A dialog or sheet takes the keyboard while it is open: listeners on the
+/// page behind it hear nothing, and one inside it does.
 class KeyboardListener extends Widget {
   const KeyboardListener({
     super.key,
@@ -851,10 +881,30 @@ class KeyboardListener extends Widget {
   @override
   WidgetNode _render(_Owner owner) {
     final handler = onKeyEvent;
+    // Once, when the listener first appears: asking again on every build
+    // would take the keys back from whoever was given them since.
+    if (autofocus && !focusNode._autofocused) {
+      focusNode
+        .._autofocused = true
+        .._askedAt = ++FocusNode._asks;
+    }
     // A page that is only being kept alive must not steer the one on screen.
-    if (handler != null && owner._hidden == 0) owner._keyListeners.add(handler);
+    if (handler != null && owner._hidden == 0) {
+      owner._keyListeners.add(
+        _KeyListener(handler, focusNode, owner._buildingOverlay),
+      );
+    }
     return owner.inSlot('child', () => child._render(owner));
   }
+}
+
+/// A [KeyboardListener] the build came across: what to call, the node that
+/// says whether it was asked for focus, and the dialog or sheet it is in.
+class _KeyListener {
+  const _KeyListener(this.handler, this.node, this.overlay);
+  final void Function(KeyEvent event) handler;
+  final FocusNode node;
+  final _OverlayEntry? overlay;
 }
 
 // ---------------------------------------------------------------------------

@@ -278,6 +278,15 @@ class _Scope {
   final State? state;
 }
 
+/// One implicit animation's place in the tree: where it was last sent, and
+/// the wait for it to get there.
+class _AnimationRun {
+  _AnimationRun(this.target);
+  Object? target;
+  VoidCallback? onEnd;
+  Timer? timer;
+}
+
 /// Something a [State] read from above it, and how to tell it has changed.
 class _Dependency {
   _Dependency(this.value, this.read, this.changed);
@@ -828,6 +837,47 @@ class _Owner {
   final Map<String, ScrollController> _scrollPositions = {};
   Set<String> _scrollPositionsUsed = {};
 
+  /// What each implicit animation was last asked to show, by its place in
+  /// the tree, and the timer that says when it has got there.
+  final Map<String, _AnimationRun> _animations = {};
+  Set<String> _animationsUsed = {};
+
+  /// Notes what an implicit animation is showing in this build, and returns
+  /// [node] as it was given.
+  ///
+  /// No renderer says when an animation has finished, but the app knows how
+  /// long it asked for: when [target] is not what this place showed last
+  /// time, [onEnd] is called [duration] after this build. A change before
+  /// then starts the wait again, as the animation itself starts again. The
+  /// first build shows the target outright and ends nothing.
+  WidgetNode _animated(
+    WidgetNode node,
+    Object? target,
+    Duration duration,
+    VoidCallback? onEnd,
+  ) {
+    // A page only being kept alive is not animating anything.
+    if (_hidden > 0) return node;
+    final place = _positionId('animation');
+    _animationsUsed.add(place);
+    final run = _animations[place];
+    if (run == null) {
+      _animations[place] = _AnimationRun(target)..onEnd = onEnd;
+      return node;
+    }
+    // The callback of the build on screen, not of the one that started it.
+    run.onEnd = onEnd;
+    if (run.target != target) {
+      run.target = target;
+      run.timer?.cancel();
+      run.timer = Timer(duration, () {
+        run.timer = null;
+        run.onEnd?.call();
+      });
+    }
+    return node;
+  }
+
   /// A [FocusNode] for each text field that was not given one, by its place
   /// in the tree, so the keyboard can be sent to a field nobody named.
   final Map<String, FocusNode> _fieldFocus = {};
@@ -922,6 +972,10 @@ class _Owner {
       SystemBack.removeHandler(_refusePop);
       _popBlockBound = false;
     }
+    for (final run in _animations.values) {
+      run.timer?.cancel();
+    }
+    _animations.clear();
     if (_guardBound) {
       SystemBack.removeFilter(_beginPlatformBack);
       SystemBack.removeListener(_keepGuard);
@@ -939,7 +993,7 @@ class _Owner {
   final Map<String, Size> _sizeReports = {};
 
   /// The widgets listening for hardware keys in the build on screen.
-  final List<void Function(KeyEvent event)> _keyListeners = [];
+  final List<_KeyListener> _keyListeners = [];
 
   /// What a [Draggable] carries, by the token that crosses to the renderer:
   /// the wire holds a string, and a drop hands back the object it stood for.
@@ -1090,6 +1144,7 @@ class _Owner {
     _scratchUsed = {};
     _scrollPositionsUsed = {};
     _fieldFocusUsed = {};
+    _animationsUsed = {};
     _focusOrder.clear();
     _atPath.clear();
     _slots.clear();
@@ -1159,6 +1214,12 @@ class _Owner {
       (place, _) => !_scrollPositionsUsed.contains(place),
     );
     _fieldFocus.removeWhere((place, _) => !_fieldFocusUsed.contains(place));
+    _animations.removeWhere((place, run) {
+      if (_animationsUsed.contains(place)) return false;
+      // Gone from the tree: it will not arrive anywhere.
+      run.timer?.cancel();
+      return true;
+    });
     _pruneWatched();
     _trackBack();
     return overlays.isEmpty

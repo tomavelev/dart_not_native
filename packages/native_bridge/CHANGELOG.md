@@ -100,6 +100,30 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### Five things that were accepted and not done
+
+- **`onEnd`** is called on `AnimatedOpacity`, `AnimatedContainer`,
+  `AnimatedScale`, `AnimatedRotation`, `AnimatedSlide`, `AnimatedPadding`
+  and `AnimatedAlign`, a `duration` after a build that changed what the
+  widget shows. A change on the way starts the wait again; a widget that
+  leaves the tree ends nothing. It is the app's clock - no renderer reports
+  an animation finishing - so it is when the animation was asked to end.
+- **`WillPopScope`**, over `PopScope`: the back gesture, an app bar's arrow
+  and `maybePop` ask `onWillPop` and leave on a true. On an app's first
+  screen a true cannot close the app.
+- **A `KeyboardListener` is no longer one of a crowd.** The one whose
+  `FocusNode` was asked for focus - `requestFocus()`, or `autofocus` - hears
+  alone, the most recently asked of several; and a dialog or sheet takes the
+  keys from the page behind it. With no ask they all hear, as before.
+- **`Image.frameBuilder` and `loadingBuilder`** are called, once per build
+  and as for an image that is already there, so the frame or the background
+  they put around the image is drawn. They were never called.
+- **The browser's Forward button** brings back a named route, or a
+  `GoRouter` page, that Back left. `SystemBack.addForwardHandler` and
+  `dispatchForward` are how a router hears of it. One bug went with it: a
+  forward the *app* asked for was counted as a pop the browser never
+  reported, so the next Back the user pressed was swallowed.
+
 ### A plain row can be swiped on Android
 
 - A `SwipeActions` row whose child does nothing with a touch - a plain list

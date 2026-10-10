@@ -33,6 +33,24 @@ class SystemBack {
   static final List<SystemBackHandler> _handlers = [];
   static final List<SystemBackHandler> _filters = [];
   static final List<SystemBackListener> _listeners = [];
+  static final List<SystemBackHandler> _forwardHandlers = [];
+
+  /// Registers [handler] for the platform's *forward* - the browser's
+  /// Forward button, which is the only platform that has one. Asked newest
+  /// first, like a back handler, and the first to say true has taken it.
+  static void addForwardHandler(SystemBackHandler handler) =>
+      _forwardHandlers.add(handler);
+
+  static bool removeForwardHandler(SystemBackHandler handler) =>
+      _forwardHandlers.remove(handler);
+
+  /// The platform went forward. True if something in the app went with it.
+  static bool dispatchForward() {
+    for (final handler in _forwardHandlers.reversed.toList(growable: false)) {
+      if (handler()) return true;
+    }
+    return false;
+  }
 
   /// Registers [handler]; it is offered the gesture before any handler
   /// registered earlier.
@@ -68,6 +86,7 @@ class SystemBack {
     _handlers.clear();
     _filters.clear();
     _listeners.clear();
+    _forwardHandlers.clear();
   }
 
   /// Whether anything is listening.

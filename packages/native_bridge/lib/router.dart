@@ -880,6 +880,19 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
   }
 
   late final SystemBackHandler _backHandler = _handleBack;
+  late final SystemBackHandler _forwardHandler = _handleForward;
+
+  /// The browser went forward, onto an entry a Back had stepped off. The
+  /// stack that entry stood for is still in the trail, so the app goes there
+  /// too - through the redirects, like a Back. False with nothing ahead.
+  bool _handleForward() {
+    if (!_history.hasStack || _trailAt >= _trail.length - 1) return false;
+    _trailAt++;
+    _generation++;
+    _commit(_trail[_trailAt], _Mirror.none, notify: false);
+    _settle(notify: true);
+    return true;
+  }
 
   void _bindBack() {
     if (_backBound) return;
@@ -893,6 +906,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
       _history.replace(_stack.last.list.location);
     }
     SystemBack.addHandler(_backHandler);
+    SystemBack.addForwardHandler(_forwardHandler);
     SystemBack.addFilter(_swallowSelfInflictedPop);
     SystemBack.addListener(_restoreEntryConsumedElsewhere);
   }
@@ -902,6 +916,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
     _backBound = false;
     if (_history.hasStack) HistoryAdapter.mirrors--;
     SystemBack.removeHandler(_backHandler);
+    SystemBack.removeForwardHandler(_forwardHandler);
     SystemBack.removeFilter(_swallowSelfInflictedPop);
     SystemBack.removeListener(_restoreEntryConsumedElsewhere);
   }

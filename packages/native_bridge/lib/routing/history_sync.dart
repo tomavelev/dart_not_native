@@ -90,6 +90,9 @@ class RouterHistorySync {
   /// user pressing Back.
   int _selfInflictedPops = 0;
 
+  /// The same for Forward.
+  int _selfInflictedForwards = 0;
+
   bool _bound = false;
 
   bool get isBound => _bound;
@@ -102,6 +105,7 @@ class RouterHistorySync {
     if (adapter.hasStack) adapter.replace(router.currentPath);
     router.onRouteChange(_onRouteChange);
     SystemBack.addHandler(handleBack);
+    SystemBack.addForwardHandler(handleForward);
     SystemBack.addFilter(_swallowSelfInflictedPop);
     SystemBack.addListener(_restoreEntryConsumedElsewhere);
   }
@@ -113,6 +117,7 @@ class RouterHistorySync {
     if (adapter.hasStack) HistoryAdapter.mirrors--;
     router.removeListener(_onRouteChange);
     SystemBack.removeHandler(handleBack);
+    SystemBack.removeForwardHandler(handleForward);
     SystemBack.removeFilter(_swallowSelfInflictedPop);
     SystemBack.removeListener(_restoreEntryConsumedElsewhere);
   }
@@ -159,6 +164,25 @@ class RouterHistorySync {
     }
   }
 
+  /// The platform went forward - the browser's Forward button, after a Back.
+  ///
+  /// The router keeps the entries Back stepped off, so it steps on to the
+  /// next one; the platform is already there. False when the router has
+  /// nothing ahead - an entry it never knew, or one a push has since dropped.
+  bool handleForward() {
+    if (_selfInflictedForwards > 0) {
+      // A forward this binding asked the platform for.
+      _selfInflictedForwards--;
+      return true;
+    }
+    _applyingPlatformChange = true;
+    try {
+      return router.goForward();
+    } finally {
+      _applyingPlatformChange = false;
+    }
+  }
+
   void _onRouteChange(RouterEvent event) {
     if (_applyingPlatformChange || !adapter.hasStack) return;
     switch (event.type) {
@@ -172,7 +196,10 @@ class RouterHistorySync {
         _selfInflictedPops++;
         adapter.back();
       case 'forward':
-        _selfInflictedPops++;
+        // Counted as a forward, which is what the platform reports it as. It
+        // was counted as a pop, and the browser never reported it at all -
+        // so the next Back the user pressed was swallowed as this one's.
+        _selfInflictedForwards++;
         adapter.forward();
     }
   }

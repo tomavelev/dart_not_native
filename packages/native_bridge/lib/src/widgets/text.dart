@@ -699,12 +699,12 @@ typedef ImageErrorWidgetBuilder =
     Widget Function(BuildContext context, Object error, StackTrace? stackTrace);
 
 /// Flutter's signature for a builder called as an image's bytes arrive.
-/// Accepted by [Image] and never called - see there.
+/// Called by [Image] once, as for an image that has arrived - see there.
 typedef ImageLoadingBuilder =
     Widget Function(BuildContext context, Widget child, Object? loadingProgress);
 
 /// Flutter's signature for a builder called as an image's frames arrive.
-/// Accepted by [Image] and never called - see there.
+/// Called by [Image] once, as for an image already loaded - see there.
 typedef ImageFrameBuilder =
     Widget Function(
       BuildContext context,
@@ -747,9 +747,12 @@ class ImageLoadFailure implements Exception {
 /// for both. A builder that inspects the error, or that expects only to run
 /// after a failure, will find neither true here.
 ///
-/// [loadingBuilder] and [frameBuilder] are accepted for Flutter's signature
-/// and never called: the progress and the frames they would be told about
-/// stay in the renderer. What shows while an image loads is the
+/// [frameBuilder] and [loadingBuilder] are called once per build, as Flutter
+/// calls them for an image that is already there: the first with frame 0 and
+/// `wasSynchronouslyLoaded` true, the second with no progress. So what they
+/// put around the image - a frame, a clip, a background - is drawn, and the
+/// part of them that is for the wait is never seen: the progress and the
+/// frames stay in the renderer. What shows while an image loads is the
 /// [errorBuilder]'s widget, or nothing.
 class Image extends Widget {
   const Image({
@@ -833,7 +836,20 @@ class Image extends Widget {
   final ImageFrameBuilder? frameBuilder;
 
   @override
-  WidgetNode _render(_Owner owner) => UIBuilder.image(
+  WidgetNode _render(_Owner owner) {
+    final frame = frameBuilder;
+    final loading = loadingBuilder;
+    if (frame == null && loading == null) return _image(owner);
+    // In Flutter's order: the frame builder wraps the image, and the loading
+    // builder wraps what that made.
+    final context = owner._context();
+    Widget built = _NodeWidget(_image);
+    if (frame != null) built = frame(context, built, 0, true);
+    if (loading != null) built = loading(context, built, null);
+    return owner.inSlot('built', () => built._render(owner));
+  }
+
+  WidgetNode _image(_Owner owner) => UIBuilder.image(
     src: image._src,
     alt: semanticLabel ?? '',
     fallback: switch (errorBuilder) {

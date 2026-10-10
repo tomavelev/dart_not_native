@@ -79,6 +79,17 @@ class FocusNode extends ChangeNotifier {
   bool _focused = false;
   _Owner? _owner;
 
+  /// Counts every ask for focus, on any node, so two asks can be told apart
+  /// by which came later.
+  static int _asks = 0;
+
+  /// When this node was last asked for focus, on that count; 0 for never,
+  /// and after an [unfocus]. A text field does not need it - a renderer
+  /// knows which field has the keyboard - but a [KeyboardListener] has
+  /// nothing else to go on.
+  int _askedAt = 0;
+  bool _autofocused = false;
+
   /// Whether the last ask was for the keyboard rather than against it.
   bool get isRequested => _wanted;
 
@@ -92,6 +103,7 @@ class FocusNode extends ChangeNotifier {
     if (node != null) return node.requestFocus();
     _version++;
     _wanted = true;
+    _askedAt = ++_asks;
     _owner?._requestRebuild();
   }
 
@@ -99,6 +111,7 @@ class FocusNode extends ChangeNotifier {
   void unfocus() {
     _version++;
     _wanted = false;
+    _askedAt = 0;
     _owner?._requestRebuild();
   }
 

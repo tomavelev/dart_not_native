@@ -1010,6 +1010,41 @@ class PopScope<T> extends Widget {
   }
 }
 
+/// Asks before the page it is on is left: Flutter's `WillPopScope`, which
+/// [PopScope] replaced and older screens still use.
+///
+/// With an [onWillPop], the back gesture, an app bar's back arrow and
+/// `Navigator.maybePop` call it and leave the page only if it answers true.
+/// With none, the page is left as usual. `Navigator.pop` goes without
+/// asking, as in Flutter.
+///
+/// One thing it cannot do: on an app's first screen, where Flutter would
+/// close the app on a true, the app stays open. The gesture has to be
+/// answered before the question is, and by then it is too late to hand it
+/// back to the platform. A first screen that should close on Back uses
+/// `PopScope(canPop: true)`, or no scope at all.
+class WillPopScope extends StatelessWidget {
+  const WillPopScope({super.key, required this.child, required this.onWillPop});
+
+  final Widget child;
+
+  /// Whether the page may be left; asked each time something tries.
+  final Future<bool> Function()? onWillPop;
+
+  @override
+  Widget build(BuildContext context) {
+    final ask = onWillPop;
+    return PopScope<Object?>(
+      canPop: ask == null,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || ask == null) return;
+        if (await ask() && context.mounted) Navigator.of(context).pop();
+      },
+      child: child,
+    );
+  }
+}
+
 /// A [PopScope] the build came across: the page it is on, and whether that
 /// page is the one showing.
 class _PopEntry {

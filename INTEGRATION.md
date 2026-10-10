@@ -333,7 +333,8 @@ mixes in `NavigationHost`; by hand it is
 route is a history entry and a fragment in the URL, Back pops it, and a link
 straight to it opens it over the first route. A page pushed with
 `Navigator.push`, a dialog and a sheet leave the URL alone, and Back closes
-them. Forward does not bring back what Back closed; `runApp(app,
+them. Forward brings back a named route Back left, not a pushed page or a
+dialog; `runApp(app,
 systemBack: false)` keeps the app out of the history. `ROUTING_GUIDE.md` has the detail.
 
 ### 4.5 Storage on web
@@ -628,7 +629,7 @@ Then read the analyzer's list. What it reports falls into three kinds:
 - **A widget this layer does not have.** `PageView`,
   `AnimationController` and `Tween`, `CustomScrollView` and slivers,
   `DataTable`, `Stepper`, `ReorderableListView`, `InteractiveViewer`,
-  `WillPopScope` (use `PopScope`) are the common ones. Each needs a decision:
+  are the common ones. Each needs a decision:
   restructure with what there is (§8.5), or keep the real Flutter widget in a
   `FlutterSlot` (§8.6).
 - **A non-widget Flutter API** - `Clipboard`, `HapticFeedback`, `rootBundle`.
@@ -1044,7 +1045,7 @@ border) - there are many, each documented on the field.
 | `Dismissible`: the row slides away under the finger | The swipe **reveals an action** behind the row, in the colour and words of `background`; a full swipe or a tap on it dismisses. `onDismissed` and `confirmDismiss` are called as in Flutter. Vertical directions do nothing |
 | `AnimatedSwitcher`, `AnimatedCrossFade`, `AnimatedSize` animate between children or sizes | The new child or size is simply shown. **No transition** |
 | `AnimatedContainer` animates every property | Size, colour, opacity and transform move; padding, margin, alignment and border land at once. `AnimatedPadding` and `AnimatedAlign` land at once |
-| `onEnd` fires when an implicit animation finishes | Accepted and never called - renderers do not report an animation finishing |
+| `onEnd` fires when an implicit animation finishes | Called a `duration` after a build that changed what the widget shows: the app's clock, since a renderer does not report an animation finishing. Not for `AnimatedSize` |
 | `AnimationController`, `Tween`, `AnimatedBuilder` driven by one | No `AnimationController`. `Animation` exists for signatures and stands still. A `Ticker` is a 16 ms timer; each tick that calls `setState` is a full rebuild and a message to the platform (§10) |
 | Forty-odd `Curves` | Five reach the renderers: `linear`, `ease`, `easeIn`, `easeOut`, `easeInOut`. The rest are aliases of the nearest - `bounceOut` and `elasticOut` are `easeOut` |
 | `TextPainter` measures real glyphs | **Metrics are estimated**: 0.55 × font size per character (double for CJK and emoji), 1.2 × per line. The text is drawn by the platform with real glyphs, aligned within the estimated box. `didExceedMaxLines` is always false |
@@ -1056,8 +1057,8 @@ border) - there are many, each documented on the field.
 | `TabBarView` swipes between pages; tab changes animate | No swipe, no animation; the tab strip is how a tab is chosen. Hidden tabs keep their `State` |
 | `GestureDetector`: `onTapDown`, then `onTapUp`, then `onTap` | All three fire together once the tap has happened. Pan, horizontal and vertical drags are one drag. `behavior` is not carried |
 | `Draggable` shows `feedback`; reports start, end, cancel | The platform lifts a picture of the child; only `onDragCompleted` is called |
-| `KeyboardListener` hears keys while its node has focus | Every listener in the visible tree hears every key |
-| `Image.errorBuilder` runs when loading fails; `loadingBuilder` during | `errorBuilder` is called once, up front, and its result is shown while loading and on failure. `loadingBuilder` and `frameBuilder` are never called. `color` tinting is not applied |
+| `KeyboardListener` hears keys while its node has focus | The listener whose `FocusNode` was asked for focus (`requestFocus`, `autofocus`) hears alone, and a dialog takes the keys from the page behind it. With no ask, every listener in the visible tree hears |
+| `Image.errorBuilder` runs when loading fails; `loadingBuilder` during | `errorBuilder` is called once, up front, and its result is shown while loading and on failure. `frameBuilder` and `loadingBuilder` are called once per build as for an image already there, so what they wrap it in is drawn and the wait is never seen. `color` tinting is not applied |
 | `RichText` with `WidgetSpan`, tappable spans | Text runs only: a `WidgetSpan` is left out, and `TextSpan` has no `recognizer` |
 | `TextOverflow.fade` | Drawn as `clip` |
 | `Scaffold.drawer` slides in from the side | Shown as a sheet, opened by the menu button the app bar gains or by `Scaffold.of(context).openDrawer()`, and closed when the app moves to another page. A scaffold nested in another's body is composed from a column and a stack |

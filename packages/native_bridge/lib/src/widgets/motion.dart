@@ -231,8 +231,9 @@ const Animation<double> kAlwaysDismissedAnimation = _FixedAnimation(
 /// )
 /// ```
 ///
-/// [onEnd] is accepted and never called: the renderer does not report an
-/// animation finishing.
+/// [onEnd] is called [duration] after a build that changed what this shows.
+/// That is the app's own clock: no renderer reports an animation finishing,
+/// so it is when the animation was asked to end, not when it was seen to.
 class AnimatedOpacity extends Widget {
   const AnimatedOpacity({
     super.key,
@@ -250,11 +251,16 @@ class AnimatedOpacity extends Widget {
   final VoidCallback? onEnd;
 
   @override
-  WidgetNode _render(_Owner owner) => UIBuilder.animatedOpacity(
-    opacity: opacity,
-    duration: duration,
-    curve: curve.name,
-    child: _renderChild(owner, child ?? const SizedBox.shrink()),
+  WidgetNode _render(_Owner owner) => owner._animated(
+    UIBuilder.animatedOpacity(
+      opacity: opacity,
+      duration: duration,
+      curve: curve.name,
+      child: _renderChild(owner, child ?? const SizedBox.shrink()),
+    ),
+    opacity,
+    duration,
+    onEnd,
   );
 }
 
@@ -277,8 +283,9 @@ class AnimatedOpacity extends Widget {
 /// )
 /// ```
 ///
-/// [onEnd] is accepted and never called: the renderer does not report an
-/// animation finishing.
+/// [onEnd] is called [duration] after a build that changed what this shows.
+/// That is the app's own clock: no renderer reports an animation finishing,
+/// so it is when the animation was asked to end, not when it was seen to.
 class AnimatedContainer extends Widget {
   AnimatedContainer({
     super.key,
@@ -319,23 +326,27 @@ class AnimatedContainer extends Widget {
   final VoidCallback? onEnd;
 
   @override
-  WidgetNode _render(_Owner owner) => _box(
-    owner,
-    child: child,
-    constraints: constraints,
-    padding: padding,
-    margin: margin,
-    alignment: alignment,
-    color: color,
-    decoration: decoration,
-    foregroundDecoration: foregroundDecoration,
-    transform: transform,
-    clip: clipBehavior != Clip.none,
-    fillWhenEmpty: true,
-    animateMs: duration.inMilliseconds,
-    curve: curve.name,
-    id: _idOf(key),
-  );
+  WidgetNode _render(_Owner owner) {
+    final node = _box(
+      owner,
+      child: child,
+      constraints: constraints,
+      padding: padding,
+      margin: margin,
+      alignment: alignment,
+      color: color,
+      decoration: decoration,
+      foregroundDecoration: foregroundDecoration,
+      transform: transform,
+      clip: clipBehavior != Clip.none,
+      fillWhenEmpty: true,
+      animateMs: duration.inMilliseconds,
+      curve: curve.name,
+      id: _idOf(key),
+    );
+    // Everything the box was told to be, which is everything it can move to.
+    return owner._animated(node, node.props.toString(), duration, onEnd);
+  }
 }
 
 /// Grows or shrinks its child to [scale], over [duration].
@@ -359,12 +370,17 @@ class AnimatedScale extends Widget {
   final VoidCallback? onEnd;
 
   @override
-  WidgetNode _render(_Owner owner) => UIBuilder.box(
-    transform: {'scale': scale},
-    animateMs: duration.inMilliseconds,
-    curve: curve.name,
-    id: _idOf(key),
-    child: child == null ? null : _renderChild(owner, child!),
+  WidgetNode _render(_Owner owner) => owner._animated(
+    UIBuilder.box(
+      transform: {'scale': scale},
+      animateMs: duration.inMilliseconds,
+      curve: curve.name,
+      id: _idOf(key),
+      child: child == null ? null : _renderChild(owner, child!),
+    ),
+    scale,
+    duration,
+    onEnd,
   );
 }
 
@@ -388,12 +404,17 @@ class AnimatedRotation extends Widget {
   final VoidCallback? onEnd;
 
   @override
-  WidgetNode _render(_Owner owner) => UIBuilder.box(
-    transform: {'rotate': turns * 2 * math.pi},
-    animateMs: duration.inMilliseconds,
-    curve: curve.name,
-    id: _idOf(key),
-    child: child == null ? null : _renderChild(owner, child!),
+  WidgetNode _render(_Owner owner) => owner._animated(
+    UIBuilder.box(
+      transform: {'rotate': turns * 2 * math.pi},
+      animateMs: duration.inMilliseconds,
+      curve: curve.name,
+      id: _idOf(key),
+      child: child == null ? null : _renderChild(owner, child!),
+    ),
+    turns,
+    duration,
+    onEnd,
   );
 }
 
@@ -440,18 +461,25 @@ class _AnimatedSlideState extends State<AnimatedSlide> {
   Widget build(BuildContext context) => _NodeWidget((owner) {
     final size = _size;
     final child = widget.child;
-    return UIBuilder.box(
-      transform: size == null
-          ? null
-          : {
-              'dx': widget.offset.dx * size.width,
-              'dy': widget.offset.dy * size.height,
-            },
-      onSize: _report,
-      animateMs: widget.duration.inMilliseconds,
-      curve: widget.curve.name,
-      id: _idOf(widget.key),
-      child: child == null ? null : _renderChild(owner, child),
+    return owner._animated(
+      UIBuilder.box(
+        transform: size == null
+            ? null
+            : {
+                'dx': widget.offset.dx * size.width,
+                'dy': widget.offset.dy * size.height,
+              },
+        onSize: _report,
+        animateMs: widget.duration.inMilliseconds,
+        curve: widget.curve.name,
+        id: _idOf(widget.key),
+        child: child == null ? null : _renderChild(owner, child),
+      ),
+      // The offset asked for, not the pixels it comes to: learning the
+      // child's size is not the slide moving.
+      widget.offset,
+      widget.duration,
+      widget.onEnd,
     );
   });
 }
@@ -475,13 +503,21 @@ class AnimatedPadding extends Widget {
   final VoidCallback? onEnd;
 
   @override
-  WidgetNode _render(_Owner owner) => UIBuilder.box(
-    padding: padding._resolved._ltrb,
-    animateMs: duration.inMilliseconds,
-    curve: curve.name,
-    id: _idOf(key),
-    child: child == null ? null : _renderChild(owner, child!),
-  );
+  WidgetNode _render(_Owner owner) {
+    final insets = padding._resolved._ltrb;
+    return owner._animated(
+      UIBuilder.box(
+        padding: insets,
+        animateMs: duration.inMilliseconds,
+        curve: curve.name,
+        id: _idOf(key),
+        child: child == null ? null : _renderChild(owner, child!),
+      ),
+      insets.toString(),
+      duration,
+      onEnd,
+    );
+  }
 }
 
 /// An [Align] with a duration. The protocol does not animate an alignment, so
@@ -506,14 +542,22 @@ class AnimatedAlign extends Widget {
   final VoidCallback? onEnd;
 
   @override
-  WidgetNode _render(_Owner owner) => UIBuilder.box(
-    alignment: alignment._resolved._xy,
-    expand: owner._expandBounded,
-    animateMs: duration.inMilliseconds,
-    curve: curve.name,
-    id: _idOf(key),
-    child: child == null ? null : _renderChild(owner, child!),
-  );
+  WidgetNode _render(_Owner owner) {
+    final at = alignment._resolved._xy;
+    return owner._animated(
+      UIBuilder.box(
+        alignment: at,
+        expand: owner._expandBounded,
+        animateMs: duration.inMilliseconds,
+        curve: curve.name,
+        id: _idOf(key),
+        child: child == null ? null : _renderChild(owner, child!),
+      ),
+      at.toString(),
+      duration,
+      onEnd,
+    );
+  }
 }
 
 /// Builds the transition between an [AnimatedSwitcher]'s children.

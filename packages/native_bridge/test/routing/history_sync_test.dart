@@ -200,6 +200,47 @@ void main() {
       expect(adapter.calls, ['forward']);
     });
 
+    test('the platform going forward steps the router on, and is not '
+        'written back', () async {
+      await r.navigate('/users');
+      // The browser's Back, then its Forward.
+      SystemBack.dispatch();
+      expect(r.currentPath, '/');
+      adapter.calls.clear();
+
+      expect(SystemBack.dispatchForward(), isTrue);
+
+      expect(r.currentPath, '/users');
+      expect(adapter.calls, isEmpty, reason: 'the platform is already there');
+    });
+
+    test('forward with nothing ahead is not taken', () async {
+      await r.navigate('/users');
+
+      expect(SystemBack.dispatchForward(), isFalse);
+      expect(r.currentPath, '/users');
+    });
+
+    test('a forward the app asked for is not read as the user\'s, and does '
+        'not cost the next Back', () async {
+      await r.navigate('/users');
+      await r.navigate('/users/7');
+      r.goBack();
+      SystemBack.dispatch(); // the platform reporting that pop
+      r.goBack();
+      SystemBack.dispatch();
+      expect(r.currentPath, '/');
+
+      r.goForward();
+      // The platform reporting the forward the adapter was asked for.
+      expect(SystemBack.dispatchForward(), isTrue);
+      expect(r.currentPath, '/users', reason: 'one step, not two');
+
+      // And a Back the user presses is the user's.
+      SystemBack.dispatch();
+      expect(r.currentPath, '/');
+    });
+
     test('back past the first route declines', () {
       expect(sync.handleBack(), isFalse);
     });

@@ -1050,6 +1050,36 @@ void main() {
       expect(history.calls.skip(1), ['replace /']);
     });
 
+    test('the browser\'s Forward returns to the page Back left, and writes '
+        'nothing', () {
+      final m = mount();
+      m.router.go('/guests');
+      m.router.push('/form');
+      SystemBack.dispatch();
+      SystemBack.dispatch();
+      expect(m.text('page'), 'home /');
+      history.calls.clear();
+
+      expect(SystemBack.dispatchForward(), isTrue);
+      expect(m.text('page'), 'guests /guests');
+      expect(SystemBack.dispatchForward(), isTrue);
+      expect(m.text('page'), 'form /form');
+
+      expect(SystemBack.dispatchForward(), isFalse, reason: 'nothing ahead');
+      expect(history.calls, isEmpty);
+    });
+
+    test('Forward has nowhere to go once the app has gone somewhere else',
+        () {
+      final m = mount();
+      m.router.go('/guests');
+      SystemBack.dispatch();
+      m.router.go('/form');
+
+      expect(SystemBack.dispatchForward(), isFalse);
+      expect(m.text('page'), 'form /form');
+    });
+
     test('the browser\'s Back returns to the entry before, and writes '
         'nothing back', () {
       final m = mount();

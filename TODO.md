@@ -2067,8 +2067,11 @@ notice.
    `PageRouteBuilder.transitionsBuilder` is accepted and never called
    (`navigation.dart`); `router.dart` has no `pageBuilder`. A `Hero` is its
    child and nothing more.
-3. **`onEnd` is never called** on any implicit animation - see the protocol
-   gap in §6.3.
+3. ~~**`onEnd` is never called** on any implicit animation.~~ Called since
+   2026-10-10, a `duration` after a build that changed what the widget
+   shows - by the app's own clock, since the protocol gap in §6.3 is still
+   there. Not for `AnimatedSize`, which is not told when its child's size
+   changes.
 4. **Implicit animation is size, colour, opacity and transform only.**
    Padding, margin, alignment and borders land at once, so `AnimatedPadding`
    and `AnimatedAlign` do not animate; `AnimatedSwitcher`, `AnimatedCrossFade`
@@ -2089,8 +2092,9 @@ notice.
    `PopupMenuButton` were on this list until 2026-10-04; the first two are
    now there in name, the third opens a dialog. `PopScope` was on it until
    2026-10-10 and is Flutter's now, for a page of a `Navigator`, of
-   `GoRouter` or of the named routes alike. `WillPopScope` is still not
-   there.)
+   `GoRouter` or of the named routes alike. `WillPopScope` followed the
+   same day, over it; on an app's first screen its "yes" cannot close the
+   app.)
 7. **`TextPainter` cannot measure.** Widths are 0.55 x the font size per
    character (`custom_paint.dart`). Text on a canvas is placed correctly
    because the box travels with it; a painter that *fits* things around
@@ -2111,11 +2115,16 @@ notice.
 12. **Canvas paint is flat colour.** Shaders (so gradients), mask filters,
     blend modes, `clipPath` and `saveLayer` paints are not carried;
     `Path.addRRect` adds the plain rectangle and `arcToPoint` a straight line.
-13. **`Image.loadingBuilder` and `frameBuilder` are never called**, and
+13. **An image's wait is never seen.** `Image.frameBuilder` and
+    `loadingBuilder` are called since 2026-10-10, once per build and as for
+    an image already there (frame 0, no progress), so what they wrap the
+    image in is drawn; the progress and the frames stay in the renderer.
     `errorBuilder` is called once, up front. `color` tinting is not applied
     (`text.dart`).
-14. **Focus is text fields only**, and every `KeyboardListener` on screen
-    hears every key (`binding.dart`). ~~`FocusScope.nextFocus()` does
+14. **Focus is text fields only.** ~~Every `KeyboardListener` on screen
+    hears every key~~ - since 2026-10-10 the one whose `FocusNode` was asked
+    for focus hears alone, and a dialog takes the keys from the page behind
+    it; with no ask they all still hear. ~~`FocusScope.nextFocus()` does
     nothing~~ - it and `previousFocus()` move the keyboard since 2026-10-10,
     between text fields in the order they are built, starting from the field
     whose `onSubmitted` they are called from. Not seen on a device: the ask
@@ -2194,8 +2203,10 @@ event, and then the same work in four renderers.
     opens it, and Back pops a pushed page. Tested against a fake history and
     against Chrome's own. A dialog or a sheet is covered the same way, over
     any screen, and `runApp(systemBack: false)` keeps an app out of the
-    history altogether. Still open: Forward does not bring back what Back
-    closed. Back has been pressed in two compiled builds, driven in
+    history altogether. Forward brings back a named route, and a `GoRouter`
+    page, that Back left (2026-10-10); it cannot bring back a page pushed
+    with `Navigator.push` or a dialog, which are gone once closed. Back has
+    been pressed in two compiled builds, driven in
     headless Chrome (2026-10-10): the routing example - named routes, the
     app's own back button, a link straight to `#/settings`, and leaving from
     the first screen - and a throwaway page that pushed unnamed pages two

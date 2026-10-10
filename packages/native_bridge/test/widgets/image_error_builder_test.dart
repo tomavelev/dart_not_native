@@ -71,22 +71,25 @@ void main() {
     expect(hasText(tree, 'rtl'), isTrue);
   });
 
-  test('loadingBuilder and frameBuilder are accepted and never called', () {
-    var called = false;
+  // They were accepted and never called; `todo_features_test.dart` has what
+  // they are called with now.
+  test('loadingBuilder and frameBuilder are called, as for an image that is '
+      'there', () {
+    final called = <String>[];
     _tree(
       Image.network(
         'https://example.com/a.png',
         loadingBuilder: (context, child, progress) {
-          called = true;
+          called.add('loading');
           return child;
         },
         frameBuilder: (context, child, frame, sync) {
-          called = true;
+          called.add('frame');
           return child;
         },
       ),
     );
-    expect(called, isFalse);
+    expect(called, ['frame', 'loading']);
   });
 
   test('a disabled checkbox built by hand needs no handler', () {

@@ -78,11 +78,12 @@ bool _listening = false;
 /// or a Forward rather than just "something moved".
 int _currentIndex = 0;
 
-/// Sends the browser's **Back** to [SystemBack].
+/// Sends the browser's **Back** to [SystemBack], and its Forward to
+/// [SystemBack.dispatchForward].
 ///
-/// Not Forward: `popstate` fires for both, and dispatching Back when the user
-/// pressed Forward closed the dialog they had just moved past. The entry's
-/// index says which way it went - lower than the one we were on is a Back.
+/// `popstate` fires for both, and dispatching Back when the user pressed
+/// Forward closed the dialog they had just moved past. The entry's index says
+/// which way it went - lower than the one we were on is a Back.
 ///
 /// Call once, after the app is mounted. Safe to call twice.
 void bindBrowserBack({web.Window? window}) {
@@ -98,7 +99,12 @@ void bindBrowserBack({web.Window? window}) {
       // An entry with no index is one this app did not write - a link, a
       // fragment typed by hand. Treated as a Back, which is what it was before
       // any of this and the safer guess for an unlabelled move.
-      if (_currentIndex <= previous) SystemBack.dispatch();
+      if (_currentIndex <= previous) {
+        SystemBack.dispatch();
+      } else {
+        // Forward: a router that kept the page Back left can show it again.
+        SystemBack.dispatchForward();
+      }
     }).toJS,
   );
 }
