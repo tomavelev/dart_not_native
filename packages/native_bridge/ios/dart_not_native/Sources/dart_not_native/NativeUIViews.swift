@@ -1908,6 +1908,62 @@ final class DnnAppBarView: UIView {
   weak var leadingButton: UIButton?
 }
 
+// MARK: - Text field
+
+/// A text field that can keep its text clear of its edges.
+///
+/// UIKit's field has room inside it only while it wears one of UIKit's own
+/// borders. One the app has given a fill or an outline of its own wears none,
+/// and its text would start at the very edge: [insets] is the room, for the
+/// text, the placeholder and the caret alike.
+final class DnnTextField: UITextField {
+  var insets: UIEdgeInsets? {
+    didSet {
+      invalidateIntrinsicContentSize()
+      setNeedsLayout()
+    }
+  }
+
+  /// The line under a field that is underlined; kept so it is made once.
+  private var underline: UIView?
+
+  /// Draws, or takes away, a line along the bottom edge.
+  func setUnderline(color: UIColor?, width: CGFloat) {
+    underline?.removeFromSuperview()
+    underline = nil
+    guard let color else { return }
+    let line = UIView(
+      frame: CGRect(x: 0, y: bounds.height - width, width: bounds.width, height: width))
+    line.backgroundColor = color
+    line.isUserInteractionEnabled = false
+    line.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
+    addSubview(line)
+    underline = line
+  }
+
+  // From the bounds themselves, each of the three: UIKit works the
+  // placeholder's rectangle out from the text's, and insets taken off both
+  // left a placeholder two points tall.
+  override func textRect(forBounds bounds: CGRect) -> CGRect {
+    guard let insets else { return super.textRect(forBounds: bounds) }
+    return bounds.inset(by: insets)
+  }
+
+  override func editingRect(forBounds bounds: CGRect) -> CGRect {
+    guard let insets else { return super.editingRect(forBounds: bounds) }
+    return bounds.inset(by: insets)
+  }
+
+  override func placeholderRect(forBounds bounds: CGRect) -> CGRect {
+    guard let insets else { return super.placeholderRect(forBounds: bounds) }
+    return bounds.inset(by: insets)
+  }
+
+  // No `intrinsicContentSize` of its own: UIKit sizes a field from the text
+  // rectangle above, so the room is already in its height - added again
+  // here, every field with a look came out half as tall again.
+}
+
 // MARK: - Button
 
 /// A button that can be asked to take the width it is offered.

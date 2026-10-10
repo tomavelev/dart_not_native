@@ -1409,6 +1409,11 @@ class NativeUIRenderer {
     if (oldNode["obscureText"] as? Bool ?? false) != (newNode["obscureText"] as? Bool ?? false) {
       return false
     }
+    // A field's look is set as it is built, over what UIKit gave it; one
+    // whose look changes is rebuilt rather than taught the way back.
+    for key in Self.fieldLookKeys where !valueEqual(oldNode[key], newNode[key]) {
+      return false
+    }
     guard let field = findTextField(view) else { return false }
     if let error = findErrorLabel(view) {
       applyFieldError(error, field, newNode["error"] as? String)
@@ -3262,7 +3267,7 @@ class NativeUIRenderer {
       stack.addArrangedSubview(label)
     }
 
-    let field = UITextField()
+    let field = DnnTextField()
     field.placeholder = node["hint"] as? String ?? node["placeholder"] as? String
     field.text = node["initialValue"] as? String ?? ""
     field.isEnabled = !(node["enabled"] as? Bool == false)
@@ -3272,6 +3277,7 @@ class NativeUIRenderer {
     // then does is `focusFieldAfter`.
     if node["textInputAction"] as? String == "next" { field.returnKeyType = .next }
     configureField(field, node)
+    applyFieldLook(field, node)
     // A field's own name. UIKit falls back to the placeholder, which is the
     // right answer only when there is no label drawn above it.
     field.accessibilityLabel =
@@ -3320,6 +3326,65 @@ class NativeUIRenderer {
   /// The parts of a field a patch can change as readily as a build can set
   /// them: its keyboard, its capitalisation, its alignment and the glyphs at
   /// its two ends.
+  /// The props that say how a field looks - see `applyFieldLook`.
+  private static let fieldLookKeys = [
+    "textColor", "fontSize", "fontWeight", "fillColor", "border",
+    "borderColor", "borderWidth", "borderRadius", "contentPadding",
+  ]
+
+  /// The look the app gave a field: the style of what is typed, what the
+  /// field is filled with, its outline and the room inside it. A field that
+  /// states none of it keeps UIKit's rounded box.
+  ///
+  /// UIKit's own borders take no colour and no fill, so a field with a fill
+  /// or an outline of the app's wears none of them and is drawn here: the
+  /// layer is the box, a view along the bottom is the underline.
+  private func applyFieldLook(_ field: DnnTextField, _ node: [String: Any]) {
+    if let ink = statedColor(node["textColor"]) { field.textColor = ink }
+    if node["fontSize"] != nil || node["fontWeight"] != nil {
+      field.font = dnnFont(
+        size: number(node["fontSize"]) ?? 17,
+        weight: number(node["fontWeight"]) ?? 400,
+        family: nil, italic: false)
+    }
+    let fill = statedColor(node["fillColor"])
+    let kind = node["border"] as? String
+    if fill != nil || kind != nil {
+      let line =
+        statedColor(node["borderColor"])
+        ?? color(themeTextSecondary, fallback: themeTextSecondary)
+      let width = number(node["borderWidth"]) ?? 1
+      field.borderStyle = .none
+      field.backgroundColor = fill
+      field.layer.borderWidth = 0
+      field.layer.cornerRadius = 0
+      field.setUnderline(color: nil, width: 0)
+      switch kind {
+      case "none":
+        break
+      case "outline":
+        field.layer.borderWidth = width
+        field.layer.borderColor = line.cgColor
+        field.layer.cornerRadius = number(node["borderRadius"]) ?? 4
+        field.layer.masksToBounds = true
+      default:
+        // A line under the field - and under one that is only filled, which
+        // is how Material draws a filled field.
+        field.setUnderline(color: line, width: width)
+      }
+      // The room UIKit's border gave the text went with the border.
+      field.insets = UIEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+    }
+    if let padding = node["contentPadding"] as? [NSNumber], padding.count == 4 {
+      let rtl = isRTL
+      field.insets = UIEdgeInsets(
+        top: CGFloat(truncating: padding[1]),
+        left: CGFloat(truncating: padding[rtl ? 2 : 0]),
+        bottom: CGFloat(truncating: padding[3]),
+        right: CGFloat(truncating: padding[rtl ? 0 : 2]))
+    }
+  }
+
   private func configureField(_ field: UITextField, _ node: [String: Any]) {
     switch node["keyboardType"] as? String {
     case "number": field.keyboardType = .numberPad

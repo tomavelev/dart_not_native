@@ -2192,9 +2192,15 @@ event, and then the same work in four renderers.
 7. **Drag and drop reports only the drop.** No start, no end over nothing
    (`Draggable`'s doc comment), so a board cannot highlight the piece being
    moved or put it back.
-8. **A text field's look does not travel.** `TextField.style`, and
-   `InputDecoration`'s `border`, `filled`, `fillColor` and `contentPadding`,
-   are accepted and not carried (`inputs.dart`).
+8. ~~**A text field's look does not travel.**~~ It does since 2026-10-10:
+   the colour, size and weight of `TextField.style`, and `InputDecoration`'s
+   fill, its border (none, underline or box, with a colour, width and radius)
+   and `contentPadding`, on all four renderers. Seen on an iOS simulator, an
+   Android emulator and in Chrome under both kits. Short of Flutter: the
+   borders for the focused, error and disabled states are the renderer's;
+   on Android a field with a floating label is Material's filled box, which
+   takes the fill, the padding and "no border" but keeps its own line; and
+   the hint's, label's and helper's styles do not travel.
 9. **No pixel offset back from a `LazyList`.** `Scroll` reports
    `{offset, maxExtent, viewport}` through its `scrollEventId` now; `LazyList`
    still reports its visible range of rows and nothing finer, which is the
@@ -2300,8 +2306,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2087 tests
-  (1159 in the package, 388 for the example apps and goldens, 497 in the browser,
+  contracts, the plugin system and the design system are covered by 2115 tests
+  (1178 in the package, 388 for the example apps and goldens, 506 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native

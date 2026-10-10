@@ -43,9 +43,13 @@ with `onTap` (the field that opens a date picker), `enabled`, `maxLines`, and
 the events `onChanged` / `onSubmitted` / `onEditingComplete`. `onFocus` and
 `onBlur` are the framework's own additions.
 
-The field is the platform's, in the platform's look: `style`, and the parts of
-`InputDecoration` about appearance (`border`, `filled`, `fillColor`,
-`contentPadding`), are accepted and not carried.
+The field is the platform's, and takes the look it is given: the colour, size
+and weight of `style`, and from `InputDecoration` the fill (`filled`,
+`fillColor`), the outline (`border` - none, an underline or a box, with its
+colour, width and radius) and the room inside (`contentPadding`). A field
+that says none of it keeps the platform's own. What does not travel is the
+borders for a field's other states (`focusedBorder`, `errorBorder`), and the
+styles of the label, hint and helper.
 
 ### Reading and setting the value
 

@@ -505,6 +505,74 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     root.classList.toggle('dnn-control--active', active is String);
   }
 
+  /// The look the app gave a field, as inline styles on its input - over
+  /// whatever the kit's stylesheet says, and taken away again for a field
+  /// that no longer says it, which then goes back to the kit's.
+  ///
+  /// `border` is the outline's kind. An underline is a border on one side;
+  /// an outline with no colour of its own keeps the kit's and takes only the
+  /// radius it was given.
+  void _applyFieldLook(web.HTMLElement input, Map<String, dynamic> p) {
+    final style = input.style;
+    void set(String property, String? value) {
+      if (value == null) {
+        style.removeProperty(property);
+      } else {
+        style.setProperty(property, value);
+      }
+    }
+
+    String? colour(Object? value) => value is String ? cssColor(value) : null;
+    String? pixels(Object? value) => value is num ? '${value}px' : null;
+
+    set('color', colour(p['textColor']));
+    set('font-size', pixels(p['fontSize']));
+    final weight = p['fontWeight'];
+    set('font-weight', weight is num ? '${weight.toInt()}' : null);
+    set('background-color', colour(p['fillColor']));
+    // A field drawn as a box - filled, or outlined - needs room inside it,
+    // and not every kit's field has any: Materialize's is a line under bare
+    // text. The app's padding where it gave one, and otherwise a box's usual.
+    final boxed = p['fillColor'] != null || p['border'] == 'outline';
+    final padding = switch (p['contentPadding']) {
+      [final num l, final num t, final num r, final num b] =>
+        '${t}px ${r}px ${b}px ${l}px',
+      _ => boxed ? '10px 12px' : null,
+    };
+    set('padding', padding);
+    // Inside the width the field already has, or the padding makes it wider
+    // than the column it is in.
+    set('box-sizing', padding == null ? null : 'border-box');
+
+    final line =
+        '${_num(p['borderWidth']) ?? 1}px solid '
+        '${colour(p['borderColor']) ?? 'var(--dnn-divider)'}';
+    final stated = p['borderColor'] != null;
+    // The one side first: taking it away after the whole border is set
+    // takes that side of the whole border with it.
+    set('border-bottom', null);
+    switch (p['border']) {
+      case 'none':
+        set('border', 'none');
+        set('border-radius', null);
+        // The ring a kit draws round a focused field is part of its outline.
+        set('box-shadow', 'none');
+      case 'underline':
+        set('border', 'none');
+        set('border-bottom', line);
+        set('border-radius', '0');
+        set('box-shadow', 'none');
+      case 'outline':
+        set('border', stated ? line : null);
+        set('border-radius', pixels(p['borderRadius']));
+        set('box-shadow', null);
+      default:
+        set('border', null);
+        set('border-radius', null);
+        set('box-shadow', null);
+    }
+  }
+
   /// Sets `--dnn-control-<part>` on [element] to [color], or takes it away
   /// when the tree states none - so a control that stops being coloured goes
   /// back to the brand's.
@@ -2447,6 +2515,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       _ => null,
     });
     _attr(input, 'readonly', p['readOnly'] == true ? '' : null);
+    _applyFieldLook(input as web.HTMLElement, p);
     final maxLength = _num(p['maxLength']);
     _attr(
       input,

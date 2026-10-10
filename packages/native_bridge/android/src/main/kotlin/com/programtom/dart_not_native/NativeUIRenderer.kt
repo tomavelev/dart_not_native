@@ -23,6 +23,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
 import android.os.Bundle
@@ -1487,6 +1488,10 @@ class NativeUIRenderer(
             // A Wrap needs the full width of the column to have a line to wrap
             // within, even when the column only left-aligns its children.
             "Wrap" -> if (!horizontal) params.width = match
+            // A text field is as wide as it is allowed to be, as Flutter's
+            // is. In a column that aligns to one side it was as wide as its
+            // hint - a field for a name, four characters across.
+            "TextField" -> if (!horizontal) params.width = match
             // A Padding is as wide as what it pads, and a row or a text field
             // is as wide as it is allowed to be - so around one of those it
             // takes the column's width, as it does in Flutter. Left to hug,
@@ -1842,6 +1847,10 @@ class NativeUIRenderer(
         )) {
             if (oldNode[key] != newNode[key]) return false
         }
+        // A field's look is set as it is built, over what the platform gave
+        // it; one whose look changes is rebuilt rather than taught the way
+        // back to what it was.
+        if (fieldLookKeys.any { oldNode[it] != newNode[it] }) return false
 
         val field = findEditText(view) ?: return false
         field.isEnabled = newNode["enabled"] != false
@@ -3454,6 +3463,9 @@ class NativeUIRenderer(
         // a sibling view here and a validation message no longer changes this
         // field's view tree.
         (node["error"] as? String)?.let { layout.error = it }
+        // Last, over the palette's colours set above: what the app said
+        // about this one field.
+        applyFieldLook(node, layout, field)
         return layout
     }
 
@@ -3490,6 +3502,7 @@ class NativeUIRenderer(
         field.id = fieldViewId
         column.addView(field, matchWidth())
         styleField(node, null, field)
+        applyFieldLook(node, null, field)
 
         val error = node["error"] as? String
         if (error != null) {
@@ -3624,6 +3637,89 @@ class NativeUIRenderer(
      * for each. A plain one ([layout] null) carries the glyphs as the editor's
      * own compound drawables; its helper is a sibling view, built with it.
      */
+    /** The props that say how a field looks - see [applyFieldLook]. */
+    private val fieldLookKeys = listOf(
+        "textColor", "fontSize", "fontWeight", "fillColor", "border",
+        "borderColor", "borderWidth", "borderRadius", "contentPadding",
+    )
+
+    /**
+     * The look the app gave a field: the style of what is typed, what the
+     * field is filled with, its outline and the room inside it. Nothing here
+     * runs for a field that states none of it, which keeps the platform's.
+     *
+     * A field with a floating label is Material's box, which takes a fill, a
+     * stroke colour and no stroke at all; the box's own shape - underlined -
+     * is the one it draws when built in code, so an `outline` there is the
+     * same line in the app's colour. A field with its label above it is a
+     * plain editor, whose background is drawn here outright.
+     */
+    private fun applyFieldLook(node: Map<*, *>, layout: TextInputLayout?, field: EditText) {
+        parseColorOrNull(node["textColor"])?.let { field.setTextColor(it) }
+        (node["fontSize"] as? Number)?.let { field.textSize = it.toFloat() }
+        (node["fontWeight"] as? Number)?.toInt()?.let { weight ->
+            field.typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                Typeface.create(field.typeface, weight, false)
+            } else {
+                Typeface.create(field.typeface, if (weight >= 600) Typeface.BOLD else Typeface.NORMAL)
+            }
+        }
+        val fill = parseColorOrNull(node["fillColor"])
+        val kind = node["border"] as? String
+        val stroke = parseColorOrNull(node["borderColor"])
+        val width = dp((node["borderWidth"] as? Number)?.toInt() ?: 1).coerceAtLeast(1)
+        val radius = (node["borderRadius"] as? Number)?.toInt()
+        val padding = (node["contentPadding"] as? List<*>)
+            ?.mapNotNull { (it as? Number)?.toInt() }
+            ?.takeIf { it.size == 4 }
+
+        if (layout != null) {
+            fill?.let { layout.boxBackgroundColor = it }
+            if (kind == "none") {
+                layout.boxStrokeWidth = 0
+                layout.boxStrokeWidthFocused = 0
+            } else if (stroke != null) {
+                layout.setBoxStrokeColorStateList(ColorStateList.valueOf(stroke))
+                layout.boxStrokeWidth = width
+            }
+            radius?.let {
+                val px = dp(it).toFloat()
+                layout.setBoxCornerRadii(px, px, px, px)
+            }
+            // The floated label needs its room above the text whatever the
+            // app asked for.
+            padding?.let { (l, t, r, b) ->
+                field.setPadding(dp(l), max(dp(t), dp(26)), dp(r), dp(b))
+            }
+            return
+        }
+
+        if (fill != null || kind != null) {
+            val line = stroke ?: color(null, themeTextSecondary)
+            val body = GradientDrawable().apply { setColor(fill ?: Color.TRANSPARENT) }
+            field.background = when (kind) {
+                "none" -> body
+                "outline" -> body.apply {
+                    cornerRadius = dp(radius ?: 4).toFloat()
+                    setStroke(width, line)
+                }
+                // A line under the field, and under a field that is only
+                // filled, which is how Material draws a filled one: a box
+                // stroked all round and pushed off three of its edges.
+                else -> LayerDrawable(arrayOf(
+                    body,
+                    GradientDrawable().apply {
+                        setColor(Color.TRANSPARENT)
+                        setStroke(width, line)
+                    },
+                )).apply { setLayerInset(1, -width, -width, -width, 0) }
+            }
+            // The platform's padding went with the background it came from.
+            field.setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        padding?.let { (l, t, r, b) -> field.setPadding(dp(l), dp(t), dp(r), dp(b)) }
+    }
+
     private fun styleField(node: Map<*, *>, layout: TextInputLayout?, field: EditText) {
         val maxLength = (node["maxLength"] as? Number)?.toInt()?.takeIf { it > 0 }
         field.filters =

@@ -2484,6 +2484,27 @@ class _NodeTextField extends StatefulWidget {
 }
 
 class _NodeTextFieldState extends State<_NodeTextField> {
+  /// The field's outline as the node states it: `border` is its kind, with
+  /// a colour, a width and a radius where the app chose them.
+  static InputBorder _border(Map<String, dynamic> p) {
+    final color = FlutterUIRenderer._color(p['borderColor']);
+    final side = color == null
+        ? const BorderSide()
+        : BorderSide(
+            color: color,
+            width: FlutterUIRenderer._double(p['borderWidth']) ?? 1,
+          );
+    final radius = FlutterUIRenderer._double(p['borderRadius']);
+    return switch (p['border']) {
+      'none' => InputBorder.none,
+      'underline' => UnderlineInputBorder(borderSide: side),
+      _ => OutlineInputBorder(
+        borderSide: side,
+        borderRadius: BorderRadius.circular(radius ?? 4),
+      ),
+    };
+  }
+
   final FocusNode _focusNode = FocusNode();
   String get _eventId => FlutterUIRenderer._string(widget.props['eventId']);
 
@@ -2594,7 +2615,27 @@ class _NodeTextFieldState extends State<_NodeTextField> {
         _ => TextCapitalization.none,
       },
       textAlign: FlutterUIRenderer._textAlign(p['textAlign']) ?? TextAlign.start,
+      // What is typed, in the colour, size and weight the app gave it.
+      style: p['textColor'] == null && p['fontSize'] == null && p['fontWeight'] == null
+          ? null
+          : TextStyle(
+              color: FlutterUIRenderer._color(p['textColor']),
+              fontSize: FlutterUIRenderer._double(p['fontSize']),
+              fontWeight: FlutterUIRenderer._fontWeight(p['fontWeight']),
+            ),
       decoration: InputDecoration(
+        filled: p['fillColor'] != null,
+        fillColor: FlutterUIRenderer._color(p['fillColor']),
+        contentPadding: switch (p['contentPadding']) {
+          [final num l, final num t, final num r, final num b] =>
+            EdgeInsets.fromLTRB(
+              l.toDouble(),
+              t.toDouble(),
+              r.toDouble(),
+              b.toDouble(),
+            ),
+          _ => null,
+        },
         hintText: FlutterUIRenderer._optString(p['hint'] ?? p['placeholder']),
         labelText: floating ? label : null,
         errorText: FlutterUIRenderer._optString(p['error']),
@@ -2610,7 +2651,13 @@ class _NodeTextFieldState extends State<_NodeTextField> {
           ),
           final icon => icon,
         },
-        border: const OutlineInputBorder(),
+        // The outline the app asked for; an outlined box when it asked for
+        // none, which is what every field here was. Given a side, every
+        // state draws it - Flutter would otherwise keep its own colours for
+        // a field at rest and one with the caret in it.
+        border: _border(p),
+        enabledBorder: p['borderColor'] == null ? null : _border(p),
+        focusedBorder: p['borderColor'] == null ? null : _border(p),
       ),
       onChanged: (value) =>
           widget.renderer.handleEvent('${_eventId}_change', {'value': value}),

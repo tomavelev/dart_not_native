@@ -268,8 +268,11 @@ enum FloatingLabelBehavior {
   always,
 }
 
-/// The outline of a field. Accepted so a decoration written for Flutter
-/// compiles; a field is drawn in its platform's own outline.
+/// The outline of a field: none ([InputBorder.none]), a line under it
+/// ([UnderlineInputBorder]) or a box around it ([OutlineInputBorder]). The
+/// kind travels to the renderer, with the side's colour and width where the
+/// app chose them and an outline's radius; a field given no border keeps its
+/// platform's own.
 class InputBorder {
   const InputBorder({this.borderSide = BorderSide.none});
   final BorderSide borderSide;
@@ -300,9 +303,12 @@ class UnderlineInputBorder extends InputBorder {
 /// What surrounds the text of a field: its label, hint, helper and error, and
 /// an icon at either end.
 ///
-/// Those travel. The parameters about the field's *look* - [border],
-/// [filled], [fillColor], [contentPadding] and the rest - are accepted and
-/// not carried: a field is the platform's own, in its theme.
+/// Those travel, and so does the field's look: whether it is [filled] and
+/// with what ([fillColor]), its outline ([border], or [enabledBorder] when
+/// that is given - the kind, and the side's colour and width where the app
+/// chose them), and the room inside it ([contentPadding]). The borders for
+/// the other states - focused, in error, disabled - and the text styles of
+/// the label, the hint and the helper are the renderer's own.
 class InputDecoration {
   const InputDecoration({
     this.icon,
@@ -337,8 +343,9 @@ class InputDecoration {
     this.alignLabelWithHint,
   });
 
-  /// A decoration with nothing in it and no outline, in Flutter. Here the
-  /// outline is the platform's either way.
+  /// A decoration with nothing in it. Flutter's has no outline either; this
+  /// one keeps the platform's unless it is built with `border:
+  /// InputBorder.none` through the ordinary constructor.
   const InputDecoration.collapsed({required this.hintText, this.hintStyle})
     : icon = null,
       label = null,
@@ -529,8 +536,9 @@ class TextField extends Widget {
   final TextInputAction? textInputAction;
   final TextCapitalization textCapitalization;
 
-  /// Accepted and not carried: a field draws its text in the platform's
-  /// style.
+  /// The style of what is typed: its colour, size and weight travel. The
+  /// rest of a [TextStyle] - the family, the spacing, the decoration - does
+  /// not, and the hint stays the renderer's grey.
   final TextStyle? style;
   final TextAlign textAlign;
 
@@ -569,6 +577,45 @@ class TextField extends Widget {
   final VoidCallback? onTap;
   final VoidCallback? onFocus;
   final VoidCallback? onBlur;
+
+  /// How the field looks, where the app said: the style of what is typed,
+  /// what the field is filled with, its outline and the room inside it.
+  /// Nothing for a field that says none of it, which is then the renderer's.
+  Map<String, dynamic> _look(_Owner owner) {
+    final style = this.style;
+    final decoration = this.decoration;
+    // The border a field has at rest; the ones for the other states are the
+    // renderer's own.
+    final border = decoration?.enabledBorder ?? decoration?.border;
+    final side = border?.borderSide;
+    // A side nobody chose is Flutter's placeholder - black, one wide - which
+    // a theme replaces there and a renderer replaces here.
+    final chosen = side != null && side != const BorderSide() && side != BorderSide.none;
+    final padding = decoration?.contentPadding?._resolved._ltrb;
+    return {
+      'textColor': ?style?.color?._hex,
+      'fontSize': ?style?.fontSize,
+      'fontWeight': ?style?.fontWeight?.value,
+      // Filled, in the colour given or a faint wash of what is written on
+      // the surface, which is Material's.
+      if (decoration?.filled == true)
+        'fillColor':
+            (decoration!.fillColor ??
+                    _themeOf(owner).colorScheme.onSurface.withOpacity(0.06))
+                ._hex,
+      if (border != null)
+        'border': switch (border) {
+          OutlineInputBorder() => 'outline',
+          UnderlineInputBorder() => 'underline',
+          _ => 'none',
+        },
+      if (chosen) 'borderColor': side.color._hex,
+      if (chosen) 'borderWidth': side.width,
+      if (border is OutlineInputBorder)
+        'borderRadius': border.borderRadius.topLeft.x,
+      'contentPadding': ?padding,
+    };
+  }
 
   @override
   WidgetNode _render(_Owner owner) {
@@ -645,6 +692,7 @@ class TextField extends Widget {
     final field = WidgetNode(
       type: 'TextField',
       props: {
+        ..._look(owner),
         'hint': decoration?.hintText ?? '',
         'eventId': eventId,
         if (id != null) 'id': id,

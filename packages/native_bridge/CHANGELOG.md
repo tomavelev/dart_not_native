@@ -100,6 +100,25 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A text field takes the look it is given
+
+- `TextField.style` (the colour, size and weight of what is typed) and
+  `InputDecoration`'s `filled` and `fillColor`, `border` - none, an
+  underline or a box, with the side's colour and width and the box's radius
+  - and `contentPadding` are drawn. They were accepted and sent nowhere, so
+  every field was its platform's default box. `TextFormField` the same.
+- The protocol: `textColor`, `fontSize`, `fontWeight`, `fillColor`,
+  `border`, `borderColor`, `borderWidth`, `borderRadius` and
+  `contentPadding` on a `TextField` node, all optional. A field that states
+  none of them is the renderer's, as before.
+- All four renderers. Seen on an iOS simulator, an Android emulator and in
+  Chrome under both style kits. The borders for a field's other states are
+  the renderer's own, and on Android a field with a floating label is
+  Material's filled box, which keeps its own line.
+- **A text field in a column that aligns to one side is as wide as the
+  column on Android**, as it is in Flutter and already was on iOS and the
+  web. It was as wide as its hint.
+
 ### A control takes the colour it is given
 
 - `Checkbox(activeColor:, checkColor:)`, `Radio(activeColor:)`,
