@@ -100,6 +100,19 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A plain row can be swiped on Android
+
+- A `SwipeActions` row whose child does nothing with a touch - a plain list
+  tile - could not be swiped unless the drag began over the action button
+  hidden behind it. The finger went down on a view that takes no touches,
+  so it was offered to the row itself, which declined it, and the drag that
+  followed was never delivered. The row takes the touch now and decides for
+  itself when it has become a horizontal drag. Found on an Android 17
+  emulator, where a partial swipe now leaves the row open and a tap on the
+  button it uncovers fires it; lists of such rows still scroll.
+- A row with leading actions as well as trailing ones is patched in place
+  again: the patch looked for the row's own layer where the second bar is.
+
 ### `FocusScope.nextFocus()`
 
 - `FocusScope.of(context).nextFocus()` and `previousFocus()` send the

@@ -1549,8 +1549,10 @@ class NativeUIRenderer(
                 // the view behind it. Without this case the row's view could
                 // never be patched, so a lazy list rebuilt every row it had
                 // matched by key - the whole point of the keyed reconcile.
-                val foreground = (view as? SwipeActionsLayout)?.getChildAt(1)
-                    as? FrameLayout ?: return null
+                // Asked for by name: it is the second child with one bar
+                // behind it and the third with two.
+                val foreground = (view as? SwipeActionsLayout)?.foreground
+                    ?: return null
                 if (foreground.childCount != kids.size) return null
                 (0 until foreground.childCount).map { foreground.getChildAt(it) }
             }
@@ -5836,7 +5838,8 @@ class NativeUIRenderer(
      * screen coordinates and are turned by [sign] to match.
      */
     private inner class SwipeActionsLayout(node: Map<*, *>) : FrameLayout(activity) {
-        private val foreground: FrameLayout
+        /** The layer the row itself is in, over the one or two bars of actions. */
+        val foreground: FrameLayout
         private val eventIds = mutableListOf<String>()
         private val leadingEventIds = mutableListOf<String>()
         private val actionWidthPx = dp(88)
@@ -5929,13 +5932,34 @@ class NativeUIRenderer(
 
         override fun onTouchEvent(ev: MotionEvent): Boolean {
             when (ev.actionMasked) {
+                // Taken, or nothing after it is delivered. A row whose child
+                // does nothing with a touch - a plain list tile - handed the
+                // finger straight to this view, which declined it: the drag
+                // that followed never arrived, and the row could only be
+                // swiped by starting on the action button hidden under it.
+                // A scroller above still takes a vertical drag for itself.
+                MotionEvent.ACTION_DOWN -> return true
                 MotionEvent.ACTION_MOVE -> {
+                    if (!dragging) {
+                        // Not through a child, so `onInterceptTouchEvent`
+                        // was not asked: the same test, made here.
+                        val dx = ev.x - downX
+                        val dy = ev.y - downY
+                        if (kotlin.math.abs(dx) <= slop ||
+                            kotlin.math.abs(dx) <= kotlin.math.abs(dy)) {
+                            return true
+                        }
+                        dragging = true
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                    }
                     foreground.translationX = (baseTranslation + (ev.x - downX) * sign)
                         .coerceIn(openOffset * 1.8f, openLeadingOffset * 1.8f) * sign
                     return true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     parent?.requestDisallowInterceptTouchEvent(false)
+                    // A touch that never became a drag leaves the row as it is.
+                    if (!dragging) return true
                     val next = foreground.translationX * sign
                     if (next <= openOffset * 1.6f && eventIds.isNotEmpty()) {
                         sendEvent(eventIds.first(), emptyMap())

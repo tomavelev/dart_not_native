@@ -2170,9 +2170,13 @@ event, and then the same work in four renderers.
    swipe showed one bar and fired the other's action. The Kotlin was run on
    an Android 17 emulator (2026-10-10) in a throwaway Arabic screen: a full
    drag right fired the trailing action and a full drag left the leading
-   one, and the reverse left to right. What was not seen is a row held half
-   open - a screenshot shows it shut in either direction, which is the
-   snapping shut the inbox flow's comments already describe.
+   one, and the reverse left to right. A row would not stay half open in
+   either direction, and that turned out to be a bug of its own, fixed the
+   same day: a row whose child takes no touches ignored any drag that did
+   not begin over a hidden action button. With it fixed, a partial swipe
+   leaves the row open and the button behind it can be tapped. No flow
+   holds a row open and taps the action - the inbox flow still only checks
+   that the button exists.
 7. **Drag and drop reports only the drop.** No start, no end over nothing
    (`Draggable`'s doc comment), so a board cannot highlight the piece being
    moved or put it back.
