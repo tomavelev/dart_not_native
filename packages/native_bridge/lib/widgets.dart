@@ -59,6 +59,7 @@ import 'run_app.dart';
 import 'src/icon_data.dart';
 import 'src/flutter_slots.dart';
 import 'src/icons.dart';
+import 'src/time_formats.dart';
 // What only the platform can answer - is there a Flutter binding to start,
 // which language is the device in - behind one name per target, chosen the
 // way `run_app.dart` chooses its entry point.

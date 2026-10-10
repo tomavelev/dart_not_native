@@ -47,3 +47,12 @@ Materialize
     Copyright (c) 2014-2018 Materialize
     MIT License
     packages/native_bridge/web_shell/vendor/materialize/
+
+Flutter localizations
+    Copyright The Flutter Authors
+    The pattern each locale writes a time of day in, and its words for the
+    two halves of the day, as flutter_localizations has them
+    (timeOfDayFormat, anteMeridiemAbbreviation, postMeridiemAbbreviation),
+    tabulated by tool/generate_time_formats.dart.
+    BSD 3-Clause License
+    packages/native_bridge/lib/src/time_formats.dart

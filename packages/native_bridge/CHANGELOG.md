@@ -100,6 +100,23 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A time of day, written as the locale writes it
+
+- `TimeOfDay.format` writes what Flutter does for the app's locale: `3:05 PM`
+  in American English, `15:05` in British, `9:30` in Spanish, `15.05` in
+  Finnish, `下午 3:05` in Chinese, `15 h 05` in Canadian French, with the
+  locale's own words for the halves of the day. It knew two conventions -
+  twelve-hour for English, `HH:mm` for everything else. The table is
+  Flutter's, generated from the SDK's `flutter_localizations` by
+  `tool/generate_time_formats.dart`; a region is listed only where it
+  differs from its language. **This changes what some locales show**:
+  Spanish, Japanese and the other `H:mm` locales lose the leading zero, and
+  Arabic, Chinese, Korean and the other twelve-hour locales gain a
+  twelve-hour clock.
+- `MediaQueryData.alwaysUse24HourFormat`, and
+  `MediaQuery.alwaysUse24HourFormatOf`. False unless a `MediaQuery` the app
+  builds says otherwise: no renderer reports the device's setting.
+
 ### `didChangeDependencies` is called when a dependency changes
 
 - A `State` that reads an inherited widget through its own `context` -

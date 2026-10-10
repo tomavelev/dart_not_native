@@ -2113,8 +2113,13 @@ notice.
 14. **Focus is text fields only.** `FocusScope.nextFocus()` does nothing
     (`inputs.dart`); every `KeyboardListener` on screen hears every key
     (`binding.dart`).
-15. **`TimeOfDay.format` knows two conventions**: twelve-hour for English,
-    twenty-four for everything else.
+15. ~~**`TimeOfDay.format` knows two conventions.**~~ Flutter's own since
+    2026-10-10: the pattern and the words for the halves of the day of every
+    locale `flutter_localizations` has, generated from the SDK by
+    `tool/generate_time_formats.dart`, and
+    `MediaQueryData.alwaysUse24HourFormat`. Still open: the digits are always
+    0-9 where Flutter writes a locale's own, and no renderer reports the
+    device's 24-hour switch, so that flag is only what an app sets.
 16. ~~**`State.didChangeDependencies` runs once**, and `updateShouldNotify` is
     not consulted.~~ Both as Flutter since 2026-10-10: a state is told again
     before a build in which something it read through its own `context` has
@@ -2265,8 +2270,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 1986 tests
-  (1066 in the package, 388 for the example apps and goldens, 489 in the browser,
+  contracts, the plugin system and the design system are covered by 2001 tests
+  (1081 in the package, 388 for the example apps and goldens, 489 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native

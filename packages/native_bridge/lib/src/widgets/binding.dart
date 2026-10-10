@@ -226,6 +226,7 @@ class MediaQueryData {
     this.padding = EdgeInsets.zero,
     this.viewInsets = EdgeInsets.zero,
     this.viewPadding = EdgeInsets.zero,
+    this.alwaysUse24HourFormat = false,
   });
 
   /// The window, in logical pixels.
@@ -245,6 +246,12 @@ class MediaQueryData {
   /// renderers report the two together.
   final EdgeInsets viewPadding;
 
+  /// Whether a time is written on the twenty-four hour clock whatever the
+  /// locale's own habit - the device's "24-hour time" switch, in Flutter.
+  /// No renderer reports that setting, so it is false unless a [MediaQuery]
+  /// the app builds says otherwise.
+  final bool alwaysUse24HourFormat;
+
   /// Flutter's older spelling of [textScaler].
   double get textScaleFactor => textScaler.textScaleFactor;
 
@@ -259,6 +266,7 @@ class MediaQueryData {
     EdgeInsets? padding,
     EdgeInsets? viewInsets,
     EdgeInsets? viewPadding,
+    bool? alwaysUse24HourFormat,
   }) => MediaQueryData(
     size: size ?? this.size,
     devicePixelRatio: devicePixelRatio ?? this.devicePixelRatio,
@@ -267,6 +275,7 @@ class MediaQueryData {
     padding: padding ?? this.padding,
     viewInsets: viewInsets ?? this.viewInsets,
     viewPadding: viewPadding ?? this.viewPadding,
+    alwaysUse24HourFormat: alwaysUse24HourFormat ?? this.alwaysUse24HourFormat,
   );
 
   @override
@@ -278,7 +287,8 @@ class MediaQueryData {
       other.platformBrightness == platformBrightness &&
       other.padding == padding &&
       other.viewInsets == viewInsets &&
-      other.viewPadding == viewPadding;
+      other.viewPadding == viewPadding &&
+      other.alwaysUse24HourFormat == alwaysUse24HourFormat;
 
   @override
   int get hashCode => Object.hash(
@@ -289,6 +299,7 @@ class MediaQueryData {
     padding,
     viewInsets,
     viewPadding,
+    alwaysUse24HourFormat,
   );
 }
 
@@ -339,6 +350,8 @@ class MediaQuery extends InheritedWidget {
       of(context).textScaler;
   static Orientation orientationOf(BuildContext context) =>
       of(context).orientation;
+  static bool alwaysUse24HourFormatOf(BuildContext context) =>
+      of(context).alwaysUse24HourFormat;
 
   @override
   bool updateShouldNotify(MediaQuery oldWidget) => oldWidget.data != data;
@@ -1049,18 +1062,43 @@ class TimeOfDay {
   TimeOfDay replacing({int? hour, int? minute}) =>
       TimeOfDay(hour: hour ?? this.hour, minute: minute ?? this.minute);
 
-  /// The time as the app's locale writes it.
+  /// The time as the app's locale writes it: `3:05 PM` in American English,
+  /// `15:05` in British, `15.05` in Finnish, `下午 3:05` in Chinese.
   ///
-  /// A simplification of Flutter's, which asks a table of every locale's
-  /// conventions: here English gets a twelve-hour clock with AM/PM and every
-  /// other language the twenty-four hour one, which is right for most of them
-  /// and readable for the rest.
+  /// Flutter's answer for the same locale - the pattern and the words for
+  /// the halves of the day are its own, taken from `flutter_localizations`
+  /// (`src/time_formats.dart`). Under
+  /// [MediaQueryData.alwaysUse24HourFormat] a locale that writes a
+  /// twelve-hour clock writes `HH:mm` instead, as in Flutter. The digits are
+  /// always 0 to 9: Flutter writes a locale's own where it has them.
+  ///
+  /// A language Flutter has no localization for gets `HH:mm`.
   String format(BuildContext context) {
-    final minutes = minute.toString().padLeft(2, '0');
-    if (Localizations.localeOf(context).languageCode == 'en') {
-      return '$hourOfPeriod:$minutes ${period == DayPeriod.am ? 'AM' : 'PM'}';
+    final locale = Localizations.localeOf(context);
+    final language = locale.languageCode;
+    final script = locale.scriptCode;
+    final country = locale.countryCode;
+    var (pattern, am, pm) =
+        timeOfDayFormats[[language, ?script, ?country].join('_')] ??
+        timeOfDayFormats[[language, ?country].join('_')] ??
+        timeOfDayFormats[[language, ?script].join('_')] ??
+        timeOfDayFormats[language] ??
+        const ('HH:mm', 'AM', 'PM');
+    if (MediaQuery.alwaysUse24HourFormatOf(context) &&
+        (pattern == 'h:mm a' || pattern == 'a h:mm')) {
+      pattern = 'HH:mm';
     }
-    return '${hour.toString().padLeft(2, '0')}:$minutes';
+    final minutes = minute.toString().padLeft(2, '0');
+    final padded = hour.toString().padLeft(2, '0');
+    final half = period == DayPeriod.am ? am : pm;
+    return switch (pattern) {
+      'h:mm a' => '$hourOfPeriod:$minutes $half',
+      'a h:mm' => '$half $hourOfPeriod:$minutes',
+      'H:mm' => '$hour:$minutes',
+      'HH.mm' => '$padded.$minutes',
+      "HH 'h' mm" => '$padded h $minutes',
+      _ => '$padded:$minutes',
+    };
   }
 
   @override
