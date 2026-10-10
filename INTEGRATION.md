@@ -412,8 +412,9 @@ the same `ActivityAware` binding as before - the migrated apps use
 `google_mobile_ads`, `google_sign_in`, `flutter_local_notifications` and
 `flutter_secure_storage` under it. On iOS there is nothing to do.
 
-For anything else that should swallow Back, register directly (`SystemBack`
-is in `core.dart`; there is no `PopScope`):
+A page that should not be left - a form with unsaved changes - says so with
+`PopScope(canPop: false)`, as in Flutter. For anything else that should
+swallow Back, register directly (`SystemBack` is in `core.dart`):
 
 ```dart
 SystemBack.addHandler(() {
@@ -627,7 +628,7 @@ Then read the analyzer's list. What it reports falls into three kinds:
 - **A widget this layer does not have.** `PageView`,
   `AnimationController` and `Tween`, `CustomScrollView` and slivers,
   `DataTable`, `Stepper`, `ReorderableListView`, `InteractiveViewer`,
-  `PopScope` are the common ones. Each needs a decision:
+  `WillPopScope` (use `PopScope`) are the common ones. Each needs a decision:
   restructure with what there is (§8.5), or keep the real Flutter widget in a
   `FlutterSlot` (§8.6).
 - **A non-widget Flutter API** - `Clipboard`, `HapticFeedback`, `rootBundle`.

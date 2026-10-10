@@ -300,7 +300,7 @@ the top of `CHANGELOG.md`; the ones existing code meets first:
 
 Not in the layer at all: `AnimationController` and `Tween`, `PageView`,
 `CustomScrollView` and slivers, `DataTable`, `Stepper`,
-`ReorderableListView`, `InteractiveViewer`, `PopScope`. There in name only,
+`ReorderableListView`, `InteractiveViewer`, `WillPopScope`. There in name only,
 so that a screen compiles: `Hero` (no flight), `MouseRegion` (no hover),
 `FadeTransition` (the value when built). `PopupMenuButton` opens its menu as
 a dialog.

@@ -2084,9 +2084,13 @@ notice.
    at once (`scrolling.dart`). No scroll notifications.
 6. **Widgets that are not there**, which fail at compile time: `PageView`,
    `CustomScrollView` and every sliver, `DataTable`, `Stepper`,
-   `ReorderableListView`, `InteractiveViewer`, `PopScope`. (`Hero`,
-   `MouseRegion` and `PopupMenuButton` were on this list until 2026-10-04;
-   the first two are now there in name, the third opens a dialog.)
+   `ReorderableListView`, `InteractiveViewer`. (`Hero`, `MouseRegion` and
+   `PopupMenuButton` were on this list until 2026-10-04; the first two are
+   now there in name, the third opens a dialog. `PopScope` was on it until
+   2026-10-10 and is Flutter's now, with one thing short: a page popped by
+   `GoRouter` or the named routes is held by `canPop` but its
+   `onPopInvokedWithResult(true)` is not reported. `WillPopScope` is still
+   not there.)
 7. **`TextPainter` cannot measure.** Widths are 0.55 x the font size per
    character (`custom_paint.dart`). Text on a canvas is placed correctly
    because the box travels with it; a painter that *fits* things around
@@ -2270,8 +2274,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2001 tests
-  (1081 in the package, 388 for the example apps and goldens, 489 in the browser,
+  contracts, the plugin system and the design system are covered by 2015 tests
+  (1095 in the package, 388 for the example apps and goldens, 489 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native

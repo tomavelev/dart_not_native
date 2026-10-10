@@ -877,6 +877,10 @@ class _Owner {
     }
     SystemBack.removeHandler(_handleBack);
     _backBound = false;
+    if (_popBlockBound) {
+      SystemBack.removeHandler(_refusePop);
+      _popBlockBound = false;
+    }
     if (_guardBound) {
       SystemBack.removeFilter(_beginPlatformBack);
       SystemBack.removeListener(_keepGuard);
@@ -929,6 +933,35 @@ class _Owner {
   /// to the innermost one that has a page to pop.
   final List<NavigatorState> _navigators = [];
   bool _backBound = false;
+
+  /// Every [PopScope] the last build came across, with the page it is on.
+  final List<_PopEntry> _popScopes = [];
+  bool _popBlockBound = false;
+
+  /// Whether a [PopScope] on the page showing says the page is not to be
+  /// left: `canPop: false`.
+  bool get _popBlocked =>
+      _popScopes.any((entry) => entry.onStage && !entry.scope.canPop);
+
+  /// Answers a request to leave the page - the back gesture, an app bar's
+  /// arrow, `maybePop` - when a [PopScope] says not to: tells every scope on
+  /// the page that a pop was asked for and did not happen, and says it has
+  /// dealt with it. False when nothing is in the way, or when a dialog is up
+  /// and the request is the dialog's.
+  bool _refusePop() {
+    if (_overlays.isNotEmpty || !_popBlocked) return false;
+    for (final entry in _popScopes.toList()) {
+      if (entry.onStage) entry.scope._invoked(false, null);
+    }
+    return true;
+  }
+
+  /// Tells the scopes on [route] that it has been popped, with [result].
+  void _notifyPopped(Route<dynamic> route, Object? result) {
+    for (final entry in _popScopes.toList()) {
+      if (identical(entry.route, route)) entry.scope._invoked(true, result);
+    }
+  }
 
   /// Whether a history entry of this app's is standing between what it has
   /// open - pushed pages, a dialog - and whatever the browser was showing
@@ -1014,6 +1047,7 @@ class _Owner {
     _keyListeners.clear();
     _dragData.clear();
     _navigators.clear();
+    _popScopes.clear();
     _router = null;
     _outerDirection = null;
     _appDirection = null;
@@ -1166,6 +1200,17 @@ class _Owner {
       SystemBack.removeHandler(_handleBack);
       _backBound = false;
     }
+    // Registered when a page first says it is not to be left, which makes it
+    // newer than a router bound as the app started: it is asked before the
+    // router is, and a dialog opened after it is asked before either.
+    final blocked = _popBlocked;
+    if (blocked && !_popBlockBound) {
+      SystemBack.addHandler(_refusePop);
+      _popBlockBound = true;
+    } else if (!blocked && _popBlockBound) {
+      SystemBack.removeHandler(_refusePop);
+      _popBlockBound = false;
+    }
     _syncGuard(_wantsGuard);
   }
 
@@ -1174,10 +1219,12 @@ class _Owner {
   HistoryAdapter get _history =>
       HistoryAdapter.platform ?? platform_binding.platformHistory();
 
-  /// Whether there is something on screen that Back should close: a pushed
-  /// page, or a dialog or sheet over whatever is showing.
+  /// Whether there is something on screen that Back should go to rather
+  /// than leave the site: a pushed page, a dialog or sheet over whatever is
+  /// showing, or a page that has said it is not to be left.
   bool get _wantsGuard =>
       _overlays.isNotEmpty ||
+      _popBlocked ||
       _navigators.any((navigator) => navigator._routes.isNotEmpty);
 
   /// Keeps one history entry of this app's in the browser while there is

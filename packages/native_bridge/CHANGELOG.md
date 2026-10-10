@@ -100,6 +100,20 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### `PopScope`
+
+- A page can say it is not to be left. With `canPop: false` the back
+  gesture - Android's button, the iOS edge swipe, the browser's Back - an
+  app bar's back arrow and `Navigator.maybePop` leave the page where it is
+  and call `onPopInvokedWithResult(false, null)`, which is where a screen
+  asks whether to discard what was typed; `Navigator.pop` goes regardless,
+  as in Flutter. On an app's first screen a refused gesture keeps the app
+  open. A popped page hears `onPopInvokedWithResult(true, result)`. The
+  widget did not exist, so a screen using it did not compile.
+- Short of Flutter's: a page popped by `GoRouter` or by the named routes is
+  held by `canPop` and not told it was popped, and a dialog is not a page -
+  `barrierDismissible: false` is how one stays up. No `WillPopScope`.
+
 ### A time of day, written as the locale writes it
 
 - `TimeOfDay.format` writes what Flutter does for the app's locale: `3:05 PM`

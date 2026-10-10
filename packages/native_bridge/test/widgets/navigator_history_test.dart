@@ -299,6 +299,27 @@ void main() {
     });
   });
 
+  test('a first screen that refuses to be left keeps Back in the app',
+      () async {
+    var asked = 0;
+    tester = AppTester.widget(
+      PopScope<Object?>(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) => asked++,
+        child: const _Page('Home'),
+      ),
+    );
+    await settle();
+    expect(browser.at, 1, reason: 'an entry for Back to land on');
+
+    await pressBack();
+    await pressBack();
+
+    expect(asked, 2);
+    expect(browser.left, isFalse);
+    expect(browser.at, 1);
+  });
+
   group('MaterialApp(routes:)', () {
     Widget app() => MaterialApp(
       routes: {

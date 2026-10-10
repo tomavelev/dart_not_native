@@ -947,6 +947,72 @@ class _HistoryRoute extends ModalRoute<Object?> {
   Widget _buildPage(BuildContext context) => const SizedBox.shrink();
 }
 
+/// Has a say in whether the page it is on may be left, and hears when it is:
+/// Flutter's `PopScope`.
+///
+/// With [canPop] false, the back gesture - Android's button, the iOS edge
+/// swipe, the browser's Back - an app bar's back arrow and
+/// `Navigator.maybePop` leave the page where it is and call
+/// [onPopInvokedWithResult] with `didPop` false, which is where a screen
+/// asks "discard your changes?" and pops itself if the answer is yes.
+/// `Navigator.pop` is the app saying go, and goes whatever [canPop] says, as
+/// in Flutter. On an app's first screen a refused back gesture keeps the app
+/// open instead of closing it.
+///
+/// When the page is popped, [onPopInvokedWithResult] is called with `didPop`
+/// true and what it was popped with. That is reported for a page a
+/// [Navigator] pops; a page that a `GoRouter` or the named routes pop is
+/// held by [canPop] like any other, but is not reported.
+///
+/// A dialog is not a page here: one that should not close on Back is
+/// `barrierDismissible: false`.
+class PopScope<T> extends Widget {
+  const PopScope({
+    super.key,
+    required this.child,
+    this.canPop = true,
+    this.onPopInvokedWithResult,
+    this.onPopInvoked,
+  });
+
+  final Widget child;
+
+  /// Whether the page may be left by the back gesture and `maybePop`.
+  final bool canPop;
+
+  /// Called after a pop was asked for: `didPop` says whether it happened.
+  final void Function(bool didPop, T? result)? onPopInvokedWithResult;
+
+  /// Flutter's older spelling of [onPopInvokedWithResult], without the result.
+  final void Function(bool didPop)? onPopInvoked;
+
+  void _invoked(bool didPop, Object? result) {
+    onPopInvokedWithResult?.call(didPop, result is T ? result : null);
+    onPopInvoked?.call(didPop);
+  }
+
+  @override
+  WidgetNode _render(_Owner owner) {
+    owner._popScopes.add(
+      _PopEntry(
+        this,
+        owner._inherited<_RouteScope>()?.route,
+        onStage: owner._hidden == 0,
+      ),
+    );
+    return _renderChild(owner, child);
+  }
+}
+
+/// A [PopScope] the build came across: the page it is on, and whether that
+/// page is the one showing.
+class _PopEntry {
+  const _PopEntry(this.scope, this.route, {required this.onStage});
+  final PopScope<dynamic> scope;
+  final Route<dynamic>? route;
+  final bool onStage;
+}
+
 /// The route a page is being built in.
 class _RouteScope extends InheritedWidget {
   const _RouteScope({required this.route, required super.child});
@@ -1286,8 +1352,11 @@ class NavigatorState extends State<Navigator> {
     host.routerNav?.goBack();
   }
 
-  /// Pops if there is something to pop, and says whether it did.
+  /// Pops if there is something to pop and the page allows it, and says
+  /// whether the request was dealt with - which it was, as in Flutter, when
+  /// a [PopScope] refused it.
   Future<bool> maybePop<T extends Object?>([T? result]) async {
+    if (_host._refusePop()) return true;
     if (!canPop() && _host._overlays.isEmpty) return false;
     pop<T>(result);
     return true;
@@ -1304,6 +1373,7 @@ class NavigatorState extends State<Navigator> {
     var popped = false;
     while (_routes.length > (_baseReplaced ? 1 : 0) &&
         !predicate(_routes.last)) {
+      _host._notifyPopped(_routes.last, null);
       _complete(_routes.removeLast(), null);
       popped = true;
     }
@@ -1312,6 +1382,7 @@ class NavigatorState extends State<Navigator> {
 
   bool _popRoute(Object? result) {
     if (_routes.length <= (_baseReplaced ? 1 : 0)) return false;
+    _host._notifyPopped(_routes.last, result);
     _complete(_routes.removeLast(), result);
     _host._requestRebuild();
     return true;
@@ -1795,6 +1866,7 @@ class AppBar extends Widget implements PreferredSizeWidget {
   }
 
   static void _popFrom(_Owner owner) {
+    if (owner._refusePop()) return;
     for (final navigator in owner._navigators.reversed) {
       if (navigator._popRoute(null)) return;
     }
