@@ -9,7 +9,7 @@ import 'package:dart_not_native/core.dart' show SystemBack;
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 
 /// Two screens over one store: a list that adds to it and a home that counts.
 class _FavouritesApp extends StatelessWidget {

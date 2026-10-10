@@ -19,7 +19,7 @@ import 'dart:io';
 import 'package:dart_not_native/core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 import '../support/example_apps.dart';
 
 final bool _update = Platform.environment['UPDATE_GOLDENS'] == '1';

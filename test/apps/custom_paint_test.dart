@@ -6,7 +6,7 @@ import 'package:dart_not_native/core.dart' show WidgetNode;
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 
 const _red = Color(0xFFFF0000);
 const _blue = Color(0xFF0000FF);

@@ -386,9 +386,9 @@ renderer.tree;                                  // the WidgetNode tree
 await renderer.handleEvent(eventId, {});        // what a renderer would send
 ```
 
-`test/support/app_tester.dart` in the repository is a small harness over it
-(find by id, `tap`, `typeInto`, `emit`); it is not part of the package's
-public API, so copy it.
+`AppTester` in `package:dart_not_native/testing.dart` is a small harness over
+it (find by id, `tap`, `toggle`, `typeInto`, `submitInto`, `emit`), and
+`AppTester.widget(const MyScreen())` is the two lines above in one.
 
 ## Storage
 

@@ -4,7 +4,7 @@ library;
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 
 // The app's form, captured so the test can read the field it drives.
 FormModel? capturedForm;

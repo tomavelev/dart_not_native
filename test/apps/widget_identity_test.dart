@@ -11,7 +11,7 @@ import 'package:dart_not_native/core.dart' show SystemBack;
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 
 /// A counter that is *not* keyed, so only its position identifies it. Its
 /// children carry ids so a test can address them.

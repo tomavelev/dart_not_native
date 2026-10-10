@@ -10,7 +10,7 @@ import 'package:dart_not_native/i18n/translations.dart';
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 
 const _en = {
   'common': {'ok': 'OK'},

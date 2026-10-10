@@ -5,7 +5,7 @@ import 'package:dart_not_native/widgets.dart' show hostApp;
 import 'package:dart_not_native_example/examples/apps/storage_example_app.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 import '../support/fake_storage.dart';
 
 void main() {

@@ -991,14 +991,13 @@ memory, fire the events a real renderer would send, and assert on the tree
 that comes back:
 
 ```dart
+import 'package:dart_not_native/testing.dart';
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'support/app_tester.dart';
-
 void main() {
   test('tapping Add counts', () async {
-    final tester = AppTester.mount(hostApp(const Counter()));
+    final tester = AppTester.widget(const Counter());
     expect(tester.text('count'), '0');   // the Text with ValueKey('count')
     await tester.tap('add');             // the button with ValueKey('add')
     expect(tester.text('count'), '1');
@@ -1006,12 +1005,12 @@ void main() {
 }
 ```
 
-`AppTester` is `test/support/app_tester.dart` in this repository - about 120
-lines over `InMemoryRenderer`: find a node by id or type, `tap`, `toggle`,
-`typeInto`, `submitInto`, `emit` a raw event. It is not exported by the
-package; copy it into your `test/support/` and add the finders your screens
-need, which is what all three migrated apps did. `test`/`expect` still come
-from `flutter_test`, and so does the test runner.
+`AppTester` is in `package:dart_not_native/testing.dart` - about 120 lines
+over `InMemoryRenderer`: find a node by id or type, `tap`, `toggle`,
+`typeInto`, `submitInto`, `emit` a raw event. Extend it with the finders your
+screens need. (It used to be a file to copy out of this repository, which is
+what all three migrated apps did; a copy is replaced by changing the import.)
+`test`/`expect` still come from `flutter_test`, and so does the test runner.
 
 What changes in practice:
 
@@ -1229,8 +1228,8 @@ Still worth doing, in rough order of what each would save an adopter:
 2. **pub.dev.** A git or path dependency works; a published version would
    give an app something to pin and make it `flutter pub add dart_not_native`.
    `dart_not_native_bloc` is `publish_to: none` until then.
-3. **Ship the test harness.** `AppTester` is copied into every consuming app;
-   it wants to be a testing library the package exports.
+3. ~~**Ship the test harness.**~~ `AppTester` is
+   `package:dart_not_native/testing.dart` since 2026-10-10.
 4. **A build command for web:** `dart run dart_not_native:build_web
    lib/main_web.dart` that compiles and copies the shell, replacing §4.2.
 5. **Not needing `--no-tree-shake-icons`,** or failing with a message that

@@ -8,7 +8,7 @@ library;
 import 'package:dart_not_native/core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 import '../support/example_apps.dart';
 
 /// The events a node must have a handler for.

@@ -10,7 +10,7 @@ import 'package:dart_not_native/widgets.dart';
 import 'package:dart_not_native_example/examples/apps/signup_form_app.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 
 /// Lets an async validate() and the rebuild it causes settle.
 Future<void> flush() async {

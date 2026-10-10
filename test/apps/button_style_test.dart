@@ -9,7 +9,7 @@ import 'package:dart_not_native/core.dart' show WidgetNode;
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
+import 'package:dart_not_native/testing.dart';
 
 class _Screen extends StatelessWidget {
   const _Screen();

@@ -2223,9 +2223,9 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 4. ~~**CI does not run `packages/dart_not_native_bloc`.**~~ `ci.yml` analyses
    it and runs its suite since 2026-10-09, and `tool/count_tests.sh` counts
    it.
-5. **Ship the test harness.** `test/support/app_tester.dart` is copied into
-   every consuming app because it is not exported. It wants to be a public
-   testing library.
+5. ~~**Ship the test harness.**~~ Done 2026-10-10: `AppTester` is
+   `package:dart_not_native/testing.dart`. The three apps still carry their
+   copies, which can go when they next move to a newer checkout.
 6. **`--no-tree-shake-icons` on every build.** Forgetting it fails a release
    build inside Flutter's icon tree shaker (`_iconData` in
    `lib/platforms/flutter_renderer.dart` says why). Either stop making
@@ -2248,10 +2248,10 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 1917 tests
-  (1008 in the package, 388 for the example apps and goldens, 478 in the browser,
+  contracts, the plugin system and the design system are covered by 1926 tests
+  (1017 in the package, 388 for the example apps and goldens, 478 in the browser,
   43 in the bloc package,
-  counted 2026-10-09), plus 19 integration tests that run on a real Android and
+  counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native
   renderers drawing the whole node vocabulary and every example app. (Three of
   the seventeen - the free-form tree and the two pickers, added 2026-10-09 -

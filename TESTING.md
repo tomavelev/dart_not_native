@@ -39,17 +39,17 @@ screen fits a phone and uses no node type the renderer cannot paint).
 against `package:dart_not_native/widgets.dart` is not made of those. The
 equivalent is `hostApp` - which wraps a widget as the `NativeUIApp` the
 framework mounts - on an `InMemoryRenderer`, which keeps the tree and
-dispatches events. `test/support/app_tester.dart` is the harness over the two:
+dispatches events. `AppTester`, in `package:dart_not_native/testing.dart`, is
+the harness over the two:
 
 ```dart
+import 'package:dart_not_native/testing.dart';
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/app_tester.dart';
-
 void main() {
   test('tapping Add counts', () async {
-    final tester = AppTester.mount(hostApp(const Counter()));
+    final tester = AppTester.widget(const Counter());
     expect(tester.text('count'), '0');   // the Text with ValueKey('count')
     await tester.tap('add');             // the button with ValueKey('add')
     expect(tester.text('count'), '1');
@@ -67,9 +67,10 @@ Whether a renderer draws it correctly is that renderer's own suite, and
 whether a layout overflows is only seen on the Flutter renderer
 (`test/flutter/example_apps_flutter_render_test.dart`) or a device.
 
-`AppTester` is not exported by the package. An app that depends on the
-framework copies the file into its own `test/support/`, which is what the
-three migrated apps do (`TODO.md` §6.5 has shipping it as an open item).
+`AppTester` is part of the package, so an app that depends on the framework
+imports it. Until 2026-10-10 it was a file in this repository's
+`test/support/` that each app copied; an app still carrying a copy can delete
+it and change the import, since the class is the same one.
 
 ## The native renderers
 

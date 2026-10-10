@@ -93,6 +93,16 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A test harness an app can import
+
+- `package:dart_not_native/testing.dart` exports `AppTester`: mount a screen
+  on an in-memory renderer, `tap`, `toggle`, `typeInto` and `submitInto` a
+  node by its key, and read the tree back. It was `test/support/app_tester.dart`
+  in this repository, copied by hand into every app that used the framework;
+  the class is the same, so a copy is replaced by changing the import.
+  `AppTester.widget(const MyScreen())` is new, for
+  `AppTester.mount(hostApp(...))`.
+
 ### The iOS plugin is a Swift package too
 
 - `ios/dart_not_native/Package.swift` declares the plugin for Swift Package
