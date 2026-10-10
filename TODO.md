@@ -2164,12 +2164,13 @@ event, and then the same work in four renderers.
     browser's Back button leaves the page and the URL never changes. Only
     `GoRouter.attachHistory` mirrors. `ROUTING_GUIDE.md` said otherwise until
     2026-10-03.
-12. **The device lane's "one of every node type" is 47 of 59.**
-    `integration_test/native_renderer_test.dart` builds its tree by hand and
-    has none of the twelve new types in it. The example apps it also draws do
-    reach `Box`, `Scroll` and `Icon` through the widget layer; nothing in the
-    lane draws a `Canvas`, a picker, a `Dropdown`, bottom navigation or a
-    `FlutterSlot`. And no Maestro flow touches any of them.
+12. ~~**The device lane's "one of every node type" is 47 of 59.**~~ Closed
+    2026-10-09: `integration_test/native_renderer_test.dart` draws the twelve
+    new types as well - a free-form tree and a screen under each picker -
+    green on an iOS simulator and **not yet run on Android**. What is left of
+    it: no Maestro flow touches any of them (the agent-device flows do, on
+    Android only), and the lane's `FlutterSlot` has no Flutter widget behind
+    it, so it draws the fallback.
 
 ### 6.4 What the Android emulator passes left open (2026-10-03)
 
@@ -2237,7 +2238,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
    a small generator or a companion package.
 8. **Run the device checks on a phone again.** The physical-device evidence
    (2026-09-24) is all from before this work. `tool/device_check.sh android`
-   on the phone, after §6.3 item 12.
+   on the phone - which will also be the first Android run of the three
+   tests §6.3 item 12 added.
 
 ---
 
