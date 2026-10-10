@@ -138,7 +138,8 @@ class FocusManager {
 
 /// What `FocusScope.of(context)` answers with.
 class FocusScopeNode {
-  const FocusScopeNode._();
+  const FocusScopeNode._(this._owner);
+  final _Owner _owner;
 
   bool get hasFocus => FocusManager.instance._primary != null;
 
@@ -148,15 +149,30 @@ class FocusScopeNode {
   /// Moves the keyboard to [node]'s field.
   void requestFocus([FocusNode? node]) => node?.requestFocus();
 
-  /// Accepted and does nothing: moving to the next field is what
-  /// `TextInputAction.next` does, in the renderer.
-  bool nextFocus() => false;
-  bool previousFocus() => false;
+  /// Sends the keyboard to the field after the one that has it, in the
+  /// order the fields are built, and round to the first after the last.
+  ///
+  /// "The one that has it" is the field whose `onSubmitted` or
+  /// `onEditingComplete` this is called from - which is where it is nearly
+  /// always called from - or else the field whose [FocusNode] last reported
+  /// the keyboard. Called from anywhere else with no such node, it has no
+  /// way to know where the keyboard is, and starts from the first field.
+  /// Read-only and disabled fields, and ones whose node says
+  /// `skipTraversal`, are passed over.
+  ///
+  /// False when there is no other field to go to. A field with
+  /// `TextInputAction.next` is also moved on from by the renderer, to the
+  /// same field.
+  bool nextFocus() => _owner._moveFocus(1);
+
+  /// As [nextFocus], the other way.
+  bool previousFocus() => _owner._moveFocus(-1);
 }
 
 /// Flutter's entry to the focus tree, for the two calls apps make on it.
 abstract final class FocusScope {
-  static FocusScopeNode of(BuildContext context) => const FocusScopeNode._();
+  static FocusScopeNode of(BuildContext context) =>
+      FocusScopeNode._(_ownerOf(context));
 }
 
 /// What the keyboard's return key says and does.
@@ -545,9 +561,20 @@ class TextField extends Widget {
   WidgetNode _render(_Owner owner) {
     final bindings = EventBindings.required;
     final controller = this.controller;
-    final focusNode = this.focusNode;
+    // Every field has a node, its own or one kept for its place, so that
+    // `FocusScope.nextFocus` has somewhere to send the keyboard. Only a node
+    // the app gave is told about focus and blur: that is an event per field
+    // per move, and nobody is listening to a node nobody holds.
+    final given = this.focusNode;
+    final focusNode = owner._focusFor(given);
     controller?._owner = owner;
-    focusNode?._owner = owner;
+    if (owner._hidden == 0 &&
+        (enabled ?? this.decoration?.enabled ?? true) &&
+        !readOnly &&
+        focusNode.canRequestFocus &&
+        !focusNode.skipTraversal) {
+      owner._focusOrder.add(focusNode);
+    }
     // The controller tracks the value as it is typed (without bumping its
     // version, so no forced re-render per keystroke); the field's own callback
     // still runs. The node carries the version, so a renderer can tell an
@@ -562,8 +589,14 @@ class TextField extends Widget {
     void Function(String)? handleSubmitted;
     if (onSubmitted != null || onEditingComplete != null) {
       handleSubmitted = (value) {
-        onEditingComplete?.call();
-        onSubmitted?.call(value);
+        // "Next" said from here means the field after this one.
+        owner._submitting = focusNode;
+        try {
+          onEditingComplete?.call();
+          onSubmitted?.call(value);
+        } finally {
+          owner._submitting = null;
+        }
       };
     }
     final id = _idOf(key);
@@ -572,16 +605,16 @@ class TextField extends Widget {
       eventId,
       onChanged: handleChanged,
       onSubmitted: handleSubmitted,
-      onFocus: onFocus == null && focusNode == null
+      onFocus: onFocus == null && given == null
           ? null
           : () {
-              focusNode?._report(true);
+              given?._report(true);
               onFocus?.call();
             },
-      onBlur: onBlur == null && focusNode == null
+      onBlur: onBlur == null && given == null
           ? null
           : () {
-              focusNode?._report(false);
+              given?._report(false);
               onBlur?.call();
             },
     );
@@ -614,9 +647,8 @@ class TextField extends Widget {
         if (autofocus) 'autofocus': true,
         // Version 0 is "never asked": a field holding a node nobody has
         // called yet must not take the keyboard on first render.
-        if (focusNode != null && focusNode._version > 0)
-          'focusVersion': focusNode._version,
-        if (focusNode != null && focusNode._version > 0 && !focusNode._wanted)
+        if (focusNode._version > 0) 'focusVersion': focusNode._version,
+        if (focusNode._version > 0 && !focusNode._wanted)
           'focusRequested': false,
         'maxLines': maxLines ?? math.max(minLines ?? 1, 4),
         'textInputAction': textInputAction == TextInputAction.next

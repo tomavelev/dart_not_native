@@ -259,8 +259,8 @@ should), but has never run there · ❌ missing, or a stub
 | Feature | Android | iOS | Web | Notes |
 |---|---|---|---|---|
 | UI renderer - the vocabulary as of 2026-09-24 (47 node types) | ✅ | ✅ | ✅ | Android is device-verified on a physical Android phone (Android 17, 2026-09-18): all seven example apps run natively with events round-tripping (see 1.1). iOS caught up on 2026-09-21: six example apps driven by hand on a simulator, two layout bugs found and fixed - the screens have been *looked* at now, though on a simulator rather than a phone, and the iPad pass before it covered three of them on real hardware. Web is tested in Chrome with DOM goldens (1.1) | **The iOS ✅ is for the Swift as it was then; the file has since grown by the rows below, which have had one automated simulator run and no eyes (§6.1)**
-| The twelve node types added 2026-10-03: `Box`, `Stack`, `Positioned`, `Scroll`, `Icon`, `Canvas`, `Dropdown`, `DatePicker`, `TimePicker`, `BottomBar`, `BottomNavigation`, `FlutterSlot` | ✅ | 🟡 | ✅ | Android: on a Pixel 8 emulator (API 35, debug builds), by hand, through three migrated apps walked screen by screen - boxes, stacks, scrollers, icons and dropdowns throughout; `Canvas` as a timer-driven game, the other game boards and a donut chart; bottom navigation, and its rail in landscape; a long-press drag onto a drop target; an AdMob test banner through the `FlutterSlot` hole at its 320×50dp. **`DatePicker` and `TimePicker` were not exercised: no app opened one.** Not on a phone. In the device lane since 2026-10-09 (a free-form tree and a screen under each picker), which has not yet run on Android. iOS: **on an iPhone 18 Pro simulator (iOS 27.0, 2026-10-09) the device lane draws all twelve; the controls gallery was walked by hand, which found and fixed five layout bugs (§6.1), and a dropdown and both pickers were opened and returned a choice. A `FlutterSlot` has drawn only its fallback, and no migrated app has run**. Web: browser tests per family (`box_test`, `stack_scroll_test`, `canvas_test`, `choosing_test`, `app_chrome_test`); a `FlutterSlot` draws its fallback there. The Flutter renderer has widget tests for all of them |
-| Right-to-left (`RootProps.textDirection`) | ✅ | 🟡 | ✅ | Web and the Flutter host are tested (`text_direction_test`, `flutter_text_direction_test`). Android: looked at on the emulator under an Arabic locale (2026-10-03) - app bar, bottom-navigation order, list tiles, tabs, calendar and switch all mirrored; swipe actions were not then, and are mirrored in the Kotlin since 2026-10-10, unrun (§6.3 item 6). The Swift compiles; right-to-left has not been looked at on iOS |
+| The twelve node types added 2026-10-03: `Box`, `Stack`, `Positioned`, `Scroll`, `Icon`, `Canvas`, `Dropdown`, `DatePicker`, `TimePicker`, `BottomBar`, `BottomNavigation`, `FlutterSlot` | ✅ | 🟡 | ✅ | Android: on a Pixel 8 emulator (API 35, debug builds), by hand, through three migrated apps walked screen by screen - boxes, stacks, scrollers, icons and dropdowns throughout; `Canvas` as a timer-driven game, the other game boards and a donut chart; bottom navigation, and its rail in landscape; a long-press drag onto a drop target; an AdMob test banner through the `FlutterSlot` hole at its 320×50dp. **`DatePicker` and `TimePicker` were not exercised: no app opened one.** Not on a phone. In the device lane since 2026-10-09 (a free-form tree and a screen under each picker), green on an Android 17 emulator on 2026-10-10 along with the six agent-device flows. iOS: **on an iPhone 18 Pro simulator (iOS 27.0, 2026-10-09) the device lane draws all twelve; the controls gallery was walked by hand, which found and fixed five layout bugs (§6.1), and a dropdown and both pickers were opened and returned a choice. A `FlutterSlot` has drawn only its fallback, and no migrated app has run**. Web: browser tests per family (`box_test`, `stack_scroll_test`, `canvas_test`, `choosing_test`, `app_chrome_test`); a `FlutterSlot` draws its fallback there. The Flutter renderer has widget tests for all of them |
+| Right-to-left (`RootProps.textDirection`) | ✅ | 🟡 | ✅ | Web and the Flutter host are tested (`text_direction_test`, `flutter_text_direction_test`). Android: looked at on the emulator under an Arabic locale (2026-10-03) - app bar, bottom-navigation order, list tiles, tabs, calendar and switch all mirrored; swipe actions were not then, and are mirrored in the Kotlin since 2026-10-10 - seen on an Android 17 emulator that day, where a full drag right fired the trailing action and a full drag left the leading one (§6.3 item 6). The Swift compiles; right-to-left has not been looked at on iOS |
 | Remote image cache, and an image's fallback child | 🟡 | 🟡 | ✅ | Tested on web and Flutter. Android: remote images loaded in list rows on the emulator; what the disk cache does offline or at expiry was not examined, which is why this stays 🟡. Compiled and not examined on iOS |
 | An event answered by the build it was raised against | ✅ | 🟡 | ✅ | Android sends the tree's build number back with each event (found on the emulator, where a list's size report was landing on a row's tap). The Swift to do the same compiles; the stale-callback case has not been tried on iOS. The web and Flutter renderers name the build they are showing too - the Flutter host builds its widgets a frame after a render |
 | System back | ✅ | 🟡 | ✅ | Native via `system_back` channel; web via browser history. Android Back verified closing an overlay on the Android phone (2026-09-18) |
@@ -1983,9 +1983,10 @@ the apps walked.
 
 The device lane's tree has the twelve new node types now:
 `native_renderer_test.dart` draws a free-form tree and a screen under each
-picker (17 tests), green on the simulator. **Those three tests have not run
-on Android** - there was no emulator to run them on - so the first Android
-run of `device_check.sh` is also their first.
+picker (17 tests), green on the simulator - and on Android since 2026-10-10,
+when `tool/device_check.sh android` ran on an emulator (Android 17, API 37):
+the five Maestro flows, `app_test.dart` (2) and `native_renderer_test.dart`
+(17), then the six agent-device flows, all green.
 
 What is still a claim about text on iOS: right-to-left, the image cache, a
 `FlutterSlot` with a real Flutter widget behind it (the lane draws only its
@@ -2044,8 +2045,8 @@ Android gained on the emulator: written for iOS, compiled, not checked.
 
 **Done when:** the Swift builds (done), `device_check.sh ios` is green (done,
 2026-10-09), the device lane's tree includes the new node types (done,
-2026-10-09, and unrun on Android), and the three apps have been looked at on
-a simulator.
+2026-10-09, and run on Android 2026-10-10), and the three apps have been
+looked at on a simulator.
 
 ### 6.2 What the widget layer accepts and does not do
 
@@ -2113,9 +2114,12 @@ notice.
 13. **`Image.loadingBuilder` and `frameBuilder` are never called**, and
     `errorBuilder` is called once, up front. `color` tinting is not applied
     (`text.dart`).
-14. **Focus is text fields only.** `FocusScope.nextFocus()` does nothing
-    (`inputs.dart`); every `KeyboardListener` on screen hears every key
-    (`binding.dart`).
+14. **Focus is text fields only**, and every `KeyboardListener` on screen
+    hears every key (`binding.dart`). ~~`FocusScope.nextFocus()` does
+    nothing~~ - it and `previousFocus()` move the keyboard since 2026-10-10,
+    between text fields in the order they are built, starting from the field
+    whose `onSubmitted` they are called from. Not seen on a device: the ask
+    is the `focusVersion` a `FocusNode.requestFocus()` already sends.
 15. ~~**`TimeOfDay.format` knows two conventions.**~~ Flutter's own since
     2026-10-10: the pattern and the words for the halves of the day of every
     locale `flutter_localizations` has, generated from the SDK by
@@ -2163,8 +2167,12 @@ event, and then the same work in four renderers.
    `Dismissible`'s `endToStart` is the same gesture it is in Flutter. The
    Swift was already written to, and has not been looked at right to left. Web and the Flutter host are tested for it - the
    Flutter host had it half done, the bars turned and the drag not, so a
-   swipe showed one bar and fired the other's action. **The Kotlin compiles
-   and has not been run** right to left.
+   swipe showed one bar and fired the other's action. The Kotlin was run on
+   an Android 17 emulator (2026-10-10) in a throwaway Arabic screen: a full
+   drag right fired the trailing action and a full drag left the leading
+   one, and the reverse left to right. What was not seen is a row held half
+   open - a screenshot shows it shut in either direction, which is the
+   snapping shut the inbox flow's comments already describe.
 7. **Drag and drop reports only the drop.** No start, no end over nothing
    (`Draggable`'s doc comment), so a board cannot highlight the piece being
    moved or put it back.
@@ -2192,7 +2200,7 @@ event, and then the same work in four renderers.
 12. ~~**The device lane's "one of every node type" is 47 of 59.**~~ Closed
     2026-10-09: `integration_test/native_renderer_test.dart` draws the twelve
     new types as well - a free-form tree and a screen under each picker -
-    green on an iOS simulator and **not yet run on Android**. What is left of
+    green on an iOS simulator and, since 2026-10-10, on an Android emulator. What is left of
     it: no Maestro flow touches any of them (the agent-device flows do, on
     Android only), and the lane's `FlutterSlot` has no Flutter widget behind
     it, so it draws the fallback.
@@ -2263,8 +2271,9 @@ All of the above was an emulator. §6.5 item 8 is the phone.
    a small generator or a companion package.
 8. **Run the device checks on a phone again.** The physical-device evidence
    (2026-09-24) is all from before this work. `tool/device_check.sh android`
-   on the phone - which will also be the first Android run of the three
-   tests §6.3 item 12 added.
+   on the phone. An emulator ran it on 2026-10-10 (Android 17), with the
+   agent-device flows, after everything this section describes; a phone has
+   not.
 
 ---
 
@@ -2273,14 +2282,14 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2021 tests
-  (1101 in the package, 388 for the example apps and goldens, 489 in the browser,
+  contracts, the plugin system and the design system are covered by 2036 tests
+  (1116 in the package, 388 for the example apps and goldens, 489 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native
   renderers drawing the whole node vocabulary and every example app. (Three of
   the seventeen - the free-form tree and the two pickers, added 2026-10-09 -
-  have run on an iOS simulator only.)
+  have run on an iOS simulator and an Android emulator, not on hardware.)
 - The web DOM renderer is tested in a real browser, including markup goldens
   for three style kits, reconciliation behaviour, the back button, overlays
   and a scrolling lazy list.

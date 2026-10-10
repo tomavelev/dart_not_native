@@ -828,6 +828,47 @@ class _Owner {
   final Map<String, ScrollController> _scrollPositions = {};
   Set<String> _scrollPositionsUsed = {};
 
+  /// A [FocusNode] for each text field that was not given one, by its place
+  /// in the tree, so the keyboard can be sent to a field nobody named.
+  final Map<String, FocusNode> _fieldFocus = {};
+  Set<String> _fieldFocusUsed = {};
+
+  /// The fields the keyboard can be sent to, in the order they were built:
+  /// the order `nextFocus` walks.
+  final List<FocusNode> _focusOrder = [];
+
+  /// The field whose submit is being handled right now. The platform does
+  /// not say which field has the keyboard unless the app asked to be told,
+  /// but "next" is nearly always said from a field's own `onSubmitted`.
+  FocusNode? _submitting;
+
+  /// The node of the field being built at this place: [given], or one kept
+  /// here for it.
+  FocusNode _focusFor(FocusNode? given) {
+    if (given != null) return given.._owner = this;
+    final place = _positionId('TextField');
+    _fieldFocusUsed.add(place);
+    return _fieldFocus.putIfAbsent(place, FocusNode.new).._owner = this;
+  }
+
+  /// Sends the keyboard [step] fields on from the one that has it - or, with
+  /// none known to have it, to the first. False when there is no other field
+  /// to send it to.
+  bool _moveFocus(int step) {
+    if (_focusOrder.isEmpty) return false;
+    final from = _submitting ?? FocusManager.instance._primary;
+    final at = from == null ? -1 : _focusOrder.indexOf(from);
+    final FocusNode to;
+    if (at < 0) {
+      to = step > 0 ? _focusOrder.first : _focusOrder.last;
+    } else {
+      to = _focusOrder[(at + step) % _focusOrder.length];
+      if (identical(to, from)) return false;
+    }
+    to.requestFocus();
+    return true;
+  }
+
   ScrollController _scrollPosition() {
     final place = _positionId('Scroll');
     _scrollPositionsUsed.add(place);
@@ -1048,6 +1089,8 @@ class _Owner {
     _watchedThisPass = {};
     _scratchUsed = {};
     _scrollPositionsUsed = {};
+    _fieldFocusUsed = {};
+    _focusOrder.clear();
     _atPath.clear();
     _slots.clear();
     _scope = null;
@@ -1115,6 +1158,7 @@ class _Owner {
     _scrollPositions.removeWhere(
       (place, _) => !_scrollPositionsUsed.contains(place),
     );
+    _fieldFocus.removeWhere((place, _) => !_fieldFocusUsed.contains(place));
     _pruneWatched();
     _trackBack();
     return overlays.isEmpty

@@ -100,6 +100,21 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### `FocusScope.nextFocus()`
+
+- `FocusScope.of(context).nextFocus()` and `previousFocus()` send the
+  keyboard to the next text field, in the order the fields are built and
+  round from the last to the first, and say whether they moved. They did
+  nothing and said false, so the `onSubmitted: (_) =>
+  FocusScope.of(context).nextFocus()` a Flutter form is written with left
+  the keyboard where it was. The field it moves on from is the one whose
+  `onSubmitted` it is called from; called from anywhere else, the one whose
+  `FocusNode` has the keyboard. Disabled and read-only fields, and a node
+  that says `skipTraversal`, are passed over.
+- Every text field has a `FocusNode` for this, one kept for its place when
+  the app gave none. A field is still told about focus and blur only when
+  the app gave it a node, so no field sends events it did not send before.
+
 ### `PopScope`
 
 - A page can say it is not to be left. With `canPop: false` the back
@@ -172,8 +187,8 @@ Flutter, it now agrees, and these are the places existing code has to change:
   renderer was already written to. The web and Android renderers placed and
   dragged by left and right; the Flutter host turned the two bars and not
   the drag, so a swipe in a right-to-left screen uncovered one bar and fired
-  the other's action. Tested on web and the Flutter host; the Kotlin
-  compiles and has not been run right to left.
+  the other's action. Tested on web and the Flutter host; on an Android
+  emulator a full drag each way fired the right action in both directions.
 
 ### A test harness an app can import
 
@@ -229,8 +244,8 @@ Flutter, it now agrees, and these are the places existing code has to change:
 - `Dropdown`, `DatePicker` and `TimePicker` were opened by hand there and
   gave back what was chosen. `native_renderer_test.dart` now draws the twelve
   new node types as well (17 tests): a free-form tree, and a screen under
-  each picker. Green on the simulator; **not run on Android**, where no
-  emulator was to hand. A `FlutterSlot` has only drawn its fallback - no
+  each picker. Green on the simulator, and on an Android 17 emulator the
+  next day, with the six agent-device flows. A `FlutterSlot` has only drawn its fallback - no
   Flutter widget has shown through the hole on iOS - and none of the three
   migrated apps has run there.
 
