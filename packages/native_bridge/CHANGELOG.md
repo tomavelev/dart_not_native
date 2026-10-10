@@ -108,11 +108,13 @@ Flutter, it now agrees, and these are the places existing code has to change:
   and call `onPopInvokedWithResult(false, null)`, which is where a screen
   asks whether to discard what was typed; `Navigator.pop` goes regardless,
   as in Flutter. On an app's first screen a refused gesture keeps the app
-  open. A popped page hears `onPopInvokedWithResult(true, result)`. The
+  open. A popped page hears `onPopInvokedWithResult(true, result)`,
+  whether a `Navigator`, `GoRouter` or the named routes popped it. The
   widget did not exist, so a screen using it did not compile.
-- Short of Flutter's: a page popped by `GoRouter` or by the named routes is
-  held by `canPop` and not told it was popped, and a dialog is not a page -
-  `barrierDismissible: false` is how one stays up. No `WillPopScope`.
+- `PopScope.notifyPopped(context, result)` is how a router says its page
+  has gone; one of an app's own calls it from its `pop`.
+- Short of Flutter's: a dialog is not a page - `barrierDismissible: false`
+  is how one stays up - and there is no `WillPopScope`.
 
 ### A time of day, written as the locale writes it
 

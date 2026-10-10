@@ -963,6 +963,20 @@ class _Owner {
     }
   }
 
+  /// Tells the scopes on a router's page that the router has popped it.
+  ///
+  /// A router's page is what a navigator shows underneath the pages pushed
+  /// on it, so its scopes are the ones that are on no pushed route - which
+  /// is right whether or not something is pushed over it at the time.
+  void _notifyRouterPagePopped(Object? result) {
+    for (final entry in _popScopes.toList()) {
+      final pushed = _navigators.any(
+        (navigator) => navigator._routes.contains(entry.route),
+      );
+      if (!pushed) entry.scope._invoked(true, result);
+    }
+  }
+
   /// Whether a history entry of this app's is standing between what it has
   /// open - pushed pages, a dialog - and whatever the browser was showing
   /// before; see [_syncGuard].

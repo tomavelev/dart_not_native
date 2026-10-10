@@ -959,10 +959,9 @@ class _HistoryRoute extends ModalRoute<Object?> {
 /// in Flutter. On an app's first screen a refused back gesture keeps the app
 /// open instead of closing it.
 ///
-/// When the page is popped, [onPopInvokedWithResult] is called with `didPop`
-/// true and what it was popped with. That is reported for a page a
-/// [Navigator] pops; a page that a `GoRouter` or the named routes pop is
-/// held by [canPop] like any other, but is not reported.
+/// When the page is popped - by a [Navigator], a `GoRouter` or the named
+/// routes - [onPopInvokedWithResult] is called with `didPop` true and what
+/// it was popped with.
 ///
 /// A dialog is not a page here: one that should not close on Back is
 /// `barrierDismissible: false`.
@@ -990,6 +989,13 @@ class PopScope<T> extends Widget {
     onPopInvokedWithResult?.call(didPop, result is T ? result : null);
     onPopInvoked?.call(didPop);
   }
+
+  /// For a router: says that the page it was showing has been popped with
+  /// [result], so the scopes on that page hear it. Called before the page is
+  /// rebuilt away. `GoRouter` and the named routes call it; a router of an
+  /// app's own does the same from its `pop`.
+  static void notifyPopped(BuildContext context, [Object? result]) =>
+      _ownerOf(context)._notifyRouterPagePopped(result);
 
   @override
   WidgetNode _render(_Owner owner) {
@@ -1683,7 +1689,9 @@ class _MaterialAppState extends State<MaterialApp> {
       );
     });
     final nav = builder.setInitialPath(widget.initialRoute ?? '/').build();
-    nav.router.onRouteChange((_) {
+    nav.router.onRouteChange((event) {
+      // Before the rebuild, which is when the page that was popped goes.
+      if (event.type == 'pop') _owner?._notifyRouterPagePopped(null);
       if (mounted) setState(() {});
     });
     // Into the platform's history, where it keeps one: in a browser each

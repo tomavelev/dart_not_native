@@ -763,6 +763,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
   /// [canPop] first where that can happen.
   void pop<T extends Object?>([T? result]) {
     if (!canPop()) throw GoError('There is nothing to pop');
+    _tellPagePopped(result);
     _generation++;
     final top = _stack.last;
     final under = _stack.take(_stack.length - 1);
@@ -924,6 +925,15 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
 
   /// The platform asked to go back. Returns whether this router had somewhere
   /// to go; false leaves the platform to do what it would - close the app.
+  /// Lets the `PopScope`s on the page showing hear that it is being popped,
+  /// while they are still there to hear it.
+  void _tellPagePopped(Object? result) {
+    final context = _context;
+    if (context != null && context.mounted) {
+      PopScope.notifyPopped(context, result);
+    }
+  }
+
   bool _handleBack() {
     if (!_history.hasStack) {
       // No history to consult: back is "pop", while there is something to.
@@ -932,6 +942,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
       return true;
     }
     if (_trailAt == 0) return false;
+    _tellPagePopped(null);
     // The browser is already on the previous entry. Put the app there too,
     // without writing it back, then let the redirects see it: the page being
     // returned to may be one the user is no longer allowed.

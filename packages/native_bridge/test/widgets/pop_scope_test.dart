@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 
 import 'package:dart_not_native/core.dart';
+import 'package:dart_not_native/router.dart';
 import 'package:dart_not_native/testing.dart';
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -245,6 +246,128 @@ void main() {
       await settle();
 
       expect(await back(), isFalse);
+    });
+  });
+
+  /// A page of a router's, with a scope that says what it heard.
+  Widget routed(String name, {bool canPop = true}) => PopScope<String>(
+    canPop: canPop,
+    onPopInvokedWithResult: (didPop, result) =>
+        heard.add('$name: $didPop $result'),
+    child: Builder(
+      builder: (context) {
+        _context = context;
+        return Scaffold(body: Text(name, key: const ValueKey('page')));
+      },
+    ),
+  );
+
+  group('a page the named routes pop', () {
+    setUp(() async {
+      tester = AppTester.widget(
+        MaterialApp(
+          routes: {
+            '/': (_) => const _Home(),
+            '/form': (_) => routed('form'),
+            '/locked': (_) => routed('locked', canPop: false),
+          },
+        ),
+      );
+      await settle();
+    });
+
+    Future<void> go(String name) async {
+      unawaited(Navigator.of(_context).pushNamed<void>(name));
+      await settle();
+    }
+
+    test('hears that it was, on the back gesture', () async {
+      await go('/form');
+
+      await back();
+
+      expect(showing(), 'Home');
+      expect(heard, ['form: true null']);
+    });
+
+    test('and is held when it says it is not to be left', () async {
+      await go('/locked');
+
+      expect(await back(), isTrue);
+
+      expect(showing(), 'locked');
+      expect(heard, ['locked: false null']);
+    });
+  });
+
+  group('a page GoRouter pops', () {
+    late GoRouter router;
+
+    setUp(() async {
+      router = GoRouter(
+        routes: [
+          GoRoute(path: '/', builder: (_, _) => const _Home()),
+          GoRoute(path: '/form', builder: (_, _) => routed('form')),
+          GoRoute(
+            path: '/locked',
+            builder: (_, _) => routed('locked', canPop: false),
+          ),
+        ],
+      );
+      tester = AppTester.widget(MaterialApp.router(routerConfig: router));
+      await settle();
+    });
+
+    test('hears that it was, with what it was popped with', () async {
+      unawaited(router.push<String>('/form'));
+      await settle();
+      expect(showing(), 'form');
+
+      router.pop('saved');
+      await settle();
+
+      expect(showing(), 'Home');
+      expect(heard, ['form: true saved']);
+    });
+
+    test('hears it on the back gesture too', () async {
+      unawaited(router.push<String>('/form'));
+      await settle();
+
+      await back();
+
+      expect(showing(), 'Home');
+      expect(heard, ['form: true null']);
+    });
+
+    test('is held when it says it is not to be left', () async {
+      unawaited(router.push<String>('/locked'));
+      await settle();
+
+      expect(await back(), isTrue);
+
+      expect(showing(), 'locked');
+      expect(heard, ['locked: false null']);
+    });
+
+    test('is not told when it is a page pushed over it that goes', () async {
+      unawaited(router.push<String>('/form'));
+      await settle();
+      unawaited(
+        Navigator.of(_context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                const Scaffold(body: Text('Over', key: ValueKey('page'))),
+          ),
+        ),
+      );
+      await settle();
+      expect(showing(), 'Over');
+
+      await back();
+
+      expect(showing(), 'form');
+      expect(heard, isEmpty);
     });
   });
 
