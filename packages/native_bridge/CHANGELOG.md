@@ -71,6 +71,13 @@ Flutter, it now agrees, and these are the places existing code has to change:
   `RouterConfig`** (they are Flutter's names in `widgets.dart` now); import
   `routing/route.dart` for them.
 - `ChangeNotifier` is a `mixin class`, so `with ChangeNotifier` works.
+- **Snackbars queue**, as in Flutter: `showSnackBar` while one is showing
+  waits for it instead of replacing it, each bar's `closed` says how that
+  bar went, `clearSnackBars` drops the ones waiting, and a controller's
+  `close` takes its own bar out of the queue. A screen that relied on the
+  newest message appearing at once now calls `hideCurrentSnackBar()` first,
+  which is what the same screen does under Flutter - the inbox example did,
+  and does.
 
 ### Proven, not just written
 

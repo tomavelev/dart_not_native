@@ -2096,8 +2096,9 @@ notice.
    `GestureDetector`'s `onTapDown`/`onTapUp`/`onTap` fire together after the
    tap (`gestures.dart`).
 9. **`TabBarView` does not swipe**, and a tab change does not animate.
-10. **Snackbars are not queued**: the newest replaces the one showing. Their
-    colour, shape, margin and `behavior` are not carried (`navigation.dart`).
+10. ~~**Snackbars are not queued.**~~ Queued since 2026-10-10, as Flutter's
+    are. Still open: their colour, shape, margin and `behavior` are not
+    carried (`navigation.dart`).
 11. **`Scaffold.drawer` is a sheet**, opened by a menu button the app bar
     gains - not a panel from the side. A scaffold nested in another's body is
     composed from a column and a stack.
@@ -2248,8 +2249,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 1926 tests
-  (1017 in the package, 388 for the example apps and goldens, 478 in the browser,
+  contracts, the plugin system and the design system are covered by 1937 tests
+  (1028 in the package, 388 for the example apps and goldens, 478 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native

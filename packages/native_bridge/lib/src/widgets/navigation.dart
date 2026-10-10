@@ -143,17 +143,21 @@ class ScaffoldMessengerState {
   const ScaffoldMessengerState._(this._owner);
   final _Owner _owner;
 
-  /// Shows [snackBar], replacing the one showing if there is one. Flutter
-  /// queues them; one bar at a time is all a platform shows, so the newest
-  /// wins here.
+  /// Shows [snackBar] - now if no other is showing, and otherwise once the
+  /// ones asked for before it have gone, as in Flutter. A screen that wants
+  /// its newest message at once calls [hideCurrentSnackBar] or
+  /// [clearSnackBars] first.
+  ///
+  /// The controller's `close` takes this bar down if it is showing and out
+  /// of the queue if it is still waiting; `closed` completes either way.
   ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showSnackBar(
     SnackBar snackBar,
   ) {
-    _owner.showSnackBar(snackBar);
+    final queued = _owner.showSnackBar(snackBar);
     return ScaffoldFeatureController._(
       snackBar,
-      _owner._snackBarClosed!.future,
-      () => _owner._closeSnackBar(SnackBarClosedReason.hide),
+      queued.closed.future,
+      () => _owner._closeQueuedSnackBar(queued, SnackBarClosedReason.hide),
     );
   }
 
@@ -165,8 +169,18 @@ class ScaffoldMessengerState {
     SnackBarClosedReason reason = SnackBarClosedReason.remove,
   }) => _owner._closeSnackBar(reason);
 
-  /// The same as hiding the current one: there is no queue to clear.
-  void clearSnackBars() => _owner._closeSnackBar(SnackBarClosedReason.remove);
+  /// Drops every snackbar waiting its turn and hides the one showing. The
+  /// ones dropped close with [SnackBarClosedReason.remove].
+  void clearSnackBars() => _owner._clearSnackBars();
+}
+
+/// A snackbar asked for, and the future that says how it went.
+class _QueuedSnackBar {
+  _QueuedSnackBar(this.snackBar);
+
+  final SnackBar snackBar;
+  final Completer<SnackBarClosedReason> closed =
+      Completer<SnackBarClosedReason>();
 }
 
 /// A transient message along the bottom edge. [content] is usually a [Text];

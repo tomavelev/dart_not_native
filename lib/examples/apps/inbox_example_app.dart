@@ -200,14 +200,19 @@ class _InboxAppState extends State<InboxApp> {
     if (index < 0) return;
     setState(() => messages.removeAt(index));
     _lastDeleted = (message: message, index: index);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Message deleted'),
-        // Long enough to read the message and reach the button.
-        duration: const Duration(seconds: 10),
-        action: SnackBarAction(label: 'Undo', onPressed: _undo),
-      ),
-    );
+    // Undo is for the last deletion, so the bar for the one before it goes
+    // now: snackbars queue, and left alone this one would wait ten seconds
+    // behind it.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('Message deleted'),
+          // Long enough to read the message and reach the button.
+          duration: const Duration(seconds: 10),
+          action: SnackBarAction(label: 'Undo', onPressed: _undo),
+        ),
+      );
   }
 
   void _undo() {

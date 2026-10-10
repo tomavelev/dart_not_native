@@ -821,11 +821,14 @@ class _Owner {
   /// is in the tree while it is open and drops out when it is dismissed.
   final List<_OverlayEntry> _overlays = [];
 
-  /// The snackbar showing, if any, and a counter so each new one is a fresh
-  /// snackbar rather than the last rendered again.
-  SnackBar? _snackBar;
+  /// The snackbars asked for and not yet gone, in the order they were asked
+  /// for. The first is the one showing; the rest wait their turn, as
+  /// Flutter's do.
+  final List<_QueuedSnackBar> _snackBars = [];
+
+  /// Counts the bars shown, so each is a fresh snackbar to a renderer rather
+  /// than the last one rendered again.
   int _snackBarSeq = 0;
-  Completer<SnackBarClosedReason>? _snackBarClosed;
 
   /// The router of the routed [MaterialApp] mounted below, if any, so
   /// Navigator.pushNamed/pop reach it.
@@ -938,7 +941,7 @@ class _Owner {
       _scope = null;
       _buildingOverlay = null;
     }
-    final snackBar = _snackBar;
+    final snackBar = _snackBars.firstOrNull?.snackBar;
     if (snackBar != null) {
       final action = snackBar.action;
       overlays.add(
@@ -1009,25 +1012,46 @@ class _Owner {
     }
   }
 
-  void showSnackBar(SnackBar snackBar) {
-    _finishSnackBar(SnackBarClosedReason.hide);
-    _snackBar = snackBar;
-    _snackBarClosed = Completer<SnackBarClosedReason>();
-    _snackBarSeq++;
-    _requestRebuild();
+  /// Queues [snackBar]: it shows now if nothing is showing, and otherwise
+  /// when the ones ahead of it have gone.
+  _QueuedSnackBar showSnackBar(SnackBar snackBar) {
+    final queued = _QueuedSnackBar(snackBar);
+    _snackBars.add(queued);
+    if (_snackBars.length == 1) {
+      // A number per bar shown, so a renderer sees a new bar - with its own
+      // time to run - and not the last one with its words changed.
+      _snackBarSeq++;
+      _requestRebuild();
+    }
+    return queued;
   }
 
-  void _finishSnackBar(SnackBarClosedReason reason) {
-    final closed = _snackBarClosed;
-    _snackBarClosed = null;
-    if (closed != null && !closed.isCompleted) closed.complete(reason);
-  }
-
+  /// Takes down the snackbar showing, and shows the next one waiting.
   void _closeSnackBar(SnackBarClosedReason reason) {
-    if (_snackBar == null) return;
-    _snackBar = null;
-    _finishSnackBar(reason);
+    if (_snackBars.isEmpty) return;
+    _snackBars.removeAt(0).closed.complete(reason);
+    if (_snackBars.isNotEmpty) _snackBarSeq++;
     _requestRebuild();
+  }
+
+  /// Takes [queued] down if it is showing, and out of the queue if it is
+  /// still waiting.
+  void _closeQueuedSnackBar(_QueuedSnackBar queued, SnackBarClosedReason reason) {
+    if (_snackBars.firstOrNull == queued) {
+      _closeSnackBar(reason);
+    } else if (_snackBars.remove(queued)) {
+      queued.closed.complete(reason);
+    }
+  }
+
+  /// Drops every snackbar still waiting, then takes down the one showing.
+  void _clearSnackBars() {
+    if (_snackBars.isEmpty) return;
+    for (final waiting in _snackBars.sublist(1)) {
+      waiting.closed.complete(SnackBarClosedReason.remove);
+    }
+    _snackBars.removeRange(1, _snackBars.length);
+    _closeSnackBar(SnackBarClosedReason.hide);
   }
 
   /// Holds the platform back gesture while some navigator has a page to pop.

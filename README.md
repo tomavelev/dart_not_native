@@ -435,7 +435,7 @@ whose API is Flutter's, or put it in a `FlutterSlot`.
 **Q: What looks different from the Flutter version of my app?**
 A: The controls are the platform's own, so they look like the platform. Beyond
 that there is a list: no page transitions, `Dismissible` reveals an action
-instead of sliding away, snackbars are not queued, and more - the table in
+instead of sliding away, a snackbar's look is the platform's, and more - the table in
 INTEGRATION.md §8.9.
 
 **Q: How does offline-first work?**
