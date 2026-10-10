@@ -48,6 +48,10 @@ class ProviderNotFoundException implements Exception {
 class _Scope<F> extends InheritedWidget {
   const _Scope({required this.host, required super.child});
   final _ProviderHost<Object?> host;
+
+  @override
+  bool updateShouldNotify(_Scope<F> oldWidget) =>
+      !identical(oldWidget.host, host);
 }
 
 /// The nearest provider of exactly [T] above [context], or null.

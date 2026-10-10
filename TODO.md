@@ -182,7 +182,9 @@ Still to do here:
   `context.dependOnInheritedWidgetOfExactType<T>()`, Flutter's name and
   Flutter's meaning minus the bookkeeping - a change rebuilds from the root
   here, so the dependency *is* the rebuild and `updateShouldNotify` is accepted
-  without being consulted. `runApp(appTheme:)` now puts a `Theme` at the root,
+  without being consulted. *(Superseded 2026-10-10: a state's dependencies
+  are tracked, and `updateShouldNotify` decides whether its
+  `didChangeDependencies` runs again - §6.2 item 16.)* `runApp(appTheme:)` now puts a `Theme` at the root,
   so a screen can read the palette the renderers draw with
   (`Theme.of(context).primary`) instead of repeating it.
 
@@ -2113,8 +2115,12 @@ notice.
     (`binding.dart`).
 15. **`TimeOfDay.format` knows two conventions**: twelve-hour for English,
     twenty-four for everything else.
-16. **`State.didChangeDependencies` runs once**, and `updateShouldNotify` is
-    not consulted (`lib/widgets.dart`).
+16. ~~**`State.didChangeDependencies` runs once**, and `updateShouldNotify` is
+    not consulted.~~ Both as Flutter since 2026-10-10: a state is told again
+    before a build in which something it read through its own `context` has
+    changed - `Theme.of`, `MediaQuery.of`, `Localizations.localeOf`, an
+    inherited widget of the app's - and the widget's `updateShouldNotify`
+    says whether it has. The rebuild itself is still from the root.
 
 ### 6.3 Protocol gaps
 
@@ -2259,8 +2265,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 1973 tests
-  (1053 in the package, 388 for the example apps and goldens, 489 in the browser,
+  contracts, the plugin system and the design system are covered by 1986 tests
+  (1066 in the package, 388 for the example apps and goldens, 489 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native

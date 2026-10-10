@@ -303,9 +303,22 @@ class MediaQuery extends InheritedWidget {
 
   final MediaQueryData data;
 
-  static MediaQueryData of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<MediaQuery>()?.data ??
-      _ownerOf(context)._media;
+  static MediaQueryData of(BuildContext context) {
+    final above = context.dependOnInheritedWidgetOfExactType<MediaQuery>();
+    if (above != null) return above.data;
+    // No widget to depend on: the answer is the window the renderer reported,
+    // and a state that read it hears when the window changes.
+    final media = _ownerOf(context)._media;
+    if (context is _Context) {
+      context._depend(
+        #windowMedia,
+        media,
+        (context) => context._owner._media,
+        (before, after) => before != after,
+      );
+    }
+    return media;
+  }
 
   /// As [of]. It cannot be null here - the framework always has an answer -
   /// and the name is kept for code that asks politely.
@@ -909,6 +922,16 @@ class _LocaleScope extends InheritedWidget {
 
   /// What the app's [LocalizationsDelegate]s loaded for [locale], by type.
   final Map<Type, Object?> resources;
+
+  @override
+  bool updateShouldNotify(_LocaleScope oldWidget) {
+    if (oldWidget.locale != locale) return true;
+    if (oldWidget.resources.length != resources.length) return true;
+    for (final entry in resources.entries) {
+      if (!identical(oldWidget.resources[entry.key], entry.value)) return true;
+    }
+    return false;
+  }
 }
 
 /// Loads an app's strings for a locale: Flutter's `LocalizationsDelegate`.

@@ -1159,11 +1159,24 @@ class _RouteKey extends LocalKey {
 class _RouterScope extends InheritedWidget {
   const _RouterScope({required this.router, required super.child});
   final GoRouter router;
+
+  @override
+  bool updateShouldNotify(_RouterScope oldWidget) =>
+      !identical(oldWidget.router, router);
 }
 
 class _StateScope extends InheritedWidget {
   const _StateScope({required this.state, required super.child});
   final GoRouterState state;
+
+  // A state is made afresh for each build, so it is compared by where it
+  // says the app is and what it was handed.
+  @override
+  bool updateShouldNotify(_StateScope oldWidget) =>
+      oldWidget.state.uri != state.uri ||
+      oldWidget.state.matchedLocation != state.matchedLocation ||
+      oldWidget.state.fullPath != state.fullPath ||
+      !identical(oldWidget.state.extra, state.extra);
 }
 
 /// One page, or one shell, with its [GoRouterState] visible to what it builds.

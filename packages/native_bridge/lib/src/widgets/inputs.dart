@@ -690,6 +690,10 @@ enum AutovalidateMode {
 class _FormScope extends InheritedWidget {
   const _FormScope({required this.form, required super.child});
   final FormState form;
+
+  @override
+  bool updateShouldNotify(_FormScope oldWidget) =>
+      !identical(oldWidget.form, form);
 }
 
 /// Groups [FormField]s so they can be validated, saved and reset together.

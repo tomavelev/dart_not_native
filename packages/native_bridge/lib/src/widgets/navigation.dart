@@ -951,6 +951,10 @@ class _HistoryRoute extends ModalRoute<Object?> {
 class _RouteScope extends InheritedWidget {
   const _RouteScope({required this.route, required super.child});
   final Route<dynamic> route;
+
+  @override
+  bool updateShouldNotify(_RouteScope oldWidget) =>
+      !identical(oldWidget.route, route);
 }
 
 /// Decides whether `popUntil` has gone far enough.
@@ -1935,6 +1939,12 @@ class _ScaffoldScope extends InheritedWidget {
 
   /// Opens the scaffold's drawer, or null when it has none.
   final VoidCallback? openDrawer;
+
+  // The callback is a new closure on every build; what a bar can learn from
+  // it is whether there is a drawer at all.
+  @override
+  bool updateShouldNotify(_ScaffoldScope oldWidget) =>
+      (oldWidget.openDrawer == null) != (openDrawer == null);
 }
 
 /// Where a scaffold puts its floating button. Accepted for Flutter's
@@ -2617,6 +2627,10 @@ class TabController extends ChangeNotifier {
 class _TabControllerScope extends InheritedWidget {
   const _TabControllerScope({required this.controller, required super.child});
   final TabController controller;
+
+  @override
+  bool updateShouldNotify(_TabControllerScope oldWidget) =>
+      !identical(oldWidget.controller, controller);
 }
 
 /// Gives the [TabBar] and [TabBarView] below it one [TabController] to share,

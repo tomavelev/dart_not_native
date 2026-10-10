@@ -194,6 +194,10 @@ class ScrollPosition {
 class _RefreshScope extends InheritedWidget {
   const _RefreshScope({required this.state, required super.child});
   final _RefreshIndicatorState state;
+
+  @override
+  bool updateShouldNotify(_RefreshScope oldWidget) =>
+      !identical(oldWidget.state, state);
 }
 
 /// The one place a scroller becomes a node.

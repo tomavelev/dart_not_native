@@ -81,6 +81,14 @@ class DefaultTextStyle extends InheritedWidget {
   static DefaultTextStyle of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<DefaultTextStyle>() ??
       const DefaultTextStyle(style: TextStyle(), child: SizedBox.shrink());
+
+  @override
+  bool updateShouldNotify(DefaultTextStyle oldWidget) =>
+      oldWidget.style != style ||
+      oldWidget.textAlign != textAlign ||
+      oldWidget.softWrap != softWrap ||
+      oldWidget.overflow != overflow ||
+      oldWidget.maxLines != maxLines;
 }
 
 /// The colour and size an [Icon] takes when it is not given its own.
@@ -88,6 +96,9 @@ class IconTheme extends InheritedWidget {
   const IconTheme({super.key, required this.data, required super.child});
 
   final IconThemeData data;
+
+  @override
+  bool updateShouldNotify(IconTheme oldWidget) => oldWidget.data != data;
 
   static IconThemeData of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<IconTheme>()?.data ??

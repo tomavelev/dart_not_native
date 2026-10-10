@@ -243,10 +243,12 @@ String? _idOf(Key? key) => key is ValueKey ? '${key.value}' : null;
 abstract class BuildContext {
   /// The nearest [InheritedWidget] of type [T] above this one, or null.
   ///
-  /// Flutter's name, and Flutter's meaning minus the bookkeeping: there, the
-  /// "depend on" part registers this widget to be rebuilt when that one
-  /// changes. Here a change rebuilds from the root anyway, so the dependency
-  /// is the rebuild, and the two spellings do the same thing.
+  /// Flutter's name and, for a [State], Flutter's meaning: asked of a state's
+  /// own `context`, it is remembered, and the state's
+  /// [State.didChangeDependencies] runs again before a build in which that
+  /// widget has changed - its [InheritedWidget.updateShouldNotify] says
+  /// whether it has. The rebuild itself needs no dependency: a change
+  /// rebuilds from the root anyway.
   T? dependOnInheritedWidgetOfExactType<T extends InheritedWidget>();
 
   /// The same lookup without the dependency, as in Flutter.
@@ -275,14 +277,60 @@ class _Scope {
   final State? state;
 }
 
+/// Something a [State] read from above it, and how to tell it has changed.
+class _Dependency {
+  _Dependency(this.value, this.read, this.changed);
+
+  /// What the state was given the last time it asked, or was told.
+  Object? value;
+  final Object? Function(_Context context) read;
+  final bool Function(Object? before, Object? after) changed;
+}
+
 class _Context implements BuildContext {
   _Context(this._owner, this._scope);
   final _Owner _owner;
   final _Scope? _scope;
 
   @override
-  T? dependOnInheritedWidgetOfExactType<T extends InheritedWidget>() =>
-      getInheritedWidgetOfExactType<T>();
+  T? dependOnInheritedWidgetOfExactType<T extends InheritedWidget>() {
+    final found = getInheritedWidgetOfExactType<T>();
+    _depend(
+      T,
+      found,
+      (context) => context.getInheritedWidgetOfExactType<T>(),
+      _inheritedChanged,
+    );
+    return found;
+  }
+
+  /// Remembers that the state this context belongs to read [value], so the
+  /// state can be told when it is no longer what [read] answers.
+  ///
+  /// Only for a state's own context - the one its `context` getter returns.
+  /// A widget built below a state shares its place in the chain, and what
+  /// that widget reads is not the state's dependency.
+  void _depend(
+    Object key,
+    Object? value,
+    Object? Function(_Context context) read,
+    bool Function(Object? before, Object? after) changed,
+  ) {
+    final state = _scope?.state;
+    if (state == null || !identical(state._context, this)) return;
+    (state._dependencies ??= {})[key] = _Dependency(value, read, changed);
+  }
+
+  /// Whether an inherited widget a state read is different in a way the
+  /// widget itself says matters.
+  static bool _inheritedChanged(Object? before, Object? after) {
+    if (identical(before, after)) return false;
+    if (before is! InheritedWidget || after is! InheritedWidget) return true;
+    // A different class in the same place is not something the new one can
+    // be asked to compare itself with.
+    if (before.runtimeType != after.runtimeType) return true;
+    return after.updateShouldNotify(before);
+  }
 
   @override
   T? getInheritedWidgetOfExactType<T extends InheritedWidget>() {
@@ -344,18 +392,22 @@ _Owner _ownerOf(BuildContext context) => (context as _Context)._owner;
 /// }
 /// ```
 ///
-/// [updateShouldNotify] is accepted for compatibility and not consulted: this
-/// framework rebuilds from the root and diffs the tree, so a subtree is
-/// redrawn either way and a renderer patches what actually moved. State that
-/// changes often and is watched from far away is better held in a
+/// [updateShouldNotify] decides one thing here: whether a [State] that read
+/// this widget has its [State.didChangeDependencies] called again. It does
+/// not decide what is rebuilt - this framework rebuilds from the root and
+/// diffs the tree, so a subtree is redrawn either way and a renderer patches
+/// what actually moved. A widget is a new object on every build, so one that
+/// does not override it says "changed" every time; say what changed. State
+/// that changes often and is watched from far away is better held in a
 /// [ChangeNotifier] than pushed down a tree.
 abstract class InheritedWidget extends Widget {
   const InheritedWidget({super.key, required this.child});
 
   final Widget child;
 
-  /// Whether a change here should rebuild the widgets that read it. Accepted
-  /// for compatibility; see the class doc.
+  /// Whether this differs from [oldWidget] in a way the states that read it
+  /// should hear about - see the class doc. True unless overridden, which is
+  /// the safe answer and, for a widget rebuilt often, the noisy one.
   bool updateShouldNotify(covariant InheritedWidget oldWidget) => true;
 
   @override
@@ -402,6 +454,10 @@ abstract class State<T extends StatefulWidget> {
   StatefulWidget? _widget;
   _Context? _context;
 
+  /// What this state has read through its own context, by what it asked
+  /// for; null until it reads something.
+  Map<Object, _Dependency>? _dependencies;
+
   T get widget => _widget as T;
   BuildContext get context => _context!;
   bool get mounted => _owner != null;
@@ -409,13 +465,33 @@ abstract class State<T extends StatefulWidget> {
   /// Called once, before the first build.
   void initState() {}
 
-  /// Called once after [initState], where Flutter calls it the first time.
+  /// Called once after [initState], and again before a build in which
+  /// something this state read from its `context` has changed - a
+  /// `Theme.of(context)`, a `MediaQuery.of(context)`, a
+  /// `Localizations.localeOf(context)`, an inherited widget of the app's own
+  /// - as Flutter calls it.
   ///
-  /// Flutter calls it again whenever an inherited widget this state read
-  /// changes; nothing here tracks who read what, so a value taken from the
-  /// context in this method is taken once. Read it in [build] instead if it
-  /// can change.
+  /// "Changed" is the inherited widget's own
+  /// [InheritedWidget.updateShouldNotify]. What is tracked is what this
+  /// state asked through its own [context], in this method or in [build];
+  /// what a widget below it reads is that widget's business.
   void didChangeDependencies() {}
+
+  /// Runs [didChangeDependencies] if anything this state read is no longer
+  /// what it was given, now that [_context] is where the state stands in
+  /// this build.
+  void _checkDependencies() {
+    final dependencies = _dependencies;
+    if (dependencies == null || dependencies.isEmpty) return;
+    final context = _context!;
+    var changed = false;
+    for (final dependency in dependencies.values) {
+      final now = dependency.read(context);
+      if (dependency.changed(dependency.value, now)) changed = true;
+      dependency.value = now;
+    }
+    if (changed) didChangeDependencies();
+  }
 
   /// Called when the parent rebuilt and handed this state a new widget
   /// instance; [oldWidget] is the one it had. [widget] is already the new one.
@@ -1213,6 +1289,7 @@ class _Owner {
       if (!identical(old, widget)) {
         state._didUpdate(old);
       }
+      state._checkDependencies();
     }
     // Its subtree hangs below it, so a child of one instance cannot be
     // mistaken for the same child of another.

@@ -100,6 +100,18 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### `didChangeDependencies` is called when a dependency changes
+
+- A `State` that reads an inherited widget through its own `context` -
+  `Theme.of`, `MediaQuery.of`, `Localizations.localeOf`, one of the app's -
+  has `didChangeDependencies` called again before a build in which it has
+  changed, as in Flutter. It ran once. `InheritedWidget.updateShouldNotify`
+  is what says "changed", where it was accepted and ignored: a widget that
+  does not override it is taken to have changed on every build, so an
+  inherited widget of the app's own should say what matters. The framework's
+  own - the theme, the locale, the route, the form, the tab controller and
+  the rest - each do. Nothing about what is rebuilt changes.
+
 ### The browser's Back button, with nothing to wire
 
 - **`MaterialApp(routes:)` is in the browser's history.** Each named route

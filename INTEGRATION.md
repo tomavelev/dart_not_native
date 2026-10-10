@@ -1063,7 +1063,7 @@ border) - there are many, each documented on the field.
 | `FloatingActionButton` takes colours, `mini`, a location | The platform's button in the theme's colours, in the platform's place |
 | `NavigationRail` `leading`, `trailing`, `extended` | Accepted and not drawn |
 | `Container` with a border whose sides differ, several shadows | Thin boxes over the edges; the first shadow only; no `spreadRadius` |
-| `InheritedWidget.updateShouldNotify`, `didChangeDependencies` on change | Not consulted - everything rebuilds from the root. `didChangeDependencies` runs once |
+| `InheritedWidget.updateShouldNotify`, `didChangeDependencies` on change | As Flutter, for a `State`: `didChangeDependencies` runs again before a build in which something the state read through its own `context` has changed, and `updateShouldNotify` says whether it has. It does not prune the rebuild - everything still rebuilds from the root |
 | `LayoutBuilder` runs once with real constraints | Runs against the viewport first, then again when the renderer reports the box's size |
 | `showDatePicker`/`showTimePicker` take a `builder` and a `locale` | The platform's own picker, in the device's language |
 | Text fields: `style`, `autocorrect`, most of `InputDecoration`'s look | The platform's own field in its theme. Label, hint, helper, error, prefix and suffix icons travel |
