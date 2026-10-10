@@ -38,6 +38,12 @@ Future<void> runNativeApp(
     routed.nav.router.onRouteChange((_) => routed.render());
   }
 
+  // An app that asked to be left out of the back gesture is left out of the
+  // browser's history too: a page embedded in someone else's site has no
+  // business writing entries into it. Before the app is mounted, since a
+  // `MaterialApp(routes:)` reaches for the history as it starts.
+  if (!systemBack) HistoryAdapter.platform ??= const NoHistoryAdapter();
+
   await runWebApp(app, kit: kit, rootId: rootId, theme: appTheme);
 
   if (systemBack && routed is NavigationHost) {

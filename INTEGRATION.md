@@ -332,8 +332,9 @@ mixes in `NavigationHost`; by hand it is
 **`MaterialApp(routes:)` and `Navigator.push`** - nothing to wire. A named
 route is a history entry and a fragment in the URL, Back pops it, and a link
 straight to it opens it over the first route. A page pushed with
-`Navigator.push` leaves the URL alone, and Back pops it. Forward does not
-bring back what Back popped. `ROUTING_GUIDE.md` has the detail.
+`Navigator.push`, a dialog and a sheet leave the URL alone, and Back closes
+them. Forward does not bring back what Back closed; `runApp(app,
+systemBack: false)` keeps the app out of the history. `ROUTING_GUIDE.md` has the detail.
 
 ### 4.5 Storage on web
 

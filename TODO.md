@@ -2166,12 +2166,15 @@ event, and then the same work in four renderers.
     history.**~~ In it since 2026-10-10, with nothing for the app to wire: a
     named route is an entry and a fragment in the URL, a link straight to one
     opens it, and Back pops a pushed page. Tested against a fake history and
-    against Chrome's own. Still open: Forward does not bring back what Back
-    popped; a dialog over the app's *first* screen has no entry behind it, so
-    Back there leaves the page; `runApp(systemBack: false)` does not turn
-    this off; and nobody has pressed Back in a compiled web build - the
-    examples compile, and the tests run under Flutter's web runner, where the
-    browser's history is put in by hand.
+    against Chrome's own. A dialog or a sheet is covered the same way, over
+    any screen, and `runApp(systemBack: false)` keeps an app out of the
+    history altogether. Still open: Forward does not bring back what Back
+    closed. Back has been pressed in two compiled builds, driven in
+    headless Chrome (2026-10-10): the routing example - named routes, the
+    app's own back button, a link straight to `#/settings`, and leaving from
+    the first screen - and a throwaway page that pushed unnamed pages two
+    deep with a dialog over one. A page with no fragment gains `#/` while a
+    pushed page is open, since that is how the entry behind it is written.
 12. ~~**The device lane's "one of every node type" is 47 of 59.**~~ Closed
     2026-10-09: `integration_test/native_renderer_test.dart` draws the twelve
     new types as well - a free-form tree and a screen under each picker -
@@ -2256,8 +2259,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 1966 tests
-  (1047 in the package, 388 for the example apps and goldens, 488 in the browser,
+  contracts, the plugin system and the design system are covered by 1973 tests
+  (1053 in the package, 388 for the example apps and goldens, 489 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native

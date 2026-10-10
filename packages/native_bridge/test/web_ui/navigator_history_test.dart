@@ -123,6 +123,23 @@ void main() {
     expect(showing(), 'Home');
   });
 
+  test('Back closes a dialog over the first screen, and stays', () async {
+    tester = AppTester.widget(const _Page('Home'));
+    unawaited(
+      showDialog<void>(
+        context: _context,
+        builder: (_) => const AlertDialog(title: Text('Sure?')),
+      ),
+    );
+    await settle();
+    expect(tester.ofType('Dialog'), hasLength(1));
+
+    await pressBack();
+
+    expect(tester.ofType('Dialog'), isEmpty);
+    expect(showing(), 'Home');
+  });
+
   test('a named route is in the URL, and Back pops it', () async {
     tester = AppTester.widget(
       MaterialApp(

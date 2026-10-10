@@ -202,17 +202,20 @@ entry and a fragment in the URL (`#/settings`), the browser's Back button pops
 it, and a reload or a link straight to `#/settings` opens that page over the
 first one, so Back from it is the app's first screen.
 
-A page pushed with `Navigator.push` has no name to put in the URL, so the URL
-does not change - but Back pops it. While a navigator has a pushed page the
+A page pushed with `Navigator.push` has no name to put in the URL, and
+neither has a dialog or a sheet, so the URL stays where it was (an address
+with no fragment gains `#/`) - but Back closes them. While one is open the
 app keeps one history entry of its own behind it, which is what Back lands
-on; it goes when the last page does. Where a router is already in the
+on; it goes when the last of them does. Where a router is already in the
 history, its entries do that job.
 
-Two things this does not do. The browser's **Forward** button does not bring
-back a page that Back popped. And a dialog or sheet over
-the app's *first* screen has nothing behind it, so Back there still leaves
-the page. An app that wants its own history - paths instead of fragments -
-sets `HistoryAdapter.platform` before `runApp`.
+What this does not do: the browser's **Forward** button does not bring back
+what Back closed.
+
+An app that should stay out of the browser's history - one embedded in
+someone else's page - passes `runApp(app, systemBack: false)`. One that wants
+its own history - paths instead of fragments - sets `HistoryAdapter.platform`
+before `runApp`.
 
 ## A complete example
 

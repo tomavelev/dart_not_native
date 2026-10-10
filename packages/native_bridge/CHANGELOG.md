@@ -107,15 +107,16 @@ Flutter, it now agrees, and these are the places existing code has to change:
   reload or a link straight to a route opens it over the first one. It was
   bound to the back gesture with no history behind it, so on the web Back
   left the site and the URL never changed.
-- **Back pops a page pushed with `Navigator.push`.** The URL does not change
-  - the page has no name - but while a navigator has a pushed page the app
-  keeps one history entry of its own behind it for Back to land on. Where a
-  router is already mirrored, its entries do that.
+- **Back closes a page pushed with `Navigator.push`, a dialog and a
+  sheet.** None of them has a name to put in the URL, but while one is open
+  the app keeps one history entry of its own behind it for Back to land on.
+  Where a router is already mirrored, its entries do that.
 - `HistoryAdapter.platform` puts another history in the way of both - a fake
   in a test, or one that writes paths instead of fragments - and
   `HistoryAdapter.currentPath` is what an adapter says the app was opened at.
-- Not done: Forward does not bring back what Back popped, and a dialog over
-  the app's first screen still has nothing behind it.
+- `runApp` takes `systemBack`, as `runNativeApp` does, and false keeps the
+  app out of the browser's history as well as the back gesture.
+- Not done: Forward does not bring back what Back closed.
 
 ### Swipe actions follow the reading direction
 

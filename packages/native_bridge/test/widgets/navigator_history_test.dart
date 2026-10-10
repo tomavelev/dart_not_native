@@ -212,6 +212,93 @@ void main() {
     });
   });
 
+  group('a dialog or a sheet', () {
+    setUp(() => tester = AppTester.widget(const _Page('Home')));
+
+    Future<void> ask({bool dismissible = true}) async {
+      unawaited(
+        showDialog<void>(
+          context: _context,
+          barrierDismissible: dismissible,
+          builder: (_) => const AlertDialog(title: Text('Sure?')),
+        ),
+      );
+      await settle();
+    }
+
+    test('over the first screen is closed by Back, which does not leave',
+        () async {
+      await ask();
+      expect(browser.at, 1);
+
+      await pressBack();
+
+      expect(tester.ofType('Dialog'), isEmpty);
+      expect(browser.left, isFalse);
+      expect(browser.at, 0);
+    });
+
+    test('and the Back after that leaves, as it should', () async {
+      await ask();
+      await pressBack();
+
+      await pressBack();
+
+      expect(browser.left, isTrue);
+    });
+
+    test('closed by the app, it takes its entry with it', () async {
+      await ask();
+
+      Navigator.of(_context).pop();
+      await settle();
+
+      expect(tester.ofType('Dialog'), isEmpty);
+      expect(browser.at, 0);
+      expect(browser.left, isFalse);
+    });
+
+    test('one that cannot be dismissed keeps Back from leaving', () async {
+      await ask(dismissible: false);
+
+      await pressBack();
+      await pressBack();
+
+      expect(tester.ofType('Dialog'), hasLength(1));
+      expect(browser.left, isFalse);
+      expect(browser.at, 1);
+    });
+
+    test('a sheet is the same', () async {
+      unawaited(
+        showModalBottomSheet<void>(
+          context: _context,
+          builder: (_) => const Text('A sheet'),
+        ),
+      );
+      await settle();
+      expect(tester.ofType('BottomSheet'), hasLength(1));
+
+      await pressBack();
+
+      expect(tester.ofType('BottomSheet'), isEmpty);
+      expect(browser.left, isFalse);
+    });
+
+    test('two open at once are two Backs', () async {
+      await ask();
+      await ask();
+      expect(tester.ofType('Dialog'), hasLength(2));
+      expect(browser.at, 1, reason: 'one entry, however many are open');
+
+      await pressBack();
+      expect(tester.ofType('Dialog'), hasLength(1));
+      await pressBack();
+      expect(tester.ofType('Dialog'), isEmpty);
+      expect(browser.left, isFalse);
+    });
+  });
+
   group('MaterialApp(routes:)', () {
     Widget app() => MaterialApp(
       routes: {
