@@ -1969,6 +1969,16 @@ scroller. All five are fixed in the Swift (changelog, "The iOS renderer runs
 again"). The dropdown, the date picker and the time picker were opened by
 hand and returned what was chosen.
 
+The opening screen of seven other examples - components showcase, design
+system, sign-up form, routing, todo, calculator, text input - was then
+screenshotted with the Swift as it was before those fixes and as it is after,
+and the two compared (2026-10-10). Nothing got worse. Four of the seven had
+the same tall app bar the gallery did, a third to half of the screen, and the
+green device check had passed over every one of them; the todo's field and
+the text-input showcase's fields were as narrow as their placeholders. The
+calculator is pixel for pixel what it was. That is one screen of each, not
+the apps walked.
+
 The device lane's tree has the twelve new node types now:
 `native_renderer_test.dart` draws a free-form tree and a screen under each
 picker (17 tests), green on the simulator. **Those three tests have not run

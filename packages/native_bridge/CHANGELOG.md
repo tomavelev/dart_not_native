@@ -125,7 +125,9 @@ Flutter, it now agrees, and these are the places existing code has to change:
     it holds on a patch as well as a build.
   - **The app bar took whatever height the body did not**: over a scroller
     with little in it the bar was a third of the screen, and a different
-    height on each page of one app.
+    height on each page of one app. Not only there: the components showcase,
+    the design system, the sign-up form and the routing example all opened
+    with it, under a device check that was green.
   - **An `Expanded` lost its room to a button beside it** - a card's star
     sat in the middle of the card.
   - **A disabled button looked like one that works.** It is drawn at
