@@ -3377,7 +3377,14 @@ class _SwipeActionsRow extends StatefulWidget {
 class _SwipeActionsRowState extends State<_SwipeActionsRow> {
   static const double _actionWidth = 88;
 
-  /// How far the child is slid left; 0 is closed, negative reveals the actions.
+  /// How far the child is slid towards the end of the row; 0 is closed,
+  /// negative reveals the trailing actions and positive the leading ones.
+  ///
+  /// Towards the end, not to the left: the two bars are rows, which change
+  /// sides with the reading direction, so the finger and the transform -
+  /// which are in screen coordinates - are turned to match in [build]. Left
+  /// as they were, a swipe in a right-to-left screen slid the row over the
+  /// bar it meant to show and fired the other one's action.
   double _offset = 0;
 
   double get _open => -_actionWidth * widget.actions.length;
@@ -3396,6 +3403,7 @@ class _SwipeActionsRowState extends State<_SwipeActionsRow> {
     if (widget.actions.isEmpty && widget.leadingActions.isEmpty) {
       return widget.child;
     }
+    final sign = Directionality.of(context) == TextDirection.rtl ? -1.0 : 1.0;
     Widget bar(
       List<({String label, Color color, String eventId})> actions,
       MainAxisAlignment alignment,
@@ -3429,11 +3437,11 @@ class _SwipeActionsRowState extends State<_SwipeActionsRow> {
             bar(widget.leadingActions, MainAxisAlignment.start),
           bar(widget.actions, MainAxisAlignment.end),
           Transform.translate(
-            offset: Offset(_offset, 0),
+            offset: Offset(_offset * sign, 0),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onHorizontalDragUpdate: (d) => setState(
-                () => _offset = (_offset + d.delta.dx)
+                () => _offset = (_offset + d.delta.dx * sign)
                     .clamp(_open * 1.8, _openLeading * 1.8),
               ),
               onHorizontalDragEnd: (_) {

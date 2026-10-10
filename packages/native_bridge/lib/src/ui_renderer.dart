@@ -671,9 +671,13 @@ class UIBuilder {
   static WidgetNode center({required WidgetNode child}) =>
       WidgetNode(type: 'Center', props: {}, children: [child]);
 
-  /// A row that reveals trailing [actions] when swiped left: a partial swipe
-  /// shows the action buttons to tap, a full swipe fires the first one. Each
-  /// action is `(label, color, onPressed)`; the onPressed becomes an event id.
+  /// A row that reveals trailing [actions] when swiped towards its start - to
+  /// the left, where the screen reads left to right - and [leadingActions]
+  /// when swiped the other way: a partial swipe shows the action buttons to
+  /// tap, a full swipe fires the first one. Trailing and leading follow the
+  /// screen's direction on every renderer, so in Arabic the trailing actions
+  /// are on the left. Each action is `(label, color, onPressed)`; the
+  /// onPressed becomes an event id.
   static WidgetNode swipeActions({
     required WidgetNode child,
     required List<({String label, String color, void Function() onPressed})>

@@ -5823,10 +5823,17 @@ class NativeUIRenderer(
     }
 
     /**
-     * A list row that slides its child left to reveal trailing action buttons:
-     * a partial drag snaps open so a button can be tapped, a full drag fires the
-     * first action. It intercepts only mostly-horizontal drags, so a tap reaches
-     * the child (e.g. the row's own buttons) and a vertical drag still scrolls.
+     * A list row that slides its child towards its start to reveal trailing
+     * action buttons: a partial drag snaps open so a button can be tapped, a
+     * full drag fires the first action. It intercepts only mostly-horizontal
+     * drags, so a tap reaches the child (e.g. the row's own buttons) and a
+     * vertical drag still scrolls.
+     *
+     * The offsets are counted towards the *end* of the row - negative uncovers
+     * the trailing actions - and the bars are placed at the start and the end,
+     * so in a right-to-left screen Delete is on the left and is reached by
+     * dragging right, as it is on iOS. The finger and `translationX` are in
+     * screen coordinates and are turned by [sign] to match.
      */
     private inner class SwipeActionsLayout(node: Map<*, *>) : FrameLayout(activity) {
         private val foreground: FrameLayout
@@ -5840,6 +5847,10 @@ class NativeUIRenderer(
         private var downY = 0f
         private var baseTranslation = 0f
         private var dragging = false
+
+        /** 1, or -1 when the row reads right to left. */
+        private val sign: Float
+            get() = if (layoutDirection == View.LAYOUT_DIRECTION_RTL) -1f else 1f
 
         init {
             layoutParams = matchWidth()
@@ -5880,11 +5891,11 @@ class NativeUIRenderer(
                     ViewGroup.LayoutParams.MATCH_PARENT, gravity))
             }
 
-            // Left and right, not start and end: the drag below is measured in
-            // the finger's own direction, and the bar a drag uncovers has to be
-            // on the side that drag opens whichever way the screen reads.
-            bar("leadingActions", Gravity.LEFT, leadingEventIds)
-            bar("actions", Gravity.RIGHT, eventIds)
+            // Start and end, so the bars change sides with the screen; the
+            // drag below is turned by `sign` so that it still uncovers the bar
+            // on the side it opens.
+            bar("leadingActions", Gravity.START, leadingEventIds)
+            bar("actions", Gravity.END, eventIds)
             openOffset = -(actionWidthPx.toFloat() * eventIds.size)
             openLeadingOffset = actionWidthPx.toFloat() * leadingEventIds.size
 
@@ -5899,7 +5910,7 @@ class NativeUIRenderer(
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = ev.x; downY = ev.y
-                    baseTranslation = foreground.translationX
+                    baseTranslation = foreground.translationX * sign
                     dragging = false
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -5919,13 +5930,13 @@ class NativeUIRenderer(
         override fun onTouchEvent(ev: MotionEvent): Boolean {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_MOVE -> {
-                    foreground.translationX = (baseTranslation + ev.x - downX)
-                        .coerceIn(openOffset * 1.8f, openLeadingOffset * 1.8f)
+                    foreground.translationX = (baseTranslation + (ev.x - downX) * sign)
+                        .coerceIn(openOffset * 1.8f, openLeadingOffset * 1.8f) * sign
                     return true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     parent?.requestDisallowInterceptTouchEvent(false)
-                    val next = foreground.translationX
+                    val next = foreground.translationX * sign
                     if (next <= openOffset * 1.6f && eventIds.isNotEmpty()) {
                         sendEvent(eventIds.first(), emptyMap())
                         settle(0f)
@@ -5952,7 +5963,7 @@ class NativeUIRenderer(
         }
 
         private fun settle(value: Float) {
-            foreground.animate().translationX(value).setDuration(200).start()
+            foreground.animate().translationX(value * sign).setDuration(200).start()
         }
     }
 

@@ -13,6 +13,22 @@ import 'package:web/web.dart' as web;
 
 import 'support/dom.dart';
 
+/// A row with two trailing actions and one leading one.
+WidgetNode row() => WidgetNode(
+  type: 'SwipeActions',
+  props: {
+    'id': 'row',
+    'actions': [
+      {'label': 'Delete', 'color': '#d32f2f', 'eventId': 'delete'},
+      {'label': 'Archive', 'color': '#1976d2', 'eventId': 'archive'},
+    ],
+    'leadingActions': [
+      {'label': 'Mark read', 'color': '#1976d2', 'eventId': 'mark'},
+    ],
+  },
+  children: [UIBuilder.text('A row', id: 'row_text')],
+);
+
 void main() {
   late web.HTMLElement root;
   late WebUIRenderer renderer;
@@ -28,22 +44,7 @@ void main() {
     // The node as a build would produce it; the callbacks a builder binds are
     // only available inside NativeUIApp.build().
     renderer.onEvent('mark', (_) => fired.add('mark'));
-    await renderer.render(
-      WidgetNode(
-        type: 'SwipeActions',
-        props: {
-          'id': 'row',
-          'actions': [
-            {'label': 'Delete', 'color': '#d32f2f', 'eventId': 'delete'},
-            {'label': 'Archive', 'color': '#1976d2', 'eventId': 'archive'},
-          ],
-          'leadingActions': [
-            {'label': 'Mark read', 'color': '#1976d2', 'eventId': 'mark'},
-          ],
-        },
-        children: [UIBuilder.text('A row', id: 'row_text')],
-      ),
-    );
+    await renderer.render(row());
   });
   tearDown(() => root.remove());
 
@@ -141,6 +142,70 @@ void main() {
     expect(fired, ['mark']);
   });
 
+
+  // Trailing is the end of the row, and in Arabic the end is the left: Delete
+  // is there, and is reached by dragging the row to the right.
+  group('in a screen that reads right to left', () {
+    setUp(() => renderer.render(UIBuilder.withTextDirection(row(), 'rtl')));
+
+    double left(String selector) =>
+        (root.querySelector(selector) as web.HTMLElement)
+            .getBoundingClientRect()
+            .left;
+    double right(String selector) =>
+        (root.querySelector(selector) as web.HTMLElement)
+            .getBoundingClientRect()
+            .right;
+
+    test('the trailing actions are on the left and the leading on the right',
+        () {
+      final row = root.querySelector('.dnn-swipe')!.getBoundingClientRect();
+
+      expect(left('.dnn-swipe__actions:not(.dnn-swipe__actions--leading)'),
+          row.left);
+      expect(right('.dnn-swipe__actions--leading'), row.right);
+    });
+
+    test('a drag to the right uncovers the trailing actions', () {
+      drag(100);
+
+      // Slid right by the width of the two trailing actions.
+      expect(offset(), 176);
+      expect(fired, isEmpty);
+    });
+
+    test('a long drag to the right fires the first trailing action', () {
+      drag(300);
+
+      expect(fired, ['delete']);
+      expect(offset(), 0);
+    });
+
+    test('a drag to the left uncovers the leading action', () {
+      drag(-60);
+
+      expect(offset(), -88);
+      expect(fired, isEmpty);
+    });
+
+    test('a long drag to the left fires the leading action', () {
+      drag(-200);
+
+      expect(fired, ['mark']);
+    });
+
+    test('turning the screen back turns the row back', () async {
+      await renderer.render(row());
+
+      drag(-100);
+
+      expect(offset(), -176);
+      expect(
+        right('.dnn-swipe__actions:not(.dnn-swipe__actions--leading)'),
+        root.querySelector('.dnn-swipe')!.getBoundingClientRect().right,
+      );
+    });
+  });
 }
 
 /// A pointer event at [x], of the kind the renderer listens for.

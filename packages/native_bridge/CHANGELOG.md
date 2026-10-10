@@ -100,6 +100,18 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### Swipe actions follow the reading direction
+
+- A `SwipeActions` row's trailing actions are at the end of the row and its
+  leading ones at the start, whichever way the screen reads - so in Arabic
+  Delete is on the left and is reached by dragging right, and a
+  `Dismissible`'s `endToStart` means what it does in Flutter. The iOS
+  renderer was already written to. The web and Android renderers placed and
+  dragged by left and right; the Flutter host turned the two bars and not
+  the drag, so a swipe in a right-to-left screen uncovered one bar and fired
+  the other's action. Tested on web and the Flutter host; the Kotlin
+  compiles and has not been run right to left.
+
 ### A test harness an app can import
 
 - `package:dart_not_native/testing.dart` exports `AppTester`: mount a screen

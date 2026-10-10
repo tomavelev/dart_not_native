@@ -6,7 +6,7 @@ part of '../../widgets.dart';
 // and the design system's badge and alert.
 // ---------------------------------------------------------------------------
 
-/// A trailing action revealed when a [SwipeActions] row is swiped left.
+/// An action revealed when a [SwipeActions] row is swiped aside.
 class SwipeAction {
   const SwipeAction({
     required this.label,
@@ -25,9 +25,11 @@ class SwipeAction {
   final String color;
 }
 
-/// A row that reveals trailing [actions] when swiped left, iOS Mail style: a
-/// partial swipe slides [child] over to show the action buttons to tap, and a
-/// full swipe fires the first action. A renderer without swipe shows [child]
+/// A row that reveals trailing [actions] when swiped towards its start, iOS
+/// Mail style: a partial swipe slides [child] over to show the action buttons
+/// to tap, and a full swipe fires the first action. "Towards its start" is
+/// to the left where the screen reads left to right and to the right where it
+/// reads right to left - the actions change sides with the reading direction. A renderer without swipe shows [child]
 /// alone, so the row still works (through whatever other affordance it has).
 class SwipeActions extends Widget {
   const SwipeActions({
@@ -38,12 +40,12 @@ class SwipeActions extends Widget {
   });
   final Widget child;
 
-  /// Revealed by dragging the row to the left, at its trailing edge - where
-  /// iOS Mail puts Delete.
+  /// Revealed at the row's trailing edge, by dragging it towards its start
+  /// (to the left, in English) - where iOS Mail puts Delete.
   final List<SwipeAction> actions;
 
-  /// Revealed by dragging the row to the right, at its leading edge - where
-  /// iOS Mail puts Mark as read.
+  /// Revealed at the row's leading edge, by dragging it towards its end (to
+  /// the right, in English) - where iOS Mail puts Mark as read.
   final List<SwipeAction> leadingActions;
 
   @override

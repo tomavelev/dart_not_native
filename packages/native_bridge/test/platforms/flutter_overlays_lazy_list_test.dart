@@ -791,5 +791,60 @@ void main() {
       expect(fired(), ['delete']);
       expect(offset(tester), 0);
     });
+
+    // Trailing is the end of the row, and in Arabic the end is the left.
+    // The two bars are rows and changed sides on their own; the drag did
+    // not, so a swipe slid the row over the bar it meant to show and fired
+    // the other one's action.
+    group('in a screen that reads right to left', () {
+      WidgetNode rtl() =>
+          UIBuilder.withTextDirection(UIBuilder.scaffold(body: row()), 'rtl');
+
+      testWidgets('the trailing actions are on the left', (tester) async {
+        await show(tester, rtl());
+
+        expect(
+          tester.getCenter(find.text('Delete')).dx,
+          lessThan(tester.getCenter(find.text('Mark read')).dx),
+        );
+      });
+
+      testWidgets('a drag to the right uncovers them', (tester) async {
+        await show(tester, rtl());
+
+        await tester.drag(find.text('A row'), const Offset(100, 0));
+        await tester.pumpAndSettle();
+
+        // Slid right by the width of the two trailing actions, which is
+        // where they are.
+        expect(offset(tester), 176);
+        expect(fired(), isEmpty);
+        expect(tester.getTopLeft(find.text('A row')).dx, 176);
+      });
+
+      testWidgets('a long drag to the right fires the first of them', (
+        tester,
+      ) async {
+        await show(tester, rtl());
+
+        await tester.drag(find.text('A row'), const Offset(320, 0));
+        await tester.pumpAndSettle();
+
+        expect(fired(), ['delete']);
+        expect(offset(tester), 0);
+      });
+
+      testWidgets('a drag to the left uncovers the leading action', (
+        tester,
+      ) async {
+        await show(tester, rtl());
+
+        await tester.drag(find.text('A row'), const Offset(-60, 0));
+        await tester.pumpAndSettle();
+
+        expect(offset(tester), -88);
+        expect(fired(), isEmpty);
+      });
+    });
   });
 }

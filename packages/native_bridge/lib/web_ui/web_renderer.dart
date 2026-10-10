@@ -1418,14 +1418,18 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     _style(container, 'position', 'relative');
     _style(container, 'overflow', 'hidden');
 
-    /// One bar of buttons, pinned to [edge] ('auto 0 0 0' leads, '0 0 0 auto'
-    /// trails), answering with the event ids it bound.
-    List<String> bar(List<dynamic> actions, String inset, String className) {
+    /// One bar of buttons, pinned to the [edge] of the row it reads towards
+    /// - `inset-inline-start` leads, `inset-inline-end` trails - answering
+    /// with the event ids it bound. A logical edge, so the bars change sides
+    /// with the reading direction without being rebuilt.
+    List<String> bar(List<dynamic> actions, String edge, String className) {
       final eventIds = <String>[];
       if (actions.isEmpty) return eventIds;
       final bar = _el('div', className);
       _style(bar, 'position', 'absolute');
-      _style(bar, 'inset', inset);
+      _style(bar, 'top', '0');
+      _style(bar, 'bottom', '0');
+      _style(bar, edge, '0');
       _style(bar, 'display', 'flex');
       for (final a in actions) {
         if (a is! Map) continue;
@@ -1459,12 +1463,12 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
     final eventIds = bar(
       (p['actions'] as List?) ?? const [],
-      '0 0 0 auto',
+      'inset-inline-end',
       'dnn-swipe__actions',
     );
     final leadingIds = bar(
       (p['leadingActions'] as List?) ?? const [],
-      '0 auto 0 0',
+      'inset-inline-start',
       'dnn-swipe__actions dnn-swipe__actions--leading',
     );
 
@@ -1474,14 +1478,18 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     _style(fg, 'touch-action', 'pan-y');
     container.appendChild(fg);
 
-    // Where the row rests when it is open each way: left to show the trailing
-    // actions, right to show the leading ones.
+    // Where the row rests when it is open each way, counted towards the end
+    // of the row: negative shows the trailing actions, positive the leading
+    // ones. The bars change sides with the reading direction; the pointer and
+    // the transform are in screen coordinates and are turned to match, or a
+    // swipe would slide the row over the bar it meant to show.
     final open = -88.0 * eventIds.length;
     final openLeading = 88.0 * leadingIds.length;
     var startX = 0.0, offset = 0.0, dragging = false;
+    double sign() => _rtl ? -1 : 1;
     void setX(double x, {bool animate = false}) {
       _style(fg, 'transition', animate ? 'transform 0.2s' : 'none');
-      _style(fg, 'transform', 'translateX(${x}px)');
+      _style(fg, 'transform', 'translateX(${x * sign()}px)');
     }
 
     fg.addEventListener(
@@ -1498,7 +1506,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ((web.Event e) {
         if (!dragging) return;
         final pe = e as web.PointerEvent;
-        offset = (pe.clientX.toDouble() - startX).clamp(
+        offset = ((pe.clientX.toDouble() - startX) * sign()).clamp(
           open * 1.8,
           openLeading * 1.8,
         );
