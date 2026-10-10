@@ -485,6 +485,36 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final name = _optStr(p['semanticLabel']);
     if (name != null) input.setAttribute('aria-label', name);
     root.classList.toggle('dnn-choice--disabled', disabled);
+    // The colours the app stated, as custom properties a kit's stylesheet
+    // reads in place of the brand's. A switch the app coloured is that colour
+    // when it is on - its track, solid - under the thumb the app chose, or a
+    // white one.
+    final active = p['activeColor'];
+    final isSwitch = state == 'enabled';
+    _controlColor(root, 'active', active);
+    _controlColor(root, 'check', p['checkColor']);
+    _controlColor(
+      root,
+      'thumb',
+      p['thumbColor'] ?? (isSwitch && active is String ? '#ffffff' : null),
+    );
+    _controlColor(root, 'inactive-track', p['inactiveTrackColor']);
+    _controlColor(root, 'inactive-thumb', p['inactiveThumbColor']);
+    // For a kit whose own stylesheet has a colour written into it, which a
+    // custom property with no value cannot stand aside for.
+    root.classList.toggle('dnn-control--active', active is String);
+  }
+
+  /// Sets `--dnn-control-<part>` on [element] to [color], or takes it away
+  /// when the tree states none - so a control that stops being coloured goes
+  /// back to the brand's.
+  void _controlColor(web.Element element, String part, Object? color) {
+    final style = (element as web.HTMLElement).style;
+    if (color is String) {
+      style.setProperty('--dnn-control-$part', cssColor(color));
+    } else {
+      style.removeProperty('--dnn-control-$part');
+    }
   }
 
   /// Re-titles a dialog or sheet in place, when the title is all that changed.
@@ -823,6 +853,30 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
           // with its purpose written beside the icon.
           fab.classList.add('dnn-fab--extended');
           fab.appendChild(_el('span', 'dnn-fab__label', text: label));
+        }
+        // Important, because a kit may be: Materialize colours its button
+        // with a class whose rule says so, and an inline style loses to that.
+        final fabStyle = (fab as web.HTMLElement).style;
+        final background = _optStr(p['backgroundColor']);
+        if (background != null) {
+          fabStyle.setProperty(
+            'background-color',
+            cssColor(background),
+            'important',
+          );
+        }
+        final foreground = _optStr(p['foregroundColor']);
+        if (foreground != null) {
+          fabStyle.setProperty('color', cssColor(foreground), 'important');
+          // The glyph too, where a kit colours it apart from its button.
+          final glyphs = fab.querySelectorAll('.material-icons');
+          for (var i = 0; i < glyphs.length; i++) {
+            (glyphs.item(i)! as web.HTMLElement).style.setProperty(
+              'color',
+              cssColor(foreground),
+              'important',
+            );
+          }
         }
         return _clickable(_tooltip(fab, p), p);
       case 'IconButton':
@@ -2230,6 +2284,11 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       // snap a 0..1 slider to its ends; 'any' is continuous.
       ..step = divisions == null ? 'any' : '${(max - min) / divisions}'
       ..disabled = p['disabled'] == true;
+    // A range input takes one colour from a page, its accent: the filled
+    // part of the track and the thumb together. A kit that draws its own
+    // thumb can colour that apart; `inactiveColor` has nowhere to go.
+    _controlColor(slider, 'active', p['activeColor']);
+    _controlColor(slider, 'thumb', p['thumbColor']);
     final value = '${_num(p['value']) ?? min}';
     // Leave the thumb where the user has it while they are dragging: an echo
     // of the value we already have would fight the drag.

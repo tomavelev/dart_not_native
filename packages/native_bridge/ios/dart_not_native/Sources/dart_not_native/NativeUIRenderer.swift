@@ -1165,7 +1165,7 @@ class NativeUIRenderer {
   ) -> Bool {
     guard let button = view as? UIButton else { return false }
     let isOn = node[key] as? Bool ?? false
-    button.setImage(controlImage(isOn ? on : off, on: isOn), for: .normal)
+    button.setImage(controlImage(isOn ? on : off, on: isOn, node), for: .normal)
     styleControlLabel(button, node)
     announceChecked(button, isOn)
     // Setting the image does not fire the tap, so no suppression is needed.
@@ -1192,6 +1192,7 @@ class NativeUIRenderer {
     }
     // Setting isOn programmatically does not fire valueChanged, so it is safe.
     toggle.setOn(newNode["enabled"] as? Bool ?? false, animated: false)
+    tintToggle(toggle, newNode)
     toggle.isEnabled = !(newNode["disabled"] as? Bool ?? false)
     toggle.accessibilityLabel =
       newNode["label"] as? String ?? newNode["semanticLabel"] as? String
@@ -3151,8 +3152,9 @@ class NativeUIRenderer {
 
   private func renderFab(_ node: [String: Any]) -> UIView {
     let button = UIButton(type: .system)
-    // White for contrast against the FAB's tint.
-    applyIcon(button, node, color: color(themeOnPrimary, fallback: themeOnPrimary))
+    // White for contrast against the FAB's tint, unless the app said what
+    // goes on it.
+    applyIcon(button, node, color: color(node["foregroundColor"], fallback: themeOnPrimary))
     button.accessibilityLabel = node["tooltip"] as? String
     bindTap(button, node)
 
@@ -3160,7 +3162,7 @@ class NativeUIRenderer {
     // wide as they need. The two are one attributed title, since they are set
     // in different fonts.
     if let label = node["label"] as? String {
-      let ink = color(themeOnPrimary, fallback: themeOnPrimary)
+      let ink = color(node["foregroundColor"], fallback: themeOnPrimary)
       let title = NSMutableAttributedString()
       if let glyph = button.title(for: .normal), let font = iconFont {
         title.append(
@@ -3439,11 +3441,47 @@ class NativeUIRenderer {
    is baked into the image (`.alwaysOriginal`) rather than left to the button's
    `tintColor`, so the two states can differ.
    */
-  private func controlImage(_ name: String, on: Bool) -> UIImage? {
+  /// A check box's or radio button's glyph, in the colours [node] states -
+  /// `activeColor` for one that is on, and `checkColor` for the tick in it -
+  /// or the brand's.
+  private func controlImage(_ name: String, on: Bool, _ node: [String: Any]) -> UIImage? {
     let tint = on
-      ? color(themePrimary, fallback: themePrimary)
+      ? color(node["activeColor"], fallback: themePrimary)
       : color(themeTextSecondary, fallback: themeTextSecondary)
-    return UIImage(systemName: name)?.withTintColor(tint, renderingMode: .alwaysOriginal)
+    let image = UIImage(systemName: name)
+    // The tick is cut out of the filled square, so it shows whatever is
+    // behind the control. An app that names its colour gets the symbol drawn
+    // in two: the tick, then the square.
+    if on, let check = statedColor(node["checkColor"]) {
+      return image?.applyingSymbolConfiguration(
+        UIImage.SymbolConfiguration(paletteColors: [check, tint]))
+    }
+    return image?.withTintColor(tint, renderingMode: .alwaysOriginal)
+  }
+
+  /// A switch's colours, the app's where the node states them. On the build
+  /// and on every patch: the thumb is one colour on and another off, and
+  /// UIKit has one property for both.
+  private func tintToggle(_ toggle: UISwitch, _ node: [String: Any]) {
+    toggle.onTintColor = color(node["activeColor"], fallback: themePrimary)
+    toggle.thumbTintColor = statedColor(
+      node[toggle.isOn ? "thumbColor" : "inactiveThumbColor"])
+    // UIKit has no colour for the track of a switch that is off; the view's
+    // own background, rounded to the track's shape, is what shows there.
+    if let track = statedColor(node["inactiveTrackColor"]) {
+      toggle.backgroundColor = track
+      toggle.layer.cornerRadius = toggle.intrinsicContentSize.height / 2
+      toggle.clipsToBounds = true
+    } else {
+      toggle.backgroundColor = nil
+    }
+  }
+
+  /// A slider's colours, the app's where the node states them.
+  private func tintSlider(_ slider: UISlider, _ node: [String: Any]) {
+    slider.minimumTrackTintColor = color(node["activeColor"], fallback: themePrimary)
+    slider.maximumTrackTintColor = statedColor(node["inactiveColor"])
+    slider.thumbTintColor = statedColor(node["thumbColor"])
   }
 
   /// Tells VoiceOver whether a checkable control is on.
@@ -3485,7 +3523,8 @@ class NativeUIRenderer {
     let button = UIButton(type: .system)
     let checked = node["checked"] as? Bool ?? false
     button.setImage(
-      controlImage(checked ? "checkmark.square.fill" : "square", on: checked), for: .normal)
+      controlImage(checked ? "checkmark.square.fill" : "square", on: checked, node),
+      for: .normal)
     styleControlLabel(button, node)
     announceChecked(button, checked)
     bindings[button.hash] = node
@@ -3497,7 +3536,7 @@ class NativeUIRenderer {
     let button = UIButton(type: .system)
     let selected = node["selected"] as? Bool ?? false
     button.setImage(
-      controlImage(selected ? "largecircle.fill.circle" : "circle", on: selected),
+      controlImage(selected ? "largecircle.fill.circle" : "circle", on: selected, node),
       for: .normal)
     styleControlLabel(button, node)
     announceChecked(button, selected)
@@ -3793,7 +3832,7 @@ class NativeUIRenderer {
     slider.maximumValue = Float(number(node["max"]) ?? 1)
     slider.value = sliderValue(node)
     slider.isEnabled = !(node["disabled"] as? Bool ?? false)
-    slider.minimumTrackTintColor = color(themePrimary, fallback: themePrimary)
+    tintSlider(slider, node)
     bindings[slider.hash] = node
     slider.addTarget(self, action: #selector(sliderChanged(_:)), for: .valueChanged)
     for event: UIControl.Event in [.touchUpInside, .touchUpOutside, .touchCancel] {
@@ -3826,6 +3865,7 @@ class NativeUIRenderer {
     slider.minimumValue = Float(number(node["min"]) ?? 0)
     slider.maximumValue = Float(number(node["max"]) ?? 1)
     slider.isEnabled = !(node["disabled"] as? Bool ?? false)
+    tintSlider(slider, node)
     bindings[slider.hash] = node
     // Not while a finger is on it: the app is echoing back the value the drag
     // is already setting, and writing it would fight the gesture.
@@ -3836,8 +3876,8 @@ class NativeUIRenderer {
 
   private func renderToggle(_ node: [String: Any]) -> UIView {
     let toggle = UISwitch()
-    toggle.onTintColor = color(themePrimary, fallback: themePrimary)
     toggle.isOn = node["enabled"] as? Bool ?? false
+    tintToggle(toggle, node)
     toggle.isEnabled = !(node["disabled"] as? Bool ?? false)
     // A switch has no text of its own: it is named by the label drawn beside
     // it, or by the node - a list tile's title - when there is none.

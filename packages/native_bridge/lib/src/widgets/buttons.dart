@@ -848,9 +848,9 @@ class IconButton extends Widget {
 ///
 /// It is the platform's own button, which is an icon and, for
 /// [FloatingActionButton.extended], a label beside it. So [child] is read for
-/// its icon; [backgroundColor], [foregroundColor], [mini] and [elevation] are
-/// accepted and not carried - the button takes the theme's colours and the
-/// platform's size.
+/// its icon. [backgroundColor] and [foregroundColor] are drawn, and without
+/// them the button takes the theme's; [mini] and [elevation] are accepted and
+/// not carried - the button is the platform's size.
 class FloatingActionButton extends Widget {
   const FloatingActionButton({
     super.key,
@@ -932,14 +932,20 @@ class FloatingActionButton extends Widget {
     // and renders a glyph on the native renderers, which draw by codepoint.
     final icon = (glyph is Icon ? glyph.icon : null) ?? Icons.add;
     final label = _plainText(_label ?? (child is Icon ? null : child), owner);
-    return UIBuilder.floatingActionButton(
-      tooltip: tooltip ?? '',
-      // The node must fire something; a disabled button fires nothing.
-      onPressed: onPressed ?? () {},
-      icon: icon.name ?? 'add',
-      codepoint: icon.codePoint,
-      label: label,
-      id: _idOf(key),
+    return _withProps(
+      UIBuilder.floatingActionButton(
+        tooltip: tooltip ?? '',
+        // The node must fire something; a disabled button fires nothing.
+        onPressed: onPressed ?? () {},
+        icon: icon.name ?? 'add',
+        codepoint: icon.codePoint,
+        label: label,
+        id: _idOf(key),
+      ),
+      {
+        'backgroundColor': ?backgroundColor?._hex,
+        'foregroundColor': ?foregroundColor?._hex,
+      },
     );
   }
 }
@@ -1436,7 +1442,10 @@ class Checkbox extends Widget {
   /// nullable because Flutter's is, for the tristate box.
   final ValueChanged<bool?>? onChanged;
 
-  /// Accepted and not carried: the box takes the theme's primary colour.
+  /// What the box is filled with when it is ticked, and the tick in it; the
+  /// theme's primary and what reads on it when not given. A browser draws
+  /// its own tick, so [checkColor] shows on the native renderers, the Flutter
+  /// host and the Materialize kit.
   final Color? activeColor;
   final Color? checkColor;
   final BorderSide? side;
@@ -1466,6 +1475,8 @@ class Checkbox extends Widget {
     return _withProps(node, {
       if (changed == null) 'disabled': true,
       if (spoken != null) 'semanticLabel': spoken,
+      'activeColor': ?activeColor?._hex,
+      'checkColor': ?checkColor?._hex,
     });
   }
 }
@@ -1506,7 +1517,8 @@ class Radio<T> extends Widget {
   final ValueChanged<T?>? onChanged;
   final bool toggleable;
 
-  /// Accepted and not carried: the button takes the theme's primary colour.
+  /// The button's colour when it is the one chosen; the theme's primary
+  /// when not given.
   final Color? activeColor;
   final VisualDensity? visualDensity;
 
@@ -1538,6 +1550,7 @@ class Radio<T> extends Widget {
         'selected': selected,
         if (label != null) 'label': label,
         'semanticLabel': ?_spokenName(owner, label, semanticLabel, labelledBy),
+        'activeColor': ?activeColor?._hex,
         if (changed == null) 'disabled': true,
         if (_idOf(key) != null) 'id': _idOf(key),
       },
@@ -1582,8 +1595,10 @@ class Switch extends Widget {
   /// Null disables the switch.
   final ValueChanged<bool>? onChanged;
 
-  /// Accepted and not carried: the switch is the platform's own, in the
-  /// theme's colours.
+  /// The switch's colours; the theme's when not given. [activeColor] is what
+  /// the switch is when it is on - its track, which [activeTrackColor] says
+  /// more exactly - under [activeThumbColor], or a white thumb. The two
+  /// inactive colours are for when it is off.
   final Color? activeColor;
   final Color? activeThumbColor;
   final Color? activeTrackColor;
@@ -1613,6 +1628,12 @@ class Switch extends Widget {
         'enabled': value,
         if (label != null) 'label': label,
         'semanticLabel': ?_spokenName(owner, label, semanticLabel, labelledBy),
+        // The colour a switch is when it is on is its track's; the thumb is
+        // the renderer's unless the app says.
+        'activeColor': ?(activeTrackColor ?? activeColor)?._hex,
+        'thumbColor': ?activeThumbColor?._hex,
+        'inactiveTrackColor': ?inactiveTrackColor?._hex,
+        'inactiveThumbColor': ?inactiveThumbColor?._hex,
         if (changed == null) 'disabled': true,
         if (_idOf(key) != null) 'id': _idOf(key),
       },
@@ -1657,21 +1678,31 @@ class Slider extends Widget {
   /// platform slider has that bubble, so it is accepted and not shown.
   final String? label;
 
-  /// Accepted and not carried: the slider takes the theme's primary colour.
+  /// The filled part of the track, the rest of it, and the thumb; the
+  /// theme's primary when not given. A browser's range input has one colour
+  /// for all of it, so there only [activeColor] shows (and, under the
+  /// Materialize kit, [thumbColor]).
   final Color? activeColor;
   final Color? inactiveColor;
   final Color? thumbColor;
 
   @override
-  WidgetNode _render(_Owner owner) => UIBuilder.slider(
-    value: value,
-    onChanged: onChanged,
-    onChangeEnd: onChangeEnd,
-    min: min,
-    max: max,
-    divisions: divisions,
-    disabled: onChanged == null,
-    id: _idOf(key),
+  WidgetNode _render(_Owner owner) => _withProps(
+    UIBuilder.slider(
+      value: value,
+      onChanged: onChanged,
+      onChangeEnd: onChangeEnd,
+      min: min,
+      max: max,
+      divisions: divisions,
+      disabled: onChanged == null,
+      id: _idOf(key),
+    ),
+    {
+      'activeColor': ?activeColor?._hex,
+      'inactiveColor': ?inactiveColor?._hex,
+      'thumbColor': ?thumbColor?._hex,
+    },
   );
 }
 

@@ -22,6 +22,27 @@ html.dnn-kit-materialize { font-size: 14px; }
 .dnn-mz-choice > span { color: var(--dnn-text); }
 .dnn-mz-switch label { display: inline-flex; align-items: center; color: var(--dnn-text); font-size: 14px; }
 .dnn-mz-switch__label { margin-inline-start: 8px; }
+/* A control the app gave a colour of its own. Materialize writes its teal
+   into these rules, so they are restated for a control that carries one. */
+.dnn-control--active [type="checkbox"].filled-in:checked + span:not(.lever)::after {
+  border-color: var(--dnn-control-active);
+  background-color: var(--dnn-control-active);
+}
+.dnn-control--active [type="checkbox"].filled-in:checked + span:not(.lever)::before {
+  border-right-color: var(--dnn-control-check, #fff);
+  border-bottom-color: var(--dnn-control-check, #fff);
+}
+.dnn-control--active [type="radio"].with-gap:checked + span::before,
+.dnn-control--active [type="radio"].with-gap:checked + span::after { border-color: var(--dnn-control-active); }
+.dnn-control--active [type="radio"].with-gap:checked + span::after { background-color: var(--dnn-control-active); }
+.dnn-control--active.switch label input[type="checkbox"]:checked + .lever { background-color: var(--dnn-control-active); }
+.dnn-control--active.switch label input[type="checkbox"]:checked + .lever::after { background-color: var(--dnn-control-thumb, #fff); }
+/* A switch that is off, and a slider's thumb: Materialize's own colours
+   unless the control carries another. */
+.dnn-mz-switch label input[type="checkbox"]:not(:checked) + .lever { background-color: var(--dnn-control-inactive-track, rgba(0, 0, 0, 0.38)); }
+.dnn-mz-switch label input[type="checkbox"]:not(:checked) + .lever::after { background-color: var(--dnn-control-inactive-thumb, #f1f1f1); }
+html.dnn-kit-materialize input[type="range"]::-webkit-slider-thumb { background-color: var(--dnn-control-thumb, var(--dnn-control-active, #26a69a)); }
+html.dnn-kit-materialize input[type="range"]::-moz-range-thumb { background: var(--dnn-control-thumb, var(--dnn-control-active, #26a69a)); }
 
 .dnn-mz-card.card { width: 100%; max-width: 560px; margin: 8px 0; }
 .dnn-mz-card--outlined.card { box-shadow: none; border: 1px solid var(--dnn-divider); }

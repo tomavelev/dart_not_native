@@ -1746,6 +1746,7 @@ class NativeUIRenderer(
         val button = view as? CompoundButton ?: return false
         button.text = node["label"] as? String ?: ""
         applyDisabled(button, node)
+        tintControl(button, node)
         val checked = node[checkedKey] == true
         if (button.isChecked != checked) {
             // Set the state without the listener treating it as a user toggle.
@@ -3347,8 +3348,9 @@ class NativeUIRenderer(
     private fun renderFab(node: Map<*, *>): View {
         // The brand primary, matching the web FAB, unless the node overrides it.
         val fill = ColorStateList.valueOf(color(node["backgroundColor"], themePrimary))
-        // White for contrast against the FAB's filled background.
-        val onFill = color(null, themeOnPrimary)
+        // White for contrast against the FAB's filled background, unless the
+        // app said what goes on it.
+        val onFill = color(node["foregroundColor"], themeOnPrimary)
         val label = node["label"] as? String
             ?: return FloatingActionButton(materialContext).apply {
                 backgroundTintList = fill
@@ -3719,6 +3721,64 @@ class NativeUIRenderer(
      * the patch, so a control that becomes available again is the same view,
      * enabled.
      */
+    /**
+     * A check box's, a radio button's or a switch's colours: the app's own
+     * where the node states them (`activeColor` and the rest), the brand's
+     * where it does not. On the build and on every patch, so a control that
+     * stops being coloured goes back.
+     */
+    private fun tintControl(button: CompoundButton, node: Map<*, *>) {
+        val active = parseColorOrNull(node["activeColor"])
+        when (button) {
+            is MaterialCheckBox -> {
+                button.buttonTintList = controlTint(
+                    checked = active ?: color(null, themePrimary),
+                    unchecked = color(null, themeTextSecondary),
+                )
+                // The tick, which reads against what the box is filled with.
+                button.buttonIconTintList =
+                    ColorStateList.valueOf(color(node["checkColor"], themeOnPrimary))
+            }
+            is SwitchCompat -> {
+                // A switch the app coloured is that colour when it is on - its
+                // track, solid - under the thumb the app chose, or a white one.
+                // One it did not colour has the brand's thumb over the same
+                // colour faded, which is how Material draws it.
+                val thumb = parseColorOrNull(node["thumbColor"])
+                button.thumbTintList = controlTint(
+                    checked = thumb
+                        ?: if (active != null) Color.WHITE else color(null, themePrimary),
+                    unchecked = color(node["inactiveThumbColor"], themeSurfaceVariant),
+                )
+                button.trackTintList = controlTint(
+                    checked = active ?: withAlpha(color(null, themePrimary), 0.5f),
+                    unchecked = color(node["inactiveTrackColor"], themeDivider),
+                )
+            }
+            else -> button.buttonTintList = controlTint(
+                checked = active ?: color(null, themePrimary),
+                unchecked = color(null, themeTextSecondary),
+            )
+        }
+    }
+
+    /** A slider's colours, the app's where it stated them. */
+    private fun tintSlider(slider: Slider, node: Map<*, *>) {
+        val active = color(node["activeColor"], themePrimary)
+        slider.trackActiveTintList = ColorStateList.valueOf(active)
+        slider.thumbTintList =
+            ColorStateList.valueOf(parseColorOrNull(node["thumbColor"]) ?: active)
+        // The rest of the track, the ticks and the halo are the Material
+        // theme's own colours unless told - its purple, beside the app's
+        // colour on the active half.
+        val faint = withAlpha(active, 0.24f)
+        slider.trackInactiveTintList =
+            ColorStateList.valueOf(parseColorOrNull(node["inactiveColor"]) ?: faint)
+        slider.tickInactiveTintList = ColorStateList.valueOf(active)
+        slider.tickActiveTintList = ColorStateList.valueOf(color(null, themeOnPrimary))
+        slider.haloTintList = ColorStateList.valueOf(faint)
+    }
+
     private fun applyDisabled(button: CompoundButton, node: Map<*, *>) {
         // A control with no text of its own is named by the node - a list
         // tile's title, usually - or it is announced as "checkbox" and no more.
@@ -3736,12 +3796,7 @@ class NativeUIRenderer(
     private fun renderCheckbox(node: Map<*, *>): View = MaterialCheckBox(materialContext).apply {
         text = node["label"] as? String ?: ""
         setTextColor(color(null, themeText))
-        buttonTintList = controlTint(
-            checked = color(null, themePrimary),
-            unchecked = color(null, themeTextSecondary),
-        )
-        // The tick, which reads against the primary the box is filled with.
-        buttonIconTintList = ColorStateList.valueOf(color(null, themeOnPrimary))
+        tintControl(this, node)
         isChecked = node["checked"] == true
         applyDisabled(this, node)
         layoutParams = wrapContent()
@@ -3753,10 +3808,7 @@ class NativeUIRenderer(
     private fun renderRadio(node: Map<*, *>): View = MaterialRadioButton(materialContext).apply {
         text = node["label"] as? String ?: ""
         setTextColor(color(null, themeText))
-        buttonTintList = controlTint(
-            checked = color(null, themePrimary),
-            unchecked = color(null, themeTextSecondary),
-        )
+        tintControl(this, node)
         isChecked = node["selected"] == true
         applyDisabled(this, node)
         layoutParams = wrapContent()
@@ -4021,16 +4073,7 @@ class NativeUIRenderer(
         stepSize = (node["divisions"] as? Number)?.let { (to - from) / it.toFloat() } ?: 0f
         value = sliderValue(node, from, to)
         isEnabled = node["disabled"] != true
-        trackActiveTintList = ColorStateList.valueOf(color(null, themePrimary))
-        thumbTintList = ColorStateList.valueOf(color(null, themePrimary))
-        // The rest of the track, the ticks and the halo are the Material
-        // theme's own colours unless told - its purple, beside the app's
-        // primary on the active half.
-        val faint = ColorStateList.valueOf(withAlpha(color(null, themePrimary), 0.24f))
-        trackInactiveTintList = faint
-        tickInactiveTintList = ColorStateList.valueOf(color(null, themePrimary))
-        tickActiveTintList = ColorStateList.valueOf(color(null, themeOnPrimary))
-        haloTintList = faint
+        tintSlider(this, node)
         layoutParams = matchWidth()
 
         val eventId = node["eventId"] as? String
@@ -4069,6 +4112,7 @@ class NativeUIRenderer(
         slider.valueFrom = from
         slider.valueTo = to
         slider.isEnabled = node["disabled"] != true
+        tintSlider(slider, node)
         val value = sliderValue(node, from, to)
         // Not while it is being dragged: the app is echoing back the value the
         // finger is already setting, and writing it would fight the gesture.
@@ -4084,16 +4128,7 @@ class NativeUIRenderer(
         showText = false
         text = node["label"] as? String ?: ""
         setTextColor(color(null, themeText))
-        // The thumb takes the brand colour when on and the surface when off;
-        // the track is the same colour faded, which is how Material draws it.
-        thumbTintList = controlTint(
-            checked = color(null, themePrimary),
-            unchecked = color(null, themeSurfaceVariant),
-        )
-        trackTintList = controlTint(
-            checked = withAlpha(color(null, themePrimary), 0.5f),
-            unchecked = color(null, themeDivider),
-        )
+        tintControl(this, node)
         isChecked = node["enabled"] == true
         applyDisabled(this, node)
         layoutParams = wrapContent()

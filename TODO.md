@@ -2149,14 +2149,17 @@ Things no widget can do because no node can say them. Each needs a prop or an
 event, and then the same work in four renderers.
 
 1. **No animation-finished event.** A renderer animates the difference
-   between two trees and never reports the end, which is why `onEnd` is dead
-   (`AnimatedOpacity`'s doc comment). The first thing an explicit-animation
-   design needs.
-2. **No colours on `Toggle`, `Checkbox`, `Radio`, `Slider` or
-   `FloatingActionButton`.** The widgets accept `activeColor`,
-   `backgroundColor` and the rest and carry none of them (`buttons.dart`);
-   every one is drawn in the theme's primary. An app whose brand needs one
-   green switch cannot have it.
+   between two trees and never reports the end, which is why `onEnd` is
+   timed by the app and not reported by the renderer (`AnimatedOpacity`'s
+   doc comment). The first thing an explicit-animation design needs.
+2. ~~**No colours on `Toggle`, `Checkbox`, `Radio`, `Slider` or
+   `FloatingActionButton`.**~~ Carried since 2026-10-10: `activeColor`,
+   `checkColor`, the switch's thumb and its two off colours, the slider's
+   three, and the button's background and foreground, drawn by all four
+   renderers on the build and on a patch. Looked at on an iOS simulator, an
+   Android emulator and in Chrome under both kits. What does not show is what
+   a browser's own controls have no colour for: a checkbox's tick and a range
+   input's thumb and unfilled track, outside the Materialize kit.
 3. **`LazyList` has no refresh and no padding.** A `RefreshIndicator` over a
    windowed list is "its child and no more", and the list's padding is a
    `Padding` node around it rather than scrolling content inset
@@ -2297,8 +2300,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2036 tests
-  (1116 in the package, 388 for the example apps and goldens, 489 in the browser,
+  contracts, the plugin system and the design system are covered by 2087 tests
+  (1159 in the package, 388 for the example apps and goldens, 497 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 19 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, seventeen the native

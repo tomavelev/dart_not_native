@@ -1062,7 +1062,8 @@ border) - there are many, each documented on the field.
 | `RichText` with `WidgetSpan`, tappable spans | Text runs only: a `WidgetSpan` is left out, and `TextSpan` has no `recognizer` |
 | `TextOverflow.fade` | Drawn as `clip` |
 | `Scaffold.drawer` slides in from the side | Shown as a sheet, opened by the menu button the app bar gains or by `Scaffold.of(context).openDrawer()`, and closed when the app moves to another page. A scaffold nested in another's body is composed from a column and a stack |
-| `FloatingActionButton` takes colours, `mini`, a location | The platform's button in the theme's colours, in the platform's place |
+| `FloatingActionButton` takes colours, `mini`, a location | Its `backgroundColor` and `foregroundColor` are drawn; the size and the place are the platform's |
+| `Checkbox`, `Radio`, `Switch` and `Slider` take colours | Drawn on all four renderers. On the web a browser's own checkbox and range input have one accent colour, so `checkColor`, `inactiveColor` and `thumbColor` show only where a kit draws those parts itself |
 | `NavigationRail` `leading`, `trailing`, `extended` | Accepted and not drawn |
 | `Container` with a border whose sides differ, several shadows | Thin boxes over the edges; the first shadow only; no `spreadRadius` |
 | `InheritedWidget.updateShouldNotify`, `didChangeDependencies` on change | As Flutter, for a `State`: `didChangeDependencies` runs again before a build in which something the state read through its own `context` has changed, and `updateShouldNotify` says whether it has. It does not prune the rebuild - everything still rebuilds from the root |

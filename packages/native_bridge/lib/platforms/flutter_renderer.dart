@@ -1221,7 +1221,10 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       min: min,
       max: max,
       divisions: divisions,
-      activeColor: _primaryColor,
+      // The app's own colours where it stated them, the brand's where not.
+      activeColor: _color(p['activeColor']) ?? _primaryColor,
+      inactiveColor: _color(p['inactiveColor']),
+      thumbColor: _color(p['thumbColor']),
       onChanged: p['disabled'] == true
           ? null
           : (value) => send('change', value),
@@ -1233,8 +1236,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final checkbox = Checkbox(
       // The brand colour, not Material's own: a control is as much the app's
       // as a button is, and the other three renderers tint theirs too.
-      activeColor: _primaryColor,
-      checkColor: _onPrimaryColor,
+      activeColor: _color(p['activeColor']) ?? _primaryColor,
+      checkColor: _color(p['checkColor']) ?? _onPrimaryColor,
       value: p['checked'] == true,
       onChanged: p['disabled'] == true
           ? null
@@ -1276,6 +1279,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
                 : Icons.radio_button_unchecked,
             color: disabled
                 ? _textSecondaryColor.withValues(alpha: 0.6)
+                : selected
+                ? _color(p['activeColor']) ?? _variantColor('primary')
                 : _variantColor('primary'),
           ),
           if (label != null) ...[
@@ -1288,9 +1293,16 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   }
 
   Widget _toggle(Map<String, dynamic> p) {
+    // A switch the app coloured is that colour when it is on: its track,
+    // solid, with the thumb the app chose or white over it. One it did not
+    // colour keeps the brand's thumb over a paler track.
+    final active = _color(p['activeColor']);
     final toggle = Switch(
-      activeThumbColor: _primaryColor,
-      activeTrackColor: _primaryColor.withValues(alpha: 0.5),
+      activeThumbColor:
+          _color(p['thumbColor']) ?? (active == null ? _primaryColor : Colors.white),
+      activeTrackColor: active ?? _primaryColor.withValues(alpha: 0.5),
+      inactiveThumbColor: _color(p['inactiveThumbColor']),
+      inactiveTrackColor: _color(p['inactiveTrackColor']),
       value: p['enabled'] == true,
       onChanged: p['disabled'] == true
           ? null
@@ -2115,7 +2127,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final themed = theme != AppTheme.fallback;
     final background =
         _color(p['backgroundColor']) ?? (themed ? _primaryColor : null);
-    final foreground = themed ? _onPrimaryColor : null;
+    final foreground =
+        _color(p['foregroundColor']) ?? (themed ? _onPrimaryColor : null);
     final icon = Icon(_iconOf(p, 'add'));
     final label = _optString(p['label']);
     if (label != null) {

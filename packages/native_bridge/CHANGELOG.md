@@ -100,6 +100,26 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A control takes the colour it is given
+
+- `Checkbox(activeColor:, checkColor:)`, `Radio(activeColor:)`,
+  `Switch(activeColor:, activeTrackColor:, activeThumbColor:,
+  inactiveTrackColor:, inactiveThumbColor:)`, `Slider(activeColor:,
+  inactiveColor:, thumbColor:)` and `FloatingActionButton(backgroundColor:,
+  foregroundColor:)` are drawn in those colours. The widgets accepted them
+  and sent none, so every control was the theme's primary and an app could
+  not have one green switch.
+- The protocol: `activeColor`, `checkColor`, `thumbColor`, `inactiveColor`,
+  `inactiveTrackColor` and `inactiveThumbColor` on the four controls, and
+  `foregroundColor` beside the `backgroundColor` a floating button already
+  had. All optional; a control that states none is the renderer's to
+  colour, as before, and one that stops stating them goes back.
+- All four renderers, on the build and on a patch. Seen on an iOS simulator,
+  an Android emulator and in Chrome under both style kits. On the web a
+  browser's own checkbox and range input take one accent colour, so the
+  tick, the thumb and the unfilled track are theirs outside the Materialize
+  kit, which draws those parts itself.
+
 ### Five things that were accepted and not done
 
 - **`onEnd`** is called on `AnimatedOpacity`, `AnimatedContainer`,

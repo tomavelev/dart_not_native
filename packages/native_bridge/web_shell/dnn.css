@@ -566,7 +566,7 @@ button.dnn-textfield__icon--suffix:focus-visible { outline: 2px solid var(--dnn-
   width: 100%;
   max-width: 480px;
   margin: 8px 0;
-  accent-color: var(--dnn-primary);
+  accent-color: var(--dnn-control-active, var(--dnn-primary));
 }
 .dnn-slider:disabled { accent-color: var(--dnn-divider); cursor: default; }
 
@@ -578,7 +578,9 @@ button.dnn-textfield__icon--suffix:focus-visible { outline: 2px solid var(--dnn-
   font-size: 14px;
   user-select: none;
 }
-.dnn-checkbox input, .dnn-radio input { width: 18px; height: 18px; margin: 0; accent-color: var(--dnn-primary); cursor: pointer; }
+/* --dnn-control-* are the colours an app gave one control (activeColor and
+   the rest), set on it by the renderer; without them it is the brand's. */
+.dnn-checkbox input, .dnn-radio input { width: 18px; height: 18px; margin: 0; accent-color: var(--dnn-control-active, var(--dnn-primary)); cursor: pointer; }
 
 .dnn-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
 .dnn-switch__track {
@@ -586,7 +588,7 @@ button.dnn-textfield__icon--suffix:focus-visible { outline: 2px solid var(--dnn-
   width: 36px;
   height: 14px;
   border-radius: 7px;
-  background: var(--dnn-divider);
+  background: var(--dnn-control-inactive-track, var(--dnn-divider));
   flex-shrink: 0;
 }
 .dnn-switch__track::after {
@@ -597,11 +599,11 @@ button.dnn-textfield__icon--suffix:focus-visible { outline: 2px solid var(--dnn-
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--dnn-surface);
+  background: var(--dnn-control-inactive-thumb, var(--dnn-surface));
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
-.dnn-switch input:checked + .dnn-switch__track { background: color-mix(in srgb, var(--dnn-primary) 50%, transparent); }
-.dnn-switch input:checked + .dnn-switch__track::after { inset-inline-start: 18px; background: var(--dnn-primary); }
+.dnn-switch input:checked + .dnn-switch__track { background: var(--dnn-control-active, color-mix(in srgb, var(--dnn-primary) 50%, transparent)); }
+.dnn-switch input:checked + .dnn-switch__track::after { inset-inline-start: 18px; background: var(--dnn-control-thumb, var(--dnn-primary)); }
 /* A control the app has disabled: the browser already refuses the click, and
  * this is what says so - for every kit, since the renderer puts the class on
  * whatever the kit built. */
