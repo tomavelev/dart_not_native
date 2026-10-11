@@ -710,7 +710,7 @@ class _Owner {
   /// index in a Column, the `body` of a Scaffold, the route being drawn - so a
   /// widget without a [Key] can be told apart from another of its type
   /// somewhere else in the tree.
-  final List<Object> _slots = [];
+  List<Object> _slots = [];
 
   /// How many widgets of each type have been built at each path this pass,
   /// which separates siblings a parent renders without a slot of their own.
@@ -1480,8 +1480,13 @@ class _Owner {
     // Its subtree hangs below it, so a child of one instance cannot be
     // mistaken for the same child of another.
     final outer = _scope;
+    final outerSlots = _slots;
     final context = state._context!;
     _scope = context._scope;
+    // A keyed widget is found by its key and not by its place, so the places
+    // below it are counted from the key: what it builds keeps its state when
+    // the widget is moved, as the widget itself does.
+    if (key != null) _slots = ['@${key is GlobalKey ? '' : _keyScope}'];
     try {
       return inSlot(
         // Only the last step of a position id: the steps before it are in
@@ -1494,6 +1499,7 @@ class _Owner {
       );
     } finally {
       _scope = outer;
+      _slots = outerSlots;
     }
   }
 

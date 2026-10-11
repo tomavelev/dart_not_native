@@ -142,6 +142,18 @@ Flutter, it now agrees, and these are the places existing code has to change:
   grey block; under Materialize a disabled tonal button keeps a fill.
   A text button is written in the app's primary under both.
 
+### `AnimatedSwitcher` and `AnimatedCrossFade` fade
+
+- The old child stays under the new one, deaf to touches, and fades out as
+  the new one fades in; it used to be swapped at once. A child is new when
+  its type or key changes, as in Flutter. The fade is the only transition -
+  a `transitionBuilder` is handed a finished animation - and a cross-fade
+  does not animate its size.
+- **State under a keyed widget travels with the key.** A widget with a
+  `Key` kept its own `State` when it moved on its page, but the widgets it
+  built were still found by where they were drawn, and started again. They
+  are counted from the key now, which is what `KeyedSubtree` always said.
+
 ### `Stepper` and `DataTable`
 
 - `Stepper`, `Step`, `StepState`, `StepperType` and `ControlsDetails`:

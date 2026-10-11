@@ -564,10 +564,26 @@ class AnimatedAlign extends Widget {
 typedef AnimatedSwitcherTransitionBuilder =
     Widget Function(Widget child, Animation<double> animation);
 
-/// Flutter cross-fades from the old child to the new one. Here the new child
-/// is simply shown: one tree replaces another, and a renderer has no old
-/// child left to fade from.
-class AnimatedSwitcher extends Widget {
+/// Fades from the old child to the new one - Flutter's `AnimatedSwitcher`.
+///
+/// A child is new when its type or its key is not the last one's, as in
+/// Flutter: two `Text`s are the same child unless they are given different
+/// keys. The old child stays, drawn under the new one and deaf to touches,
+/// and fades out over [reverseDuration] while the new one fades in over
+/// [duration].
+///
+/// ```dart
+/// AnimatedSwitcher(
+///   duration: const Duration(milliseconds: 300),
+///   child: Text('$count', key: ValueKey(count)),
+/// )
+/// ```
+///
+/// The transition is the fade. A [transitionBuilder] is called, with an
+/// animation that has finished (see [Animation]), and what it returns is
+/// what fades; a [layoutBuilder] is accepted and not called - the children
+/// are stacked about their centres, which is Flutter's default.
+class AnimatedSwitcher extends StatelessWidget {
   const AnimatedSwitcher({
     super.key,
     this.child,
@@ -588,8 +604,181 @@ class AnimatedSwitcher extends Widget {
   layoutBuilder;
 
   @override
-  WidgetNode _render(_Owner owner) =>
-      _renderChild(owner, child ?? const SizedBox.shrink());
+  Widget build(BuildContext context) {
+    final child = this.child;
+    final builder = transitionBuilder;
+    return _Switch(
+      // What makes a child a new one: Flutter's `Widget.canUpdate`.
+      identity: child == null ? null : (child.runtimeType, child.key),
+      duration: duration,
+      reverseDuration: reverseDuration ?? duration,
+      inCurve: switchInCurve,
+      outCurve: switchOutCurve,
+      alignment: Alignment.center,
+      child: child == null
+          ? null
+          : builder == null
+          ? child
+          : builder(child, kAlwaysCompleteAnimation),
+    );
+  }
+}
+
+/// A child that is leaving a [_Switch].
+class _Leaving {
+  _Leaving(this.serial, this.child);
+  final int serial;
+  final Widget? child;
+  Timer? timer;
+}
+
+/// One child at a time, each fading in over the one before it.
+class _Switch extends StatefulWidget {
+  const _Switch({
+    required this.identity,
+    required this.child,
+    required this.duration,
+    required this.reverseDuration,
+    required this.inCurve,
+    required this.outCurve,
+    required this.alignment,
+  });
+  final Object? identity;
+  final Widget? child;
+  final Duration duration;
+  final Duration reverseDuration;
+  final Curve inCurve;
+  final Curve outCurve;
+  final AlignmentGeometry alignment;
+
+  @override
+  State<_Switch> createState() => _SwitchState();
+}
+
+class _SwitchState extends State<_Switch> {
+  int _serial = 0;
+  final List<_Leaving> _leaving = [];
+
+  /// Whether the child showing came in after another, and so fades in.
+  bool _entered = false;
+
+  @override
+  void didUpdateWidget(_Switch oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.identity == widget.identity) return;
+    final gone = _Leaving(_serial, oldWidget.child);
+    _serial++;
+    _entered = true;
+    if (widget.reverseDuration <= Duration.zero) return;
+    _leaving.add(gone);
+    gone.timer = Timer(widget.reverseDuration, () {
+      _leaving.remove(gone);
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final gone in _leaving) {
+      gone.timer?.cancel();
+    }
+    super.dispose();
+  }
+
+  // A key of its own for each child that has been here, so a child's state
+  // stays with it while the ones around it come and go.
+  Key _keyOf(int serial) => ValueKey('switch-${identityHashCode(this)}-$serial');
+
+  @override
+  Widget build(BuildContext context) {
+    final child = widget.child ?? const SizedBox.shrink();
+    final current = KeyedSubtree(
+      key: _keyOf(_serial),
+      child: _entered && widget.duration > Duration.zero
+          ? _FadeTo(
+              from: 0,
+              to: 1,
+              duration: widget.duration,
+              curve: widget.inCurve,
+              child: child,
+            )
+          : child,
+    );
+    if (_leaving.isEmpty) return current;
+    return Stack(
+      alignment: widget.alignment,
+      children: [
+        for (final gone in _leaving)
+          KeyedSubtree(
+            key: _keyOf(gone.serial),
+            child: IgnorePointer(
+              child: _FadeTo(
+                from: 1,
+                to: 0,
+                duration: widget.reverseDuration,
+                curve: widget.outCurve,
+                child: gone.child ?? const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        current,
+      ],
+    );
+  }
+}
+
+/// Draws [child] at [from], then fades it to [to].
+///
+/// A renderer animates the difference between two trees, so there have to be
+/// two: the first says where the fade starts, and one a moment later says
+/// where it ends.
+class _FadeTo extends StatefulWidget {
+  const _FadeTo({
+    required this.from,
+    required this.to,
+    required this.duration,
+    required this.curve,
+    required this.child,
+  });
+  final double from;
+  final double to;
+  final Duration duration;
+  final Curve curve;
+  final Widget child;
+
+  @override
+  State<_FadeTo> createState() => _FadeToState();
+}
+
+class _FadeToState extends State<_FadeTo> {
+  // Long enough for a renderer to have drawn the start: a browser that is
+  // handed both ends in one frame shows only the last.
+  static const _settle = Duration(milliseconds: 32);
+
+  late double _opacity = widget.from;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(_settle, () {
+      if (mounted) setState(() => _opacity = widget.to);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedOpacity(
+    opacity: _opacity,
+    duration: widget.duration,
+    curve: widget.curve,
+    child: widget.child,
+  );
 }
 
 /// Flutter animates its own size as its child's changes. Here the child is
@@ -621,9 +810,15 @@ class AnimatedSize extends Widget {
 /// Which child an [AnimatedCrossFade] shows.
 enum CrossFadeState { showFirst, showSecond }
 
-/// Flutter fades between two children. Here the one chosen is shown, without
-/// the fade.
-class AnimatedCrossFade extends Widget {
+/// Fades between two children - Flutter's `AnimatedCrossFade`.
+///
+/// The child [crossFadeState] names is shown; when it changes, the other
+/// fades out under it as it fades in, over [duration]. The two are stacked at
+/// [alignment], so while they cross the space is the larger one's; it then
+/// becomes the new child's at once - the size is not animated, and
+/// [sizeCurve] is not consulted. A child that is not showing is not built,
+/// so it starts again when it comes back.
+class AnimatedCrossFade extends StatelessWidget {
   const AnimatedCrossFade({
     super.key,
     required this.firstChild,
@@ -647,8 +842,19 @@ class AnimatedCrossFade extends Widget {
   final Duration? reverseDuration;
 
   @override
-  WidgetNode _render(_Owner owner) => crossFadeState == CrossFadeState.showFirst
-      ? _renderChild(owner, firstChild, 'first')
-      : _renderChild(owner, secondChild, 'second')
-;
+  Widget build(BuildContext context) {
+    final first = crossFadeState == CrossFadeState.showFirst;
+    // Flutter runs one animation forwards to the second child and back to
+    // the first, so the reverse duration is the way back.
+    final time = first ? (reverseDuration ?? duration) : duration;
+    return _Switch(
+      identity: crossFadeState,
+      duration: time,
+      reverseDuration: time,
+      inCurve: first ? firstCurve : secondCurve,
+      outCurve: first ? secondCurve : firstCurve,
+      alignment: alignment,
+      child: first ? firstChild : secondChild,
+    );
+  }
 }

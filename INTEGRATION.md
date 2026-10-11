@@ -1043,7 +1043,8 @@ border) - there are many, each documented on the field.
 | `Hero` flies between pages; `MouseRegion` follows the pointer | Both draw their child and nothing else |
 | A pushed page slides or fades in | **No page transitions.** A pushed page replaces what its navigator shows. `PageRouteBuilder.transitionsBuilder` and `go_router`'s `pageBuilder` are accepted-and-unused / absent. Pages beneath keep their `State` |
 | `Dismissible`: the row slides away under the finger | It does, in every direction, with `background` behind it; `confirmDismiss`, `dismissThresholds` and `onDismissed` as in Flutter. The gap it leaves does not close until the app removes the row (`resizeDuration` is not carried), `onUpdate` is not called, and each movement of the finger is a build |
-| `AnimatedSwitcher`, `AnimatedCrossFade`, `AnimatedSize` animate between children or sizes | The new child or size is simply shown. **No transition** |
+| `AnimatedSwitcher`, `AnimatedCrossFade` animate between children | The old child fades out under the new one as it fades in. The fade is the only transition: a `transitionBuilder` gets a finished animation, and the size is not animated |
+| `AnimatedSize` animates between sizes | The new size is simply shown. **No transition** |
 | `AnimatedContainer` animates every property | Size, colour, opacity and transform move; padding, margin, alignment and border land at once. `AnimatedPadding` and `AnimatedAlign` land at once |
 | `onEnd` fires when an implicit animation finishes | Called a `duration` after a build that changed what the widget shows: the app's clock, since a renderer does not report an animation finishing. Not for `AnimatedSize` |
 | `AnimationController`, `Tween`, `AnimatedBuilder` driven by one | No `AnimationController`. `Animation` exists for signatures and stands still. A `Ticker` is a 16 ms timer; each tick that calls `setState` is a full rebuild and a message to the platform (§10) |

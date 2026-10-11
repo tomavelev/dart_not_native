@@ -2075,8 +2075,13 @@ notice.
    changes.
 4. **Implicit animation is size, colour, opacity and transform only.**
    Padding, margin, alignment and borders land at once, so `AnimatedPadding`
-   and `AnimatedAlign` do not animate; `AnimatedSwitcher`, `AnimatedCrossFade`
-   and `AnimatedSize` show the new child with no transition (`motion.dart`).
+   and `AnimatedAlign` do not animate, and `AnimatedSize` shows the new size
+   at once (`motion.dart`). ~~`AnimatedSwitcher` and `AnimatedCrossFade` show
+   the new child with no transition~~ - since 2026-10-11 the old child fades
+   out under the new one as it fades in, seen on an iOS simulator, an Android
+   emulator and in Chrome. The fade is the only transition: a
+   `transitionBuilder` is handed a finished animation, and a cross-fade's
+   size is not animated.
    All curves collapse to the five every renderer has.
 5. **A `ScrollController` hears scrolling a step behind.** A scroller - a
    windowed list included, since 2026-10-11 - reports its offset when it
@@ -2391,8 +2396,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2288 tests
-  (1312 in the package, 388 for the example apps and goldens, 545 in the browser,
+  contracts, the plugin system and the design system are covered by 2300 tests
+  (1324 in the package, 388 for the example apps and goldens, 545 in the browser,
   43 in the bloc package,
   counted 2026-10-11), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native
