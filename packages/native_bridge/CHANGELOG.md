@@ -100,6 +100,19 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A run of text can be tapped
+
+- `TextSpan(recognizer: TapGestureRecognizer()..onTap = ...)`: a link inside
+  a paragraph. `TextSpan` had no `recognizer`, so an app with one did not
+  compile. `TapGestureRecognizer` comes with the widgets.
+- The protocol: a run in a `Text` node's `spans` may carry an `eventId`,
+  which a tap on that run sends.
+- All four renderers. On the web the run is a link - reached with Tab,
+  chosen with Enter, announced as one. A touch on the words around a link is
+  not the text's, and reaches whatever the text is written in.
+- Seen on an iOS simulator, an Android emulator and in Chrome. Only a tap is
+  heard, and on iOS a selectable text's links are not tappable.
+
 ### A windowed list can be padded and pulled
 
 - `ListView.builder(itemExtent:, padding:)` puts its padding inside the

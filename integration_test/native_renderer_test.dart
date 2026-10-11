@@ -138,6 +138,20 @@ WidgetNode _screenTree() => UIBuilder.overlay(
                   DSCard.filled(content: UIBuilder.text('Cell $i')),
               ],
             ),
+            // Runs with styles of their own, one of which can be tapped: a
+            // label that listens for the touch, on both natives.
+            UIBuilder.text(
+              'Read the terms first',
+              spans: const [
+                {'text': 'Read the '},
+                {
+                  'text': 'terms',
+                  'decoration': 'underline',
+                  'eventId': 'terms_link',
+                },
+                {'text': ' first', 'italic': true},
+              ],
+            ),
             UIBuilder.swipeActions(
               child: AndroidUIBuilder.listItem(text: 'Swipe me'),
               actions: [

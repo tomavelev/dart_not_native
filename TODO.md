@@ -2171,9 +2171,17 @@ event, and then the same work in four renderers.
    in Chrome with touch: pulled, refreshed, and scrolled to the last row.
    Not done: `scrollOffset` on a padded list is not checked against
    Flutter's, where an offset includes the padding.
-4. **Text spans cannot be tapped.** `spans` are styled runs; `TextSpan` has
-   no `recognizer` and a `WidgetSpan` is left out of the line (`text.dart`).
-   "By continuing you accept the *terms*" has to be a `Row`.
+4. ~~**Text spans cannot be tapped.**~~ They can since 2026-10-10:
+   `TextSpan(recognizer: TapGestureRecognizer()..onTap = ...)` is a run with
+   an `eventId`, and all four renderers send it - a link to the mouse, the
+   keyboard and a screen reader on the web, a recogniser in the Flutter
+   host, and on both natives a label that works out which run a touch landed
+   on. A touch on the words between the links is not the text's: it reaches
+   the row behind, as in Flutter. Seen on an iOS simulator (a link wrapped
+   over two lines answers on both), an Android emulator and in Chrome.
+   Short of Flutter: only a tap is heard - no long press - a `WidgetSpan`
+   is still left out, and on iOS the links of a `SelectableText` are not
+   tappable.
 5. **Only the screen has a direction.** `RootProps.textDirection` is one prop
    on the root. A `Directionality` deep in a screen turns the widget layer's
    values and rows below it, not the platform's own controls there
@@ -2322,8 +2330,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2147 tests
-  (1196 in the package, 388 for the example apps and goldens, 520 in the browser,
+  contracts, the plugin system and the design system are covered by 2159 tests
+  (1204 in the package, 388 for the example apps and goldens, 524 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

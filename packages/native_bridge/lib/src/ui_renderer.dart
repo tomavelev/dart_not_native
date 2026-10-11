@@ -753,8 +753,8 @@ class UIBuilder {
       if (italic) 'italic': true,
       if (selectable) 'selectable': true,
       // Runs with their own style: each is `{text, color?, fontSize?,
-      // fontWeight?, decoration?, italic?}` and inherits the rest from the
-      // node. `content` stays the whole string, for a renderer or a test that
+      // fontWeight?, decoration?, italic?, eventId?}` and inherits the rest
+      // from the node. A run with an `eventId` can be tapped, and sends it. `content` stays the whole string, for a renderer or a test that
       // only wants the words.
       if (spans != null) 'spans': spans,
       if (fontSize != null) 'fontSize': fontSize,

@@ -2036,6 +2036,53 @@ void main() {
       expect(spans[1].style!.decoration, TextDecoration.underline);
       expect(find.text('Hello world', findRichText: true), findsOneWidget);
     });
+
+    testWidgets('a run with an event is tapped, and the rest is not', (
+      tester,
+    ) async {
+      listen('terms');
+      // Centred, so that the text is as wide as its words and no wider.
+      WidgetNode legal(String link) => UIBuilder.center(
+        child: UIBuilder.text(
+          'You accept the $link',
+          fontSize: 20,
+          spans: [
+            {'text': 'You accept the '},
+            {'text': link, 'eventId': 'terms'},
+          ],
+        ),
+      );
+      await show(tester, legal('terms'));
+      final text = tester.getRect(find.byType(RichText));
+
+      // The words before the link, then the link at the end of the line.
+      await tester.tapAt(text.centerLeft + const Offset(20, 0));
+      expect(events, isEmpty);
+      await tester.tapAt(text.centerRight - const Offset(10, 0));
+      expect(events.single, event('terms', {}));
+
+      // The same link in a text drawn again is the same recogniser, and one
+      // tap is still one event.
+      final before = ((tester.widget<RichText>(find.byType(RichText)).text
+                  as TextSpan)
+              .children!
+              .single
+          as TextSpan)
+          .children![1];
+      await show(tester, legal('terms.'));
+      final after = ((tester.widget<RichText>(find.byType(RichText)).text
+                  as TextSpan)
+              .children!
+              .single
+          as TextSpan)
+          .children![1];
+      expect((after as TextSpan).recognizer,
+          same((before as TextSpan).recognizer));
+      await tester.tapAt(
+        tester.getRect(find.byType(RichText)).centerRight - const Offset(10, 0),
+      );
+      expect(events, hasLength(2));
+    });
   });
 
   group('text field props', () {

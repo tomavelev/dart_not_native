@@ -35,10 +35,12 @@ import android.text.InputFilter
 import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.TextPaint
 import android.text.TextUtils
 import android.text.TextWatcher
 import android.text.format.DateFormat
 import android.text.style.AbsoluteSizeSpan
+import android.text.style.ClickableSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
@@ -2660,7 +2662,33 @@ class NativeUIRenderer(
         val spans = (node["spans"] as? List<*>)?.filterIsInstance<Map<*, *>>()
         label.text = if (spans.isNullOrEmpty()) node["content"] as? String ?: ""
         else spannedText(spans)
+        // A run that can be tapped is a span the view has to listen for. Not
+        // with LinkMovementMethod, which takes every touch on the view: a
+        // touch on the words between the links is the row's behind them.
+        if (spans?.any { it["eventId"] is String } == true) {
+            label.setOnTouchListener { _, event ->
+                val link = linkAt(label, event.x, event.y)
+                if (link != null && event.action == MotionEvent.ACTION_UP) link.onClick(label)
+                link != null && event.action != MotionEvent.ACTION_CANCEL
+            }
+        } else {
+            label.setOnTouchListener(null)
+        }
         clampLines(label, node)
+    }
+
+    /** The tappable run of [label] under a touch, if the touch is on one. */
+    private fun linkAt(label: AppCompatTextView, touchX: Float, touchY: Float): ClickableSpan? {
+        val layout = label.layout ?: return null
+        val text = label.text as? Spanned ?: return null
+        val x = touchX - label.totalPaddingLeft + label.scrollX
+        val y = touchY - label.totalPaddingTop + label.scrollY
+        if (y < 0 || y > layout.height) return null
+        val line = layout.getLineForVertical(y.toInt())
+        // Past the end of a short line there is no text, only the nearest.
+        if (x < layout.getLineLeft(line) || x > layout.getLineRight(line)) return null
+        val offset = layout.getOffsetForHorizontal(line, x)
+        return text.getSpans(offset, offset, ClickableSpan::class.java).firstOrNull()
     }
 
     /**
@@ -2695,6 +2723,15 @@ class NativeUIRenderer(
             when (span["decoration"]) {
                 "lineThrough" -> mark(StrikethroughSpan())
                 "underline" -> mark(UnderlineSpan())
+            }
+            (span["eventId"] as? String)?.let { eventId ->
+                mark(object : ClickableSpan() {
+                    override fun onClick(widget: View) = sendEvent(eventId, emptyMap())
+
+                    // How a link looks is the run's own style: Android would
+                    // otherwise colour and underline it as it does a URL.
+                    override fun updateDrawState(paint: TextPaint) {}
+                })
             }
         }
         return text

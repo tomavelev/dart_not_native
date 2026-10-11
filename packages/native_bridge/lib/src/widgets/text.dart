@@ -231,13 +231,57 @@ abstract class InlineSpan {
   String toPlainText();
 }
 
+/// What a [TextSpan] does when it is touched. Flutter's is in
+/// `package:flutter/gestures.dart`; here it comes with the widgets.
+abstract class GestureRecognizer {
+  /// Flutter asks for this once the recogniser is done with. There is nothing
+  /// held here to let go of, so it does nothing and is safe to call.
+  void dispose() {}
+}
+
+/// A tap, on a run of text: a link inside a paragraph.
+///
+/// ```dart
+/// Text.rich(TextSpan(text: 'By signing up you accept the ', children: [
+///   TextSpan(
+///     text: 'terms',
+///     style: const TextStyle(decoration: TextDecoration.underline),
+///     recognizer: TapGestureRecognizer()..onTap = _showTerms,
+///   ),
+/// ]))
+/// ```
+///
+/// Only `onTap` is heard. The run is not styled for it - colour and underline
+/// are the span's `style`, as in Flutter.
+class TapGestureRecognizer extends GestureRecognizer {
+  TapGestureRecognizer({this.debugOwner});
+  final Object? debugOwner;
+  VoidCallback? onTap;
+}
+
 /// Text with a style, and runs of text inside it with styles of their own.
 class TextSpan extends InlineSpan {
-  const TextSpan({this.text, this.children, super.style, this.semanticsLabel});
+  const TextSpan({
+    this.text,
+    this.children,
+    super.style,
+    this.recognizer,
+    this.semanticsLabel,
+  });
 
   final String? text;
   final List<InlineSpan>? children;
+
+  /// What a touch on this span's own [text] does - not on its children's,
+  /// which is Flutter's rule too. A [TapGestureRecognizer] is the one kind
+  /// that is heard.
+  final GestureRecognizer? recognizer;
   final String? semanticsLabel;
+
+  VoidCallback? get _onTap {
+    final recognizer = this.recognizer;
+    return recognizer is TapGestureRecognizer ? recognizer.onTap : null;
+  }
 
   @override
   String toPlainText() {
@@ -249,10 +293,13 @@ class TextSpan extends InlineSpan {
   }
 
   /// Every run, with the style it inherits from the spans around it.
-  void _flatten(TextStyle? inherited, List<(String, TextStyle?)> into) {
+  void _flatten(
+    TextStyle? inherited,
+    List<(String, TextStyle?, VoidCallback?)> into,
+  ) {
     final own = inherited == null ? style : inherited.merge(style);
     final text = this.text;
-    if (text != null && text.isNotEmpty) into.add((text, own));
+    if (text != null && text.isNotEmpty) into.add((text, own, _onTap));
     for (final child in children ?? const <InlineSpan>[]) {
       if (child is TextSpan) child._flatten(own, into);
     }
@@ -323,18 +370,36 @@ WidgetNode _textNode(
   }
   List<Map<String, dynamic>>? spans;
   if (span is TextSpan) {
-    final runs = <(String, TextStyle?)>[];
+    final runs = <(String, TextStyle?, VoidCallback?)>[];
     // The root span's style is the node's; its children inherit from there.
     for (final child in span.children ?? const <InlineSpan>[]) {
       if (child is TextSpan) child._flatten(null, runs);
     }
-    if (runs.isNotEmpty) {
-      final root = span.text;
+    final root = span.text;
+    final rootTap = root == null || root.isEmpty ? null : span._onTap;
+    if (runs.isNotEmpty || rootTap != null) {
+      // A run that can be tapped carries the event its tap sends. Named by
+      // the node's id and the run's place when the node has one, so that a
+      // link keeps its event from one build to the next.
+      var place = 0;
+      String? tap(VoidCallback? onTap) {
+        final index = place++;
+        if (onTap == null) return null;
+        final bindings = EventBindings.required;
+        final eventId = bindings.allocate(
+          key: id == null ? null : '$id.span$index',
+        );
+        bindings.onTap(eventId, onTap);
+        return eventId;
+      }
+
       spans = [
-        if (root != null && root.isNotEmpty) {'text': root},
-        for (final (text, runStyle) in runs)
+        if (root != null && root.isNotEmpty)
+          {'text': root, 'eventId': ?tap(rootTap)},
+        for (final (text, runStyle, onTap) in runs)
           {
             'text': text,
+            'eventId': ?tap(onTap),
             if (runStyle?.color != null) 'color': runStyle!.color!._hex,
             if (runStyle?.fontSize != null) 'fontSize': runStyle!.fontSize,
             if (runStyle?.fontWeight != null)

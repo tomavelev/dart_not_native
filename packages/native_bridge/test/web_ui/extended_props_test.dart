@@ -3,6 +3,8 @@
 /// the slot a Flutter widget would have been painted into.
 library;
 
+import 'dart:js_interop';
+
 import 'package:dart_not_native/core.dart';
 import 'package:dart_not_native/src/icons.dart';
 import 'package:dart_not_native/web_ui/kits/materialize_kit.dart';
@@ -233,6 +235,74 @@ void main() {
 
       expect(style('Text', 'display'), '-webkit-box');
       expect(style('Text', 'text-align'), 'right');
+    });
+
+    group('a run with an event', () {
+      WidgetNode legal({String link = 'terms'}) => UIBuilder.text(
+        'You accept the $link',
+        spans: [
+          {'text': 'You accept the '},
+          {'text': link, 'eventId': 'terms'},
+        ],
+      );
+
+      web.HTMLElement run(int index) =>
+          of('Text').children.item(index)! as web.HTMLElement;
+
+      test('is a link, and the runs beside it are not', () async {
+        await renderer.render(legal());
+
+        expect(run(1).getAttribute('role'), 'link');
+        expect(run(1).getAttribute('tabindex'), '0');
+        expect(run(1).style.cursor, 'pointer');
+        expect(run(0).hasAttribute('role'), isFalse);
+        expect(run(0).hasAttribute('tabindex'), isFalse);
+      });
+
+      test('sends its event on a click and on Enter, and only then', () async {
+        var taps = 0;
+        renderer.onEvent('terms', (_) => taps++);
+        await renderer.render(legal());
+
+        run(0).click();
+        expect(taps, 0);
+        run(1).click();
+        expect(taps, 1);
+        run(1).dispatchEvent(enterKey());
+        expect(taps, 2);
+        run(1).dispatchEvent(
+          web.KeyboardEvent('keydown', web.KeyboardEventInit(key: 'a')),
+        );
+        expect(taps, 2);
+      });
+
+      test('its click is not also the click of what it is written in',
+          () async {
+        var outer = 0;
+        renderer.onEvent('terms', (_) {});
+        await renderer.render(legal());
+        of('Text').addEventListener(
+          'click',
+          ((web.Event _) => outer++).toJS,
+        );
+
+        run(1).click();
+        expect(outer, 0);
+        run(0).click();
+        expect(outer, 1);
+      });
+
+      test('a link whose words change still sends the event', () async {
+        var taps = 0;
+        renderer.onEvent('terms', (_) => taps++);
+        await renderer.render(legal());
+        await renderer.render(legal(link: 'terms of use'));
+
+        expect(run(1).textContent, 'terms of use');
+        run(1).click();
+
+        expect(taps, 1);
+      });
     });
 
     test('spans are child runs, each with only its own style', () async {

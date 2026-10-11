@@ -2189,6 +2189,66 @@ final class DnnPickerPanel: UIView {
   }
 }
 
+// MARK: - Text with runs that can be tapped
+
+/// A label that knows which of its runs a tap landed on. A UILabel has no
+/// links of its own, so the text is laid out again the way the label lays it
+/// out and the touch is looked up in that.
+final class DnnLabel: UILabel {
+  /// The runs that can be tapped: where each is in the string, and the event
+  /// its tap sends.
+  var links: [(NSRange, String)] = [] {
+    didSet {
+      isUserInteractionEnabled = !links.isEmpty
+      if links.isEmpty {
+        accessibilityTraits.remove(.link)
+      } else {
+        accessibilityTraits.insert(.link)
+      }
+    }
+  }
+  var onLink: ((String) -> Void)?
+
+  private lazy var tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if tap.view == nil { addGestureRecognizer(tap) }
+  }
+
+  /// A touch that is on no link is not the label's: whatever is behind it -
+  /// a row that can be tapped - gets it, as it would from a plain label.
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    super.point(inside: point, with: event) && link(at: point) != nil
+  }
+
+  @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
+    guard let eventId = link(at: recognizer.location(in: self)) else { return }
+    onLink?(eventId)
+  }
+
+  private func link(at point: CGPoint) -> String? {
+    guard !links.isEmpty, let text = attributedText, text.length > 0 else { return nil }
+    let storage = NSTextStorage(attributedString: text)
+    let layout = NSLayoutManager()
+    let container = NSTextContainer(size: bounds.size)
+    container.lineFragmentPadding = 0
+    container.maximumNumberOfLines = numberOfLines
+    container.lineBreakMode = lineBreakMode
+    layout.addTextContainer(container)
+    storage.addLayoutManager(layout)
+    // A label centres its lines in whatever height it was given.
+    let used = layout.usedRect(for: container)
+    let inText = CGPoint(x: point.x, y: point.y - max(0, (bounds.height - used.height) / 2))
+    let glyph = layout.glyphIndex(for: inText, in: container)
+    // The nearest glyph is found for a touch anywhere; only one on it counts.
+    let box = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+    guard box.insetBy(dx: -4, dy: -4).contains(inText) else { return nil }
+    let character = layout.characterIndexForGlyph(at: glyph)
+    return links.first { NSLocationInRange(character, $0.0) }?.1
+  }
+}
+
 // MARK: - Bottom navigation
 
 /// One destination of a `BottomNavigation`, its icons already drawn.

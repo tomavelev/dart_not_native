@@ -1059,7 +1059,7 @@ border) - there are many, each documented on the field.
 | `Draggable` shows `feedback`; reports start, end, cancel | The platform lifts a picture of the child; only `onDragCompleted` is called |
 | `KeyboardListener` hears keys while its node has focus | The listener whose `FocusNode` was asked for focus (`requestFocus`, `autofocus`) hears alone, and a dialog takes the keys from the page behind it. With no ask, every listener in the visible tree hears |
 | `Image.errorBuilder` runs when loading fails; `loadingBuilder` during | `errorBuilder` is called once, up front, and its result is shown while loading and on failure. `frameBuilder` and `loadingBuilder` are called once per build as for an image already there, so what they wrap it in is drawn and the wait is never seen. `color` tinting is not applied |
-| `RichText` with `WidgetSpan`, tappable spans | Text runs only: a `WidgetSpan` is left out, and `TextSpan` has no `recognizer` |
+| `RichText` with `WidgetSpan`, tappable spans | Text runs only: a `WidgetSpan` is left out. A `TextSpan` with a `TapGestureRecognizer` is tapped; the class comes from `widgets.dart` here, where Flutter's is in `gestures.dart`, and a tap is the only gesture heard |
 | `TextOverflow.fade` | Drawn as `clip` |
 | `Scaffold.drawer` slides in from the side | Shown as a sheet, opened by the menu button the app bar gains or by `Scaffold.of(context).openDrawer()`, and closed when the app moves to another page. A scaffold nested in another's body is composed from a column and a stack |
 | `FloatingActionButton` takes colours, `mini`, a location | Its `backgroundColor` and `foregroundColor` are drawn; the size and the place are the platform's |

@@ -1229,11 +1229,42 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         if (run is! Map) continue;
         final span = _el('span', 'dnn-text__span', text: _str(run['text']));
         _applyRunStyle(span, Map<String, dynamic>.from(run));
+        final eventId = run['eventId'];
+        if (eventId is String) _linkRun(span, eventId);
         text.appendChild(span);
       }
     }
     _clampLines(text, p);
     return text;
+  }
+
+  /// Makes a run of text something that can be tapped: a link, to the mouse,
+  /// the keyboard and a screen reader alike. How it looks is the run's own
+  /// style, so nothing is drawn for it here but the pointer.
+  void _linkRun(web.Element span, String eventId) {
+    span
+      ..classList.add('dnn-text__span--link')
+      ..setAttribute('role', 'link')
+      ..setAttribute('tabindex', '0');
+    _style(span, 'cursor', 'pointer');
+    span.addEventListener(
+      'click',
+      ((web.Event event) {
+        // The run's, and not also the tappable box it may be written in.
+        event.stopPropagation();
+        handleEvent(eventId, const {});
+      }).toJS,
+    );
+    span.addEventListener(
+      'keydown',
+      ((web.KeyboardEvent event) {
+        if (event.key != 'Enter') return;
+        event
+          ..preventDefault()
+          ..stopPropagation();
+        handleEvent(eventId, const {});
+      }).toJS,
+    );
   }
 
   /// The styling a text node and one of its runs have in common.

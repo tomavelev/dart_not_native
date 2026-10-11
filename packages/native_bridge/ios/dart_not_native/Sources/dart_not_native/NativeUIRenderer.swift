@@ -2425,7 +2425,7 @@ class NativeUIRenderer {
       applySelectableText(textView, node)
       return textView
     }
-    let label = UILabel()
+    let label = DnnLabel()
     applyText(label, node)
     return label
   }
@@ -2527,6 +2527,19 @@ class NativeUIRenderer {
     // After the text: a label applies its line breaking to an attributed
     // string as it is set.
     clampLines(label, node)
+    // The runs that can be tapped, by where they are in the string.
+    guard let linked = label as? DnnLabel else { return }
+    var links: [(NSRange, String)] = []
+    var at = 0
+    for case let span as [String: Any] in node["spans"] as? [Any] ?? [] {
+      let length = ((span["text"] as? String ?? "") as NSString).length
+      if let eventId = span["eventId"] as? String, length > 0 {
+        links.append((NSRange(location: at, length: length), eventId))
+      }
+      at += length
+    }
+    linked.links = links
+    linked.onLink = { [weak self] eventId in self?.send(eventId: eventId, data: [:]) }
   }
 
   private func applySelectableText(_ textView: UITextView, _ node: [String: Any]) {

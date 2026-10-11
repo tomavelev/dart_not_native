@@ -19,6 +19,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -824,7 +825,10 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   // Leaves
   // ---------------------------------------------------------------------------
 
-  Widget _text(Map<String, dynamic> p) {
+  Widget _text(
+    Map<String, dynamic> p, {
+    GestureRecognizer Function(String eventId)? recognizer,
+  }) {
     final content = _string(p['content']);
     final maxLines = _double(p['maxLines'])?.toInt();
     final family = _fontFamily(p['fontFamily']);
@@ -843,6 +847,16 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final textAlign = _textAlign(p['textAlign']);
     // Runs with their own style, each inheriting the rest from the node.
     final rawSpans = p['spans'];
+    // A run that can be tapped needs a recogniser, and a recogniser has to be
+    // kept and let go of, which a widget built afresh each time cannot do.
+    if (recognizer == null &&
+        rawSpans is List &&
+        rawSpans.any((span) => span is Map && span['eventId'] is String)) {
+      return _LinkRecognizers(
+        renderer: this,
+        builder: (recognizerFor) => _text(p, recognizer: recognizerFor),
+      );
+    }
     final spans = rawSpans is List && rawSpans.isNotEmpty
         ? TextSpan(
             children: [
@@ -850,6 +864,9 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
                 if (span is Map)
                   TextSpan(
                     text: _string(span['text']),
+                    recognizer: span['eventId'] is String
+                        ? recognizer?.call(span['eventId'] as String)
+                        : null,
                     style: TextStyle(
                       color: _color(span['color']),
                       fontSize: _double(span['fontSize']),
@@ -3037,6 +3054,50 @@ class _RenderFromBottom extends RenderProxyBox {
     _reported = taken;
     // Not now: whoever listens rebuilds, and this is the middle of a frame.
     SchedulerBinding.instance.addPostFrameCallback((_) => onChanged(taken));
+  }
+}
+
+/// Keeps the tap recognisers of a text's tappable runs, one per event id,
+/// from one build to the next, and disposes of them when the text goes.
+class _LinkRecognizers extends StatefulWidget {
+  const _LinkRecognizers({required this.renderer, required this.builder});
+
+  final FlutterUIRenderer renderer;
+  final Widget Function(GestureRecognizer Function(String eventId)) builder;
+
+  @override
+  State<_LinkRecognizers> createState() => _LinkRecognizersState();
+}
+
+class _LinkRecognizersState extends State<_LinkRecognizers> {
+  final Map<String, TapGestureRecognizer> _kept = {};
+
+  @override
+  void dispose() {
+    for (final recognizer in _kept.values) {
+      recognizer.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final asked = <String>{};
+    final built = widget.builder((eventId) {
+      asked.add(eventId);
+      return _kept.putIfAbsent(
+        eventId,
+        () => TapGestureRecognizer()
+          ..onTap = () => widget.renderer.handleEvent(eventId, const {}),
+      );
+    });
+    // A run that is no longer in the text takes its recogniser with it.
+    _kept.removeWhere((eventId, recognizer) {
+      if (asked.contains(eventId)) return false;
+      recognizer.dispose();
+      return true;
+    });
+    return built;
   }
 }
 
