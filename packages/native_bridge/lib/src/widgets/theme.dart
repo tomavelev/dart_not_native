@@ -2022,6 +2022,7 @@ class ThemeData {
       info: extras.info,
       glassTransparency: (made ?? AppTheme.fallback).glassTransparency,
       glassChrome: (made ?? AppTheme.fallback).glassChrome,
+      material3: useMaterial3,
       mode: mode,
       dark: dark,
     );

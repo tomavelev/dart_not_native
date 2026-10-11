@@ -100,6 +100,23 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### Buttons as Flutter draws them
+
+- **`ElevatedButton` under Material 3 is the surface, raised, with the
+  primary for its label.** It was a filled primary button, which is
+  Flutter's `FilledButton`. This changes how every `ElevatedButton` in a
+  Material 3 app looks; one that wants the fill is a `FilledButton`, or
+  states `backgroundColor`. Under `useMaterial3: false` it is the filled
+  button it was. The protocol: a new button variant, `elevated`, drawn by
+  all four renderers.
+- **A disabled button looks disabled on Android**: what it is drawn on at
+  12%, its label at 38%. It kept the working button's colours.
+- **`useMaterial3: false` reaches Android.** `AppTheme.material3` (from
+  `ThemeData.toAppTheme()`) makes its buttons and cards 4dp, its floating
+  button round and its bottom navigation pill-less. Only Android reads it.
+- Seen on an Android emulator under both Materials, on an iOS simulator and
+  in Chrome under both style kits.
+
 ### A run of text can be tapped
 
 - `TextSpan(recognizer: TapGestureRecognizer()..onTap = ...)`: a link inside

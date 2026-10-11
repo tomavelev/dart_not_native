@@ -76,6 +76,8 @@ class MaterializeKit extends WebStyleKit {
       'tertiary' => 'btn-flat$sizeClass',
       'outlined' ||
       'tonal' => 'btn-flat$sizeClass dnn-mz-button--$variant',
+      // Its raised button, on the surface rather than in the brand colour.
+      'elevated' => 'btn$sizeClass dnn-mz-button--elevated',
       _ => 'btn$sizeClass ${_colors[variant] ?? _colors['primary']}',
     };
     final button = el('button', '$classes dnn-mz-button', text: label);

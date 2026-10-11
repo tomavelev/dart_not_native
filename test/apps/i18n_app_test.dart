@@ -35,12 +35,12 @@ void main() {
   });
 
   test('the active language is highlighted', () async {
-    expect(tester.get('lang_en').props['variant'], 'primary');
+    expect(tester.get('lang_en').props['variant'], 'elevated');
     expect(tester.get('lang_fr').props['variant'], 'tertiary');
 
     await tester.tap('lang_fr');
 
-    expect(tester.get('lang_fr').props['variant'], 'primary');
+    expect(tester.get('lang_fr').props['variant'], 'elevated');
     expect(tester.get('lang_en').props['variant'], 'tertiary');
   });
 

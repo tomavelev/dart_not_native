@@ -177,7 +177,7 @@
                           "props": {
                             "label": "7",
                             "eventId": "cb:key_7",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -198,7 +198,7 @@
                           "props": {
                             "label": "8",
                             "eventId": "cb:key_8",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -219,7 +219,7 @@
                           "props": {
                             "label": "9",
                             "eventId": "cb:key_9",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -272,7 +272,7 @@
                           "props": {
                             "label": "4",
                             "eventId": "cb:key_4",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -293,7 +293,7 @@
                           "props": {
                             "label": "5",
                             "eventId": "cb:key_5",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -314,7 +314,7 @@
                           "props": {
                             "label": "6",
                             "eventId": "cb:key_6",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -367,7 +367,7 @@
                           "props": {
                             "label": "1",
                             "eventId": "cb:key_1",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -388,7 +388,7 @@
                           "props": {
                             "label": "2",
                             "eventId": "cb:key_2",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -409,7 +409,7 @@
                           "props": {
                             "label": "3",
                             "eventId": "cb:key_3",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -462,7 +462,7 @@
                           "props": {
                             "label": "0",
                             "eventId": "cb:key_0",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -483,7 +483,7 @@
                           "props": {
                             "label": ".",
                             "eventId": "cb:key_dot",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,

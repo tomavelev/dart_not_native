@@ -295,6 +295,7 @@ html, body {
 .dnn-button--lg { height: 44px; font-size: 16px; padding: 0 24px; }
 .dnn-button--outlined { background: transparent; color: var(--dnn-primary); box-shadow: none; border: 1px solid var(--dnn-divider); }
 .dnn-button--tonal { background: color-mix(in srgb, var(--dnn-primary) 16%, var(--dnn-surface)); color: var(--dnn-primary); box-shadow: none; }
+.dnn-button--elevated { background: var(--dnn-surface); color: var(--dnn-primary); }
 .dnn-button[disabled] { background: var(--dnn-divider); color: var(--dnn-text-secondary); box-shadow: none; cursor: default; }
 .dnn-button--outlined[disabled] { background: transparent; }
 

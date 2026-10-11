@@ -1169,6 +1169,20 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         ),
         child: label,
       ),
+      // Material 3's elevated button: the surface, raised, with the colour
+      // for its label - or the fill the app stated.
+      'elevated' => ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: stated,
+          foregroundColor:
+              foreground ?? (stated == null ? color : _textOn(stated)),
+          minimumSize: minimumSize,
+          padding: padding,
+          textStyle: textStyle,
+        ),
+        child: label,
+      ),
       _ => ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(

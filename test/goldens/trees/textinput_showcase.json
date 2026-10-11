@@ -130,7 +130,7 @@
                       "props": {
                         "label": "Focus the name field",
                         "eventId": "cb:focus_name",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,
@@ -150,7 +150,7 @@
                       "props": {
                         "label": "Dismiss the keyboard",
                         "eventId": "cb:dismiss_keyboard",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,
@@ -411,7 +411,7 @@
                       "props": {
                         "label": "Validate All",
                         "eventId": "cb:validate_all",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,

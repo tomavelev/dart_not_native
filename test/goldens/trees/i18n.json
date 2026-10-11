@@ -76,7 +76,7 @@
                       "props": {
                         "label": "English",
                         "eventId": "cb:lang_en",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,

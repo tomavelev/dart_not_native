@@ -89,7 +89,7 @@
                       "props": {
                         "label": "Español",
                         "eventId": "cb:lang_es",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,

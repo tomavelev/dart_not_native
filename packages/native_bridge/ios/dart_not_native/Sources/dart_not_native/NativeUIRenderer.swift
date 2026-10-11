@@ -3093,6 +3093,7 @@ class NativeUIRenderer {
       node["color"] ?? variantColor(variant), fallback: themePrimary)
     var foreground = tint
     button.layer.borderWidth = 0
+    button.layer.shadowOpacity = 0
     switch variant {
     case "secondary", "tertiary":
       button.backgroundColor = .clear
@@ -3104,6 +3105,16 @@ class NativeUIRenderer {
     case "tonal":
       // A quiet fill of the same colour the label is drawn in.
       button.backgroundColor = tint.withAlphaComponent(0.16)
+    case "elevated":
+      // Material 3's elevated button: the surface, raised, with the colour
+      // for its label.
+      button.backgroundColor = surfaceColor()
+      if button.isEnabled {
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.3
+        button.layer.shadowRadius = 1.5
+        button.layer.shadowOffset = CGSize(width: 0, height: 1)
+      }
     default:
       button.backgroundColor = tint
       foreground =

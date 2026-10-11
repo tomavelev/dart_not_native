@@ -2271,13 +2271,25 @@ real apps on an Android emulator" has each. What is left:
 2. **A snackbar does not know a nested scaffold's floating button.** A
    scaffold nested in another's body is composed, its button with it, and the
    snackbar clears only what the outer scaffold owns.
-3. **`ElevatedButton` is drawn as a filled primary button** where Flutter's
-   Material 3 draws a tonal one on the surface.
-4. **A disabled button's look on Android** has not been settled against
-   Flutter's.
-5. **`useMaterial3: false` still gets Material 3 shapes on Android.** The
-   widget layer honours the flag for the app bar's colours; the Material views
-   are built against a Material 3 theme regardless.
+3. ~~**`ElevatedButton` is drawn as a filled primary button**~~ Under
+   Material 3 it is the surface, raised, with the primary for its label
+   (2026-10-10) - a new `elevated` variant that all four renderers draw.
+   Under Material 2, or given a fill of its own, it is the filled button it
+   was. Every `ElevatedButton` in a Material 3 app changed with this, the
+   example apps' 41 among them.
+4. ~~**A disabled button's look on Android**~~ Settled as Material's and
+   Flutter's (2026-10-10): what it is drawn on at 12% and its label at 38%,
+   as iOS already drew it. It was the working button's own colours. On the
+   web the kits' own disabled looks are uneven - MDL greys an outlined and a
+   text button's background, Materialize drops a tonal one's - and are as
+   they were.
+5. ~~**`useMaterial3: false` still gets Material 3 shapes on Android.**~~
+   `AppTheme.material3` carries the flag (2026-10-10) and Android draws
+   Material 2's shapes for it: a 4dp button and card, a round floating
+   button, a bottom navigation with no pill. It travels in the theme given
+   to `runApp(appTheme:)`, like the colours - a `MaterialApp(theme:)` alone
+   does not reach the renderer. Text fields, chips, dialogs and the pickers
+   keep their Material 3 look.
 6. **Not verified on any device:** `dnn:key` hardware keys, how
    pull-to-refresh feels under a finger, the Material date and time pickers
    (no migrated app opens one), a tap on an ad inside a `FlutterSlot`, a slot
@@ -2330,8 +2342,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2159 tests
-  (1204 in the package, 388 for the example apps and goldens, 524 in the browser,
+  contracts, the plugin system and the design system are covered by 2171 tests
+  (1213 in the package, 388 for the example apps and goldens, 527 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

@@ -113,7 +113,7 @@ ListView.builder(
 
 | Widget | Purpose |
 | --- | --- |
-| `ElevatedButton` / `FilledButton` / `OutlinedButton` / `TextButton` | The four families; each has `styleFrom(...)` and an `.icon` form. |
+| `ElevatedButton` / `FilledButton` / `OutlinedButton` / `TextButton` | The four families; each has `styleFrom(...)` and an `.icon` form. `ElevatedButton` is the raised surface under Material 3 and the filled primary under Material 2, as in Flutter. |
 | `IconButton` | An icon that acts as a button. |
 | `FloatingActionButton` | The action button in a `Scaffold`; `.extended` adds a label. |
 | `InkWell` / `GestureDetector` | Taps, double taps, long presses, drags on any child. |

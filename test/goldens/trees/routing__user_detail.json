@@ -85,7 +85,7 @@
                   "props": {
                     "label": "Add favourite",
                     "eventId": "cb:favourite",
-                    "variant": "primary",
+                    "variant": "elevated",
                     "minHeight": 40.0,
                     "paddingHorizontal": 24.0,
                     "disabled": false,
@@ -126,7 +126,7 @@
                       "props": {
                         "label": "Home",
                         "eventId": "cb:home",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,

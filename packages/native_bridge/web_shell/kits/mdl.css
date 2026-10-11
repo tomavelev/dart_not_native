@@ -33,6 +33,8 @@
 /* Material's outlined and tonal buttons, on MDL's flat one. */
 .dnn-kit-mdl .dnn-mdl-button--outlined { color: var(--dnn-primary); border: 1px solid var(--dnn-divider); }
 .dnn-kit-mdl .dnn-mdl-button--tonal { color: var(--dnn-primary); background: color-mix(in srgb, var(--dnn-primary) 16%, var(--dnn-surface)); }
+/* Not a disabled one, which is MDL's grey like any other raised button. */
+.dnn-kit-mdl .dnn-mdl-button--elevated.mdl-button--raised:not([disabled]) { color: var(--dnn-primary); background: var(--dnn-surface); }
 
 /* MDL's FAB is a fixed circle with its icon pinned to the middle; the
    extended one is a pill with the icon in line before the label. */

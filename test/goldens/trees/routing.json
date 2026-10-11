@@ -84,7 +84,7 @@
                       "props": {
                         "label": "Users List",
                         "eventId": "cb:nav_users",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,
@@ -97,7 +97,7 @@
                       "props": {
                         "label": "Posts List",
                         "eventId": "cb:nav_posts",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,
@@ -110,7 +110,7 @@
                       "props": {
                         "label": "Settings",
                         "eventId": "cb:nav_settings",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,

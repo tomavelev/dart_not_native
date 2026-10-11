@@ -65,6 +65,9 @@ html.dnn-kit-materialize input[type="range"]::-moz-range-thumb { background: var
 /* Material's outlined and tonal buttons, on Materialize's flat one. */
 .dnn-mz-button--outlined.btn-flat { color: var(--dnn-primary); border: 1px solid var(--dnn-divider); }
 .dnn-mz-button--tonal.btn-flat { color: var(--dnn-primary); background: color-mix(in srgb, var(--dnn-primary) 16%, var(--dnn-surface)); }
+.dnn-mz-button--elevated.btn,
+.dnn-mz-button--elevated.btn:hover,
+.dnn-mz-button--elevated.btn:focus { color: var(--dnn-primary); background: var(--dnn-surface); }
 
 /* Materialize's floating button is a fixed circle whose icon fills it; the
    extended one is a pill with the icon in line before the label. */

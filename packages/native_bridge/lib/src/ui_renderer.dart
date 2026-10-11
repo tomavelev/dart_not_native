@@ -371,8 +371,9 @@ class UIBuilder {
   /// [paddingVertical] override the scale one value at a time, for a button
   /// that has to be a particular shape rather than one of three.
   ///
-  /// Two more variants are Material's own: 'outlined' (a border, no fill) and
-  /// 'tonal' (a quiet fill of the primary colour). They are what
+  /// Three more variants are Material's own: 'outlined' (a border, no fill),
+  /// 'tonal' (a quiet fill of the primary colour) and 'elevated' (the
+  /// surface, raised, with the primary for its label). They are what
   /// the widget layer's `ElevatedButton.styleFrom(padding:, minimumSize:,
   /// textStyle:)` turns into, which is how a Flutter-shaped app asks.
   static WidgetNode button({

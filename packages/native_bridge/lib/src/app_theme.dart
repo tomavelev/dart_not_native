@@ -46,6 +46,7 @@ class AppTheme {
     this.info = '#0288d1',
     this.glassTransparency = 0.0,
     this.glassChrome = true,
+    this.material3 = true,
     this.mode = AppThemeMode.light,
     AppTheme? dark,
   }) : _dark = dark;
@@ -101,6 +102,14 @@ class AppTheme {
   /// The modal sheet and dialog glass is separate - see [glassTransparency].
   /// Only the iOS native renderer on iOS 26+ reads this.
   final bool glassChrome;
+
+  /// Whether Material's own views are drawn in their Material 3 shapes (the
+  /// default) or their Material 2 ones: a 4dp button and card where Material
+  /// 3 has a stadium and 12dp, a round floating button, a bottom navigation
+  /// with no pill. It is `ThemeData.useMaterial3`. Only the Android native
+  /// renderer reads this - the Flutter host has the real theme, and iOS and
+  /// the web kits draw neither.
+  final bool material3;
 
   /// Which appearance to paint. The default stays [AppThemeMode.light], so a
   /// theme written before there was a dark one keeps the colours it had.
@@ -171,6 +180,7 @@ class AppTheme {
         'info': info,
         'glassTransparency': glassTransparency,
         'glassChrome': glassChrome,
+        'material3': material3,
         'mode': mode.name,
         // One level only: the dark palette's own `dark` is never consulted.
         'dark': (_dark ?? darkFallback)._paletteJson(),
@@ -211,6 +221,7 @@ class AppTheme {
       glassTransparency: (json['glassTransparency'] as num?)?.toDouble() ??
           fallback.glassTransparency,
       glassChrome: json['glassChrome'] as bool? ?? fallback.glassChrome,
+      material3: json['material3'] as bool? ?? fallback.material3,
       mode: AppThemeMode.values.firstWhere(
         (m) => m.name == json['mode'],
         orElse: () => fallback.mode,
@@ -236,6 +247,7 @@ class AppTheme {
         info: info,
         glassTransparency: glassTransparency,
         glassChrome: glassChrome,
+        material3: material3,
         mode: mode ?? this.mode,
         dark: dark ?? _dark,
       );
@@ -279,6 +291,7 @@ class AppTheme {
       _sameColours(other, this) &&
       other.glassTransparency == glassTransparency &&
       other.glassChrome == glassChrome &&
+      other.material3 == material3 &&
       other.mode == mode &&
       _sameColours(other.dark, dark);
 
@@ -287,6 +300,7 @@ class AppTheme {
         Object.hashAll(_colours),
         glassTransparency,
         glassChrome,
+        material3,
         mode,
         Object.hashAll(dark._colours),
       );

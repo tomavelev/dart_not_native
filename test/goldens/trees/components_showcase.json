@@ -213,7 +213,7 @@
                           "props": {
                             "label": "← Previous",
                             "eventId": "cb:prev_page",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,
@@ -226,7 +226,7 @@
                           "props": {
                             "label": "Next →",
                             "eventId": "cb:next_page",
-                            "variant": "primary",
+                            "variant": "elevated",
                             "minHeight": 40.0,
                             "paddingHorizontal": 24.0,
                             "disabled": false,

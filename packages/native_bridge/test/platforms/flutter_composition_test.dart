@@ -1885,6 +1885,38 @@ void main() {
       );
     });
 
+    testWidgets('elevated is the surface with the primary on it', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        UIBuilder.column(
+          children: [
+            UIBuilder.button(label: 'Raised', eventId: 'r', variant: 'elevated'),
+            UIBuilder.button(label: 'Filled', eventId: 'f'),
+          ],
+        ),
+      );
+
+      final raised = tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'Raised'),
+      );
+      // No fill of its own - the theme's surface - and the primary to write
+      // in, where the filled one fills with the primary.
+      expect(raised.style!.backgroundColor, isNull);
+      expect(
+        raised.style!.foregroundColor!.resolve({}),
+        const Color(0xff1976d2),
+      );
+      final filled = tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'Filled'),
+      );
+      expect(
+        filled.style!.backgroundColor!.resolve({}),
+        const Color(0xff1976d2),
+      );
+    });
+
     testWidgets('an icon, a foreground and expand', (tester) async {
       await show(
         tester,

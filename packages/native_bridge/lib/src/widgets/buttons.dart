@@ -234,6 +234,15 @@ abstract class ButtonStyleButton extends Widget {
   /// button drawn from a box: fill, content, outline.
   (Color?, Color, Color?) _colors(ColorScheme scheme);
 
+  /// [_variant] and [_colors] under a theme, for the one button whose kind
+  /// depends on which Material it is: see [ElevatedButton].
+  String _variantIn(ThemeData theme, Color? background) => _variant;
+  (Color?, Color, Color?) _colorsIn(ThemeData theme) =>
+      _colors(theme.colorScheme);
+
+  /// The shadow under the button drawn from a box, for a kind that has one.
+  Map<String, dynamic>? _shadowIn(ThemeData theme, Color? background) => null;
+
   @override
   WidgetNode _render(_Owner owner) {
     final style = this.style;
@@ -268,7 +277,7 @@ abstract class ButtonStyleButton extends Widget {
       return UIBuilder.button(
         label: label,
         onPressed: onPressed,
-        variant: _variant,
+        variant: _variantIn(_themeOf(owner), background),
         color: background?._hex,
         foregroundColor: foreground?._hex,
         // A button's padding is symmetric in the protocol, so one edge of
@@ -290,8 +299,7 @@ abstract class ButtonStyleButton extends Widget {
       );
     }
 
-    final scheme = _themeOf(owner).colorScheme;
-    final (fill, content, outline) = _colors(scheme);
+    final (fill, content, outline) = _colorsIn(_themeOf(owner));
     final ink = foreground ?? content;
     final border =
         side ??
@@ -329,6 +337,7 @@ abstract class ButtonStyleButton extends Widget {
               : const [24, 10, 24, 10]),
       alignment: const [0, 0],
       color: (background ?? fill)?._hex,
+      shadow: enabled ? _shadowIn(_themeOf(owner), background) : null,
       borderWidth: border != null && border.width > 0 ? border.width : null,
       borderColor: border != null && border.width > 0
           ? border.color._hex
@@ -362,7 +371,9 @@ abstract class ButtonStyleButton extends Widget {
   }
 }
 
-/// A raised, filled button. `onPressed: null` disables it, like Flutter.
+/// A raised button: under Material 3 the surface with a shadow and the
+/// primary for its label, under Material 2 the filled primary - as in
+/// Flutter. `onPressed: null` disables it.
 class ElevatedButton extends ButtonStyleButton {
   const ElevatedButton({
     super.key,
@@ -433,6 +444,28 @@ class ElevatedButton extends ButtonStyleButton {
   @override
   (Color?, Color, Color?) _colors(ColorScheme scheme) =>
       (scheme.primary, scheme.onPrimary, null);
+
+  // Material 3's elevated button is not a filled one: it is the surface,
+  // raised, with the primary for its label. Material 2's is the filled
+  // primary, and so is one the app gave a fill of its own.
+  @override
+  String _variantIn(ThemeData theme, Color? background) =>
+      theme.useMaterial3 && background == null ? 'elevated' : 'primary';
+
+  @override
+  (Color?, Color, Color?) _colorsIn(ThemeData theme) => theme.useMaterial3
+      ? (
+          theme.colorScheme.surfaceContainerLow,
+          theme.colorScheme.primary,
+          null,
+        )
+      : _colors(theme.colorScheme);
+
+  @override
+  Map<String, dynamic>? _shadowIn(ThemeData theme, Color? background) =>
+      theme.useMaterial3
+      ? const {'color': '#4d000000', 'blur': 3, 'dx': 0, 'dy': 1}
+      : null;
 }
 
 /// A filled button; [FilledButton.tonal] is the quieter fill.

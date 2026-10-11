@@ -136,7 +136,7 @@
                       "props": {
                         "label": "Create account",
                         "eventId": "cb:submit",
-                        "variant": "primary",
+                        "variant": "elevated",
                         "minHeight": 40.0,
                         "paddingHorizontal": 24.0,
                         "disabled": false,

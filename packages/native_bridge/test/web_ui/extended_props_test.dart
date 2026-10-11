@@ -456,6 +456,33 @@ void main() {
         expect(classes('t'), isNot(contains('raised')));
       });
 
+      test('${kit.name}: elevated is named, and is not the filled button',
+          () async {
+        final root = mountRoot();
+        addTearDown(() => root.remove());
+        final renderer = WebUIRenderer(root: root, kit: kit, animations: false);
+
+        await renderer.render(
+          UIBuilder.column(
+            children: [
+              UIBuilder.button(label: 'P', eventId: 'e', id: 'p'),
+              UIBuilder.button(
+                label: 'E',
+                eventId: 'e',
+                variant: 'elevated',
+                id: 'el',
+              ),
+            ],
+          ),
+        );
+
+        String classes(String id) => web.document.getElementById(id)!.className;
+        expect(classes('el'), contains('--elevated'));
+        expect(classes('el'), isNot(classes('p')));
+        // Materialize's brand-colour classes are what would fill it.
+        expect(classes('el'), isNot(contains('--primary')));
+      });
+
       test('${kit.name}: an icon goes before the label, and stays out of the '
           'name', () async {
         final root = mountRoot();

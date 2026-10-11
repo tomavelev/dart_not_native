@@ -34,6 +34,7 @@ void main() {
         'info': '#0288d1',
         'glassTransparency': 0.0,
         'glassChrome': true,
+        'material3': true,
         'mode': 'light',
         // The dark counterpart travels with it, so a renderer can follow the
         // device without asking Dart again. One level deep: it carries colours
@@ -41,10 +42,22 @@ void main() {
         'dark': AppTheme.darkFallback.toJson()
           ..remove('glassTransparency')
           ..remove('glassChrome')
+          ..remove('material3')
           ..remove('mode')
           ..remove('dark'),
       });
       expect(AppTheme.fromJson(theme.toJson()), theme);
+    });
+
+    test('material3 travels, and is part of what makes two themes equal', () {
+      const material2 = AppTheme(material3: false);
+
+      expect(material2.toJson()['material3'], isFalse);
+      expect(AppTheme.fromJson(material2.toJson()).material3, isFalse);
+      expect(material2, isNot(const AppTheme()));
+      expect(material2.copyWith(mode: AppThemeMode.dark).material3, isFalse);
+      // A theme written before there was the flag is Material 3's.
+      expect(AppTheme.fromJson(const {'primary': '#123456'}).material3, isTrue);
     });
 
     test('fromJson falls back for a null map or a missing field', () {

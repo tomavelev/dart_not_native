@@ -217,6 +217,25 @@ void main() {
       }
     });
 
+    test('every kit draws elevated on the surface, in the primary', () {
+      final mdl = declarationsIn('web_shell/kits/mdl.css');
+      final materialize = declarationsIn('web_shell/kits/materialize.css');
+
+      for (final elevated in [
+        dnn('.dnn-button--elevated'),
+        mdl(
+          '.dnn-kit-mdl .dnn-mdl-button--elevated'
+          '.mdl-button--raised:not([disabled])',
+        ),
+        materialize('.dnn-mz-button--elevated.btn'),
+      ]) {
+        expect(elevated, contains('background: var(--dnn-surface)'));
+        expect(elevated, contains('color: var(--dnn-primary)'));
+        // Raised: nothing here takes the kit's shadow away.
+        expect(elevated, isNot(contains('box-shadow: none')));
+      }
+    });
+
     test('the extended floating button is a pill in every kit', () {
       final mdl = declarationsIn('web_shell/kits/mdl.css');
       final materialize = declarationsIn('web_shell/kits/materialize.css');

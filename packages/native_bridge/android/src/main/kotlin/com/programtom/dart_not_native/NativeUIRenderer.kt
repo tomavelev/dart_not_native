@@ -266,6 +266,13 @@ class NativeUIRenderer(
     /** "light", "dark" or "system" - which appearance to paint. */
     private var themeMode: String = "light"
 
+    /**
+     * Whether Material's views keep their Material 3 shapes. An app that set
+     * `useMaterial3: false` gets Material 2's instead: a 4dp button and card,
+     * a round floating button, a bottom navigation with no pill.
+     */
+    private var themeMaterial3 = true
+
     /** The appearance last painted, so a render can notice the device changing
      *  its mind and rebuild instead of patching stale colours in place. */
     private var paintedDark: Boolean? = null
@@ -494,6 +501,7 @@ class NativeUIRenderer(
                         darkPalette =
                             Palette.from(t["dark"] as? Map<*, *>, Palette.DARK)
                         themeMode = t["mode"] as? String ?: "light"
+                        themeMaterial3 = t["material3"] as? Boolean ?: true
                     }
                     initialize()
                     result.success(null)
@@ -3240,7 +3248,7 @@ class NativeUIRenderer(
             layoutParams = linear(
                 height = ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(8), dp(8), dp(8), dp(8)) }
-            radius = dp(12).toFloat()
+            radius = dp(if (themeMaterial3) 12 else 4).toFloat()
             // Every variant draws the colour the app stated; only what it
             // does *besides* the fill - a border, a shadow - is the variant's.
             setCardBackgroundColor(color(node["backgroundColor"], themeSurfaceVariant))
@@ -3334,24 +3342,43 @@ class NativeUIRenderer(
         val tint = color(node["color"] ?: variantColor(variant), themePrimary)
         // What each variant does with its colour: fill with it, outline in it,
         // tint with it, or only write in it.
-        val (fill, onFill) = when (variant) {
+        var (fill, onFill) = when (variant) {
             "secondary", "tertiary", "outlined" -> Color.TRANSPARENT to tint
             "tonal" -> withAlpha(tint, 0.16f) to tint
+            // Material 3's elevated button: the surface, raised, with the
+            // colour for its label.
+            "elevated" -> color(null, themeSurface) to tint
             else -> tint to
                 if (node["color"] == null) color(null, themeOnPrimary) else textOn(tint)
         }
-        val foreground = parseColorOrNull(node["foregroundColor"]) ?: onFill
+        var foreground = parseColorOrNull(node["foregroundColor"]) ?: onFill
+        if (!isEnabled) {
+            // Material's disabled button, which is Flutter's: what it is
+            // drawn on at 12%, its label at 38%. Left in its own colours it
+            // looked exactly like one that works.
+            val on = color(null, themeText)
+            if (Color.alpha(fill) != 0) fill = withAlpha(on, 0.12f)
+            foreground = withAlpha(on, 0.38f)
+        }
         setBackgroundColor(fill)
         setTextColor(foreground)
+        // Material 2's button is a 4dp rectangle; Material 3's stadium is the
+        // theme's own.
+        if (!themeMaterial3) cornerRadius = dp(4)
         // Material's button style raises every button, pressed or not, and a
         // shadow has nothing to hide behind when the fill is see-through: a
         // text, outlined or tonal button showed a grey box around its label.
         if (Color.alpha(fill) < 255) {
             stateListAnimator = null
             elevation = 0f
+        } else if (variant == "elevated") {
+            // The one shadow, at rest and pressed alike.
+            stateListAnimator = null
+            elevation = dp(1).toFloat()
         }
         strokeWidth = if (variant == "outlined") dp(1) else 0
-        strokeColor = ColorStateList.valueOf(tint)
+        strokeColor = ColorStateList.valueOf(
+            if (isEnabled) tint else withAlpha(color(null, themeText), 0.12f))
 
         // A Material Icons glyph before the label, in the label's colour.
         val glyph = (node["iconCodepoint"] as? Number)?.toInt()
@@ -3418,6 +3445,11 @@ class NativeUIRenderer(
         val label = node["label"] as? String
             ?: return FloatingActionButton(materialContext).apply {
                 backgroundTintList = fill
+                // Material 2's floating button is a circle.
+                if (!themeMaterial3) {
+                    shapeAppearanceModel = shapeAppearanceModel.withCornerSize(
+                        com.google.android.material.shape.RelativeCornerSize(0.5f))
+                }
                 applyIcon(this, node, defaultName = "add", colorInt = onFill)
                 contentDescription = node["tooltip"] as? String
                 layoutParams = wrapContent()
@@ -5707,6 +5739,8 @@ class NativeUIRenderer(
         // the primary where the theme has its own secondary container.
         bar.itemActiveIndicatorColor =
             ColorStateList.valueOf(withAlpha(color(null, themePrimary), 0.16f))
+        // Material 2's bar marks the selected destination with colour alone.
+        bar.isItemActiveIndicatorEnabled = themeMaterial3
         // Both views pad themselves past the system bars when left to. The
         // container has already stopped above the navigation bar, so that
         // would leave the gap twice; this listener replaces theirs.
