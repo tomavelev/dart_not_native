@@ -973,6 +973,7 @@ class NativeUIRenderer {
     _ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any]
   ) -> Bool {
     guard let list = view as? LazyListView else { return false }
+    configureLazyList(list, newNode)
     let oldRowNodes = childNodes(oldNode)
     let newRowNodes = childNodes(newNode)
     if list.rows.count != oldRowNodes.count { return false }
@@ -4036,6 +4037,7 @@ class NativeUIRenderer {
     }
     // Takes whatever height the stack it sits in has left.
     list.setContentHuggingPriority(UILayoutPriority(1), for: .vertical)
+    configureLazyList(list, node)
 
     for child in childNodes(node) {
       let row = renderWidget(child) ?? UIView()
@@ -4052,6 +4054,20 @@ class NativeUIRenderer {
     return list
   }
 
+  /// What a lazy list takes from its node besides its rows, on a build and on
+  /// every patch: the room inside the scroller, and pull-to-refresh, whose
+  /// spinner stays for as long as the tree says so.
+  private func configureLazyList(_ list: LazyListView, _ node: [String: Any]) {
+    list.padding = insets(node["padding"])
+    let refreshId = node["refreshEventId"] as? String
+    list.setRefresh(enabled: refreshId != nil, tint: color(themePrimary, fallback: themePrimary))
+    list.onRefresh = { [weak self] in
+      guard let refreshId else { return }
+      self?.send(eventId: refreshId, data: [:])
+    }
+    list.setRefreshing(node["refreshing"] as? Bool ?? false)
+  }
+
   /// Remembers where `list` is scrolled, and sends the rows it shows when they
   /// differ from the ones last sent for this list.
   private func reportRange(_ list: LazyListView, id: String, eventId: String?) {
@@ -4060,8 +4076,11 @@ class NativeUIRenderer {
 
     // A bounce past either end is not a position.
     let maxOffset = max(0, list.contentSize.height - viewport)
-    let offset = min(max(0, list.contentOffset.y), maxOffset)
-    listOffsets[id] = offset
+    let scrolled = min(max(0, list.contentOffset.y), maxOffset)
+    listOffsets[id] = scrolled
+    // The rows are counted from the first one, which starts below the list's
+    // padding.
+    let offset = max(0, scrolled - list.padding.top)
 
     guard let eventId else { return }
     // Rows of different heights are reported as pixels: only the Dart side
@@ -4078,7 +4097,9 @@ class NativeUIRenderer {
       return
     }
     let first = Int(floor(offset / list.itemExtent))
-    let last = min(list.itemCount - 1, Int(ceil((offset + viewport) / list.itemExtent)) - 1)
+    // The room above the first row is part of what the viewport shows.
+    let below = scrolled - list.padding.top + viewport
+    let last = max(first, min(list.itemCount - 1, Int(ceil(below / list.itemExtent)) - 1))
     if let previous = listRanges[id], previous.first == first, previous.last == last {
       return
     }
@@ -5995,6 +6016,45 @@ private class LazyListView: UIScrollView {
   var restoreOffset: CGFloat?
   var onViewportChange: (() -> Void)?
 
+  /// Room inside the scroller: the rows are framed within it, and scroll out
+  /// under the edges.
+  var padding: UIEdgeInsets = .zero {
+    didSet {
+      guard padding != oldValue else { return }
+      framedWidth = -1
+      setNeedsLayout()
+    }
+  }
+
+  var onRefresh: (() -> Void)?
+
+  func setRefresh(enabled: Bool, tint: UIColor?) {
+    if enabled {
+      if refreshControl == nil {
+        let control = UIRefreshControl()
+        control.addTarget(self, action: #selector(refreshPulled), for: .valueChanged)
+        refreshControl = control
+      }
+      refreshControl?.tintColor = tint
+    } else if refreshControl != nil {
+      refreshControl = nil
+    }
+  }
+
+  @objc private func refreshPulled() {
+    onRefresh?()
+  }
+
+  /// The tree is the one that says how long the spinner stays.
+  func setRefreshing(_ refreshing: Bool) {
+    guard let control = refreshControl else { return }
+    if refreshing {
+      if !control.isRefreshing { control.beginRefreshing() }
+    } else if control.isRefreshing {
+      control.endRefreshing()
+    }
+  }
+
   /// The scroll view holds its delegate weakly, so the list keeps it.
   private let scrollDelegate = LazyListScrollDelegate()
   private var framedWidth: CGFloat = -1
@@ -6017,7 +6077,9 @@ private class LazyListView: UIScrollView {
   override func layoutSubviews() {
     super.layoutSubviews()
     let width = bounds.width
-    let height = rowExtents.isEmpty ? CGFloat(itemCount) * itemExtent : totalExtent
+    let height =
+      (rowExtents.isEmpty ? CGFloat(itemCount) * itemExtent : totalExtent)
+      + padding.top + padding.bottom
     if contentSize.width != width || contentSize.height != height {
       contentSize = CGSize(width: width, height: height)
     }
@@ -6040,6 +6102,7 @@ private class LazyListView: UIScrollView {
   /// Puts every row the list is holding where it belongs in the whole list.
   private func frameRows(width: CGFloat) {
     var top = startOffset
+    let inner = max(0, width - padding.left - padding.right)
     for (offset, row) in rows.enumerated() {
       let height = rowExtents.isEmpty
         ? itemExtent
@@ -6047,7 +6110,7 @@ private class LazyListView: UIScrollView {
       let y = rowExtents.isEmpty
         ? CGFloat(startIndex + offset) * itemExtent
         : top
-      row.frame = CGRect(x: 0, y: y, width: width, height: height)
+      row.frame = CGRect(x: padding.left, y: y + padding.top, width: inner, height: height)
       top += height
     }
   }

@@ -1246,7 +1246,19 @@ class NativeUIRenderer(
      * rebuild if the view is not the expected scroll-view-over-frame shape.
      */
     private fun reconcileLazyList(view: View, oldNode: Map<*, *>, newNode: Map<*, *>): Boolean {
-        val scroll = view as? ReportingScrollView ?: return false
+        // With pull-to-refresh the list sits in the frame that has the
+        // gesture, which is a different view from a list without it; and the
+        // room around the rows is set where they are built.
+        if ((oldNode["refreshEventId"] == null) != (newNode["refreshEventId"] == null)) {
+            return false
+        }
+        if (!valueEqual(oldNode["padding"], newNode["padding"])) return false
+        val frame = view as? RefreshFrame
+        val scroll = (frame?.scroller ?: view) as? ReportingScrollView ?: return false
+        frame?.let {
+            it.eventId = newNode["refreshEventId"] as? String
+            it.shown = newNode["refreshing"] == true
+        }
         val rows = scroll.getChildAt(0) as? FrameLayout ?: return false
         val oldRowNodes = childNodes(oldNode)
         val newRowNodes = childNodes(newNode)
@@ -1301,7 +1313,7 @@ class NativeUIRenderer(
             rows.addView(row, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, height).apply { topMargin = top })
         }
-        rows.minimumHeight = if (rowExtents == null) {
+        rows.minimumHeight = rows.paddingTop + rows.paddingBottom + if (rowExtents == null) {
             (itemCount * extent).roundToInt()
         } else {
             (((newNode["totalExtent"] as? Number)?.toFloat() ?: 0f) * density).roundToInt()
@@ -4298,10 +4310,14 @@ class NativeUIRenderer(
         val startOffset = ((node["startOffset"] as? Number)?.toFloat() ?: 0f) * density
         val totalExtent = ((node["totalExtent"] as? Number)?.toFloat() ?: 0f) * density
 
+        // The list's padding is room inside the scroller: the rows are placed
+        // within it and scroll out under the edges.
+        val padding = edges(node["padding"])
         val rows = FrameLayout(activity).apply {
+            setPadding(padding[0], padding[1], padding[2], padding[3])
             // ScrollView measures its child unbounded, so the minimum is what
             // sizes the whole list.
-            minimumHeight = if (rowExtents == null) {
+            minimumHeight = padding[1] + padding[3] + if (rowExtents == null) {
                 (itemCount * extent).roundToInt()
             } else {
                 totalExtent.roundToInt()
@@ -4368,8 +4384,27 @@ class NativeUIRenderer(
             layoutParams = matchParent()
             addView(rows, matchWidth())
         }
-        return list
+        val refresh = node["refreshEventId"] as? String ?: return list
+        return refreshFrame(list, refresh, node["refreshing"] == true).apply {
+            layoutParams = matchParent()
+        }
     }
+
+    /** [scroller] in the frame that gives it the platform's pull-to-refresh. */
+    private fun refreshFrame(scroller: ViewGroup, refresh: String, refreshing: Boolean) =
+        RefreshFrame(activity, scroller).apply {
+            eventId = refresh
+            shown = refreshing
+            setColorSchemeColors(color(null, themePrimary))
+            setProgressBackgroundColorSchemeColor(color(null, themeSurfaceVariant))
+            setOnRefreshListener {
+                eventId?.let { sendEvent(it, emptyMap()) }
+                // The pull starts the spinner; the tree decides whether it
+                // stays. The app gets a moment to answer `refreshing: true`,
+                // and a pull it does not answer does not spin forever.
+                postDelayed({ settle() }, 600)
+            }
+        }
 
     /**
      * Sends where a list of rows of their own heights is scrolled to.
@@ -4385,7 +4420,7 @@ class NativeUIRenderer(
         density: Float,
     ) {
         if (eventId == null || view.height == 0) return
-        val offset = view.scrollY / density
+        val offset = rowsOffset(view) / density
         val viewport = view.height / density
         val seen = offset to viewport
         if (lazyOffsets[id] == seen) return
@@ -4421,6 +4456,10 @@ class NativeUIRenderer(
     }
 
     /** Sends the rows [view] shows, unless this list last sent the same ones. */
+    /** How far a lazy list is scrolled past its first row, which starts below its padding. */
+    private fun rowsOffset(view: ScrollView): Float =
+        (view.scrollY - (view.getChildAt(0)?.paddingTop ?: 0)).coerceAtLeast(0).toFloat()
+
     private fun reportRange(
         view: ScrollView,
         id: String,
@@ -4429,9 +4468,11 @@ class NativeUIRenderer(
         eventId: String?,
     ) {
         if (eventId == null || itemCount <= 0 || extent <= 0f || view.height == 0) return
-        val offset = view.scrollY.toFloat()
+        val offset = rowsOffset(view)
+        // The room above the first row is part of what the viewport shows.
+        val below = view.scrollY - (view.getChildAt(0)?.paddingTop ?: 0) + view.height
         val first = floor(offset / extent).toInt().coerceIn(0, itemCount - 1)
-        val last = min(itemCount - 1, ceil((offset + view.height) / extent).toInt() - 1)
+        val last = min(itemCount - 1, ceil(below / extent).toInt() - 1)
             .coerceAtLeast(first)
         val range = first to last
         if (lazyRanges[id] == range) return
@@ -5064,19 +5105,8 @@ class NativeUIRenderer(
 
         // Pull-to-refresh is a vertical gesture; the platform has none for a
         // sideways list.
-        return RefreshFrame(activity, scroller).apply {
+        return refreshFrame(scroller, refresh, node["refreshing"] == true).apply {
             layoutParams = params
-            eventId = refresh
-            shown = node["refreshing"] == true
-            setColorSchemeColors(color(null, themePrimary))
-            setProgressBackgroundColorSchemeColor(color(null, themeSurfaceVariant))
-            setOnRefreshListener {
-                eventId?.let { sendEvent(it, emptyMap()) }
-                // The pull starts the spinner; the tree decides whether it
-                // stays. The app gets a moment to answer `refreshing: true`,
-                // and a pull it does not answer does not spin forever.
-                postDelayed({ settle() }, 600)
-            }
         }
     }
 

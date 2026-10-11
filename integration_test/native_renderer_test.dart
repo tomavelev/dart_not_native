@@ -159,6 +159,10 @@ WidgetNode _screenTree() => UIBuilder.overlay(
               itemExtentBuilder: (index) => index % 5 == 0 ? 72 : 40,
               itemBuilder: (index) =>
                   AndroidUIBuilder.listItem(text: 'Varied $index'),
+              // Room inside the scroller and pull-to-refresh: on Android the
+              // second puts the list in a frame of its own.
+              padding: const [16, 24, 16, 40],
+              onRefresh: () {},
             ),
             UIBuilder.webView(url: 'about:blank', height: 80),
             // No CameraPreview here on purpose: it would put a permission

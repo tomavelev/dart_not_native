@@ -100,6 +100,21 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A windowed list can be padded and pulled
+
+- `ListView.builder(itemExtent:, padding:)` puts its padding inside the
+  scroller, so the rows scroll under the edges and the room below the last
+  row is reached by scrolling to it. It was a `Padding` node around the
+  list, which held the edges in.
+- A `RefreshIndicator` over a windowed list gives it pull-to-refresh. It was
+  "its child and no more", on the lists most likely to want it.
+- The protocol: `padding`, `refreshEventId` and `refreshing` on a `LazyList`
+  node, as on a `Scroll`, all optional. `UIBuilder.lazyList` takes
+  `padding`, `onRefresh` and `refreshing`. The rows a renderer reports as
+  visible are counted from the first row, below the padding.
+- All four renderers. Seen on an iOS simulator, an Android emulator and in
+  Chrome with touch.
+
 ### A rail draws what is put above and below it
 
 - `NavigationRail(leading:, trailing:, extended:)` are drawn. They were

@@ -567,10 +567,17 @@ class ListView extends Widget {
       contentExtent: extent == null ? null : extent * count,
       viewport: viewport.height,
     );
+    // Pull-to-refresh belongs to the first vertical scroller under the
+    // indicator, and a windowed list is one.
+    _RefreshIndicatorState? refresh;
+    final waiting = owner._inherited<_RefreshScope>()?.state;
+    if (waiting != null && !waiting._claimed) {
+      waiting._claimed = true;
+      refresh = waiting;
+    }
     owner._scrollDepth++;
-    final WidgetNode list;
     try {
-      list = owner._withLayout(
+      return owner._withLayout(
         () => UIBuilder.lazyList(
           // The window lives under this id between builds, so a list without
           // a key is given one from where it sits.
@@ -587,24 +594,17 @@ class ListView extends Widget {
           ),
           scrollOffset: controller?._wireOffset,
           scrollVersion: controller?._version,
+          // Room inside the scroller, as Flutter's is: the rows scroll under
+          // the edges rather than stopping short of them.
+          padding: padding?._resolved._ltrb,
+          onRefresh: refresh?._start,
+          refreshing: refresh?._refreshing ?? false,
         ),
         unboundedHeight: true,
       );
     } finally {
       owner._scrollDepth--;
     }
-    // The list node has no padding of its own, so the padding goes around
-    // the scroller: the rows are inset, and so is the edge they scroll under.
-    final insets = padding?._resolved;
-    return insets == null
-        ? list
-        : UIBuilder.padding(
-            left: insets.left,
-            top: insets.top,
-            right: insets.right,
-            bottom: insets.bottom,
-            child: list,
-          );
   }
 }
 
@@ -851,9 +851,7 @@ class GridView extends Widget {
 /// and its spinner stays while the future [onRefresh] returns is running.
 ///
 /// It attaches to the first vertical scroller built below it - a
-/// [SingleChildScrollView], a [GridView], or a [ListView] that is not
-/// windowed. A windowed list (one given a row height) has no refresh gesture
-/// in the protocol yet, so over one of those this is its child and no more.
+/// [SingleChildScrollView], a [GridView] or a [ListView], windowed or not.
 class RefreshIndicator extends StatefulWidget {
   const RefreshIndicator({
     super.key,

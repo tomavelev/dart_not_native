@@ -1857,7 +1857,7 @@ internal class HorizontalScroller(context: Context) : HorizontalScrollView(conte
  * straight back rather than leaving it turning forever.
  */
 @SuppressLint("ViewConstructor")
-internal class RefreshFrame(context: Context, val scroller: VerticalScroller) :
+internal class RefreshFrame(context: Context, val scroller: ViewGroup) :
     SwipeRefreshLayout(context) {
 
     var eventId: String? = null

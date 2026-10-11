@@ -327,6 +327,145 @@ void main() {
       );
     });
 
+    WidgetNode withProps(Map<String, dynamic> extra, {int start = 0}) {
+      final list = lazyList(start: start, end: start + 10);
+      return WidgetNode(
+        type: list.type,
+        props: {...list.props, ...extra},
+        children: list.children,
+      );
+    }
+
+    test('padding is room inside the scroller, around every row', () async {
+      await renderer.render(
+        withProps({
+          'padding': [16.0, 100.0, 24.0, 40.0],
+        }),
+      );
+
+      final content =
+          viewport().querySelector('[data-children]')! as web.HTMLElement;
+      // Every row, and the room above the first and below the last.
+      expect(content.getBoundingClientRect().height, 50000 + 140);
+      expect(topOf('rows/0'), 100);
+      expect(topOf('rows/1'), 150);
+      final row = web.document.getElementById('rows/0')!.getBoundingClientRect();
+      final box = viewport().getBoundingClientRect();
+      expect(row.left - box.left, 16);
+      expect(box.left + viewport().clientWidth - row.right, 24);
+    });
+
+    test('rows are counted from the first, not from the padding', () async {
+      await renderer.render(
+        withProps({
+          'padding': [0.0, 100.0, 0.0, 0.0],
+        }),
+      );
+      await pumpEventQueue();
+      expect(ranges.last, {'first': 0, 'last': 1});
+
+      viewport().scrollTop = 100 + 50 * 4;
+      viewport().dispatchEvent(web.Event('scroll'));
+
+      expect(ranges.last, {'first': 4, 'last': 7});
+    });
+
+    test('padding taken away is taken off the rows', () async {
+      await renderer.render(
+        withProps({
+          'padding': [16.0, 100.0, 24.0, 40.0],
+        }),
+      );
+      final before = viewport();
+
+      await renderer.render(withProps({}));
+
+      expect(viewport(), same(before));
+      expect(topOf('rows/0'), 0);
+      final content =
+          viewport().querySelector('[data-children]')! as web.HTMLElement;
+      expect(content.getBoundingClientRect().height, 50000);
+    });
+
+    group('pull to refresh', () {
+      web.TouchEvent touch(String type, web.Element target, num y) {
+        final point = web.Touch(
+          web.TouchInit(identifier: 1, target: target, clientY: y, clientX: 10),
+        );
+        return web.TouchEvent(
+          type,
+          web.TouchEventInit(
+            touches: type == 'touchend' ? <web.Touch>[].toJS : [point].toJS,
+            bubbles: true,
+            cancelable: true,
+          ),
+        );
+      }
+
+      void pull(web.Element list) {
+        list.dispatchEvent(touch('touchstart', list, 100));
+        list.dispatchEvent(touch('touchmove', list, 200));
+        list.dispatchEvent(touch('touchmove', list, 300));
+        list.dispatchEvent(touch('touchend', list, 300));
+      }
+
+      test('a pull at the top sends the event', () async {
+        var refreshes = 0;
+        renderer.onEvent('refresh', (_) => refreshes++);
+        await renderer.render(withProps({'refreshEventId': 'refresh'}));
+
+        pull(viewport());
+
+        expect(refreshes, 1);
+      });
+
+      test('a list scrolled down is only scrolled', () async {
+        var refreshes = 0;
+        renderer.onEvent('refresh', (_) => refreshes++);
+        await renderer.render(withProps({'refreshEventId': 'refresh'}));
+        viewport().scrollTop = 120;
+
+        pull(viewport());
+
+        expect(refreshes, 0);
+      });
+
+      test('the spinner shows for as long as the tree says', () async {
+        await renderer.render(
+          withProps({'refreshEventId': 'refresh', 'refreshing': true}),
+        );
+        final before = viewport();
+        web.Element indicator() =>
+            viewport().querySelector('.dnn-scroll__refresh')!;
+        expect(
+          indicator().classList.contains('dnn-scroll__refresh--on'),
+          isTrue,
+        );
+
+        await renderer.render(
+          withProps({'refreshEventId': 'refresh', 'refreshing': false}),
+        );
+
+        expect(viewport(), same(before));
+        expect(
+          indicator().classList.contains('dnn-scroll__refresh--on'),
+          isFalse,
+        );
+      });
+
+      test('a list with no refresh has no spinner, and a pull is nothing',
+          () async {
+        var refreshes = 0;
+        renderer.onEvent('refresh', (_) => refreshes++);
+        await renderer.render(withProps({}));
+
+        pull(viewport());
+
+        expect(viewport().querySelector('.dnn-scroll__refresh'), isNull);
+        expect(refreshes, 0);
+      });
+    });
+
     test('rows of their own heights sit at their own offsets', () async {
       // Rows 0..9 are 120 + 9*40 = 480 tall; row 10 starts there.
       await renderer.render(variableList(start: 10, end: 20));

@@ -505,6 +505,83 @@ void main() {
       expect(tester.getSize(find.byType(ListView)), const Size(800, 544));
     });
 
+    WidgetNode withProps(Map<String, dynamic> extra) {
+      final list = _lazyList();
+      return WidgetNode(
+        type: list.type,
+        props: {...list.props, ...extra},
+        children: list.children,
+      );
+    }
+
+    testWidgets('its padding is room the rows scroll under', (tester) async {
+      await show(
+        tester,
+        UIBuilder.scaffold(
+          body: withProps({
+            'padding': [16.0, 100.0, 24.0, 40.0],
+          }),
+        ),
+      );
+      await tester.pump();
+
+      // Inset from the edges, and the first row below the room at the top.
+      final row = tester.getRect(find.text('Row 0'));
+      expect(row.top, 100);
+      expect(row.left, greaterThanOrEqualTo(16));
+      expect(controller(tester).position.maxScrollExtent, 10000 * 56 + 140 - 600);
+      // Rows are counted from the first one, not from the top of the room.
+      expect(ranges().last, {'first': 0, 'last': 8});
+
+      controller(tester).jumpTo(100 + 56 * 10);
+      await tester.pump();
+
+      expect(ranges().last['first'], 10);
+    });
+
+    testWidgets('a pull sends the refresh, and the tree ends the spinner', (
+      tester,
+    ) async {
+      var refreshes = 0;
+      renderer.onEvent('refresh', (_) => refreshes++);
+      await show(
+        tester,
+        UIBuilder.scaffold(
+          body: withProps({'refreshEventId': 'refresh', 'refreshing': false}),
+        ),
+      );
+
+      await tester.fling(find.text('Row 2'), const Offset(0, 400), 1000);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(refreshes, 1);
+
+      await show(
+        tester,
+        UIBuilder.scaffold(
+          body: withProps({'refreshEventId': 'refresh', 'refreshing': true}),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+      await show(
+        tester,
+        UIBuilder.scaffold(
+          body: withProps({'refreshEventId': 'refresh', 'refreshing': false}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(RefreshProgressIndicator), findsNothing);
+      expect(refreshes, 1);
+    });
+
+    testWidgets('a list with no refresh has no indicator', (tester) async {
+      await show(tester, UIBuilder.scaffold(body: _lazyList()));
+
+      expect(find.byType(RefreshIndicator), findsNothing);
+    });
+
     testWidgets('reports the visible range once per change', (tester) async {
       await show(tester, UIBuilder.scaffold(body: _lazyList()));
       await tester.pump();

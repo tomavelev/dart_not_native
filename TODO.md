@@ -2161,11 +2161,16 @@ event, and then the same work in four renderers.
    Android emulator and in Chrome under both kits. What does not show is what
    a browser's own controls have no colour for: a checkbox's tick and a range
    input's thumb and unfilled track, outside the Materialize kit.
-3. **`LazyList` has no refresh and no padding.** A `RefreshIndicator` over a
-   windowed list is "its child and no more", and the list's padding is a
-   `Padding` node around it rather than scrolling content inset
-   (`scrolling.dart`). The lists long enough to be windowed are the ones most
-   likely to want pull-to-refresh.
+3. ~~**`LazyList` has no refresh and no padding.**~~ Both since 2026-10-10,
+   on all four renderers. A windowed list's padding is room inside the
+   scroller - the rows scroll under the edges, where the `Padding` node that
+   used to stand around the list held the edges in - and a `RefreshIndicator`
+   over one gives it the platform's pull, as over any other scroller. The
+   rows a list reports as visible are counted from its first row, not from
+   the top of the padding. Seen on an iOS simulator, an Android emulator and
+   in Chrome with touch: pulled, refreshed, and scrolled to the last row.
+   Not done: `scrollOffset` on a padded list is not checked against
+   Flutter's, where an offset includes the padding.
 4. **Text spans cannot be tapped.** `spans` are styled runs; `TextSpan` has
    no `recognizer` and a `WidgetSpan` is left out of the line (`text.dart`).
    "By continuing you accept the *terms*" has to be a `Row`.
@@ -2317,8 +2322,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2132 tests
-  (1188 in the package, 388 for the example apps and goldens, 513 in the browser,
+  contracts, the plugin system and the design system are covered by 2147 tests
+  (1196 in the package, 388 for the example apps and goldens, 520 in the browser,
   43 in the bloc package,
   counted 2026-10-10), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

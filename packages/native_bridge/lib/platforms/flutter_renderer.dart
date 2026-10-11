@@ -3119,6 +3119,7 @@ class _NodeLazyListState extends State<_NodeLazyList> {
     _controller = widget.renderer._scrollControllerFor(_listId)
       ..addListener(_report);
     _applyScrollRequest();
+    _followTree();
     WidgetsBinding.instance.addPostFrameCallback((_) => _report());
   }
 
@@ -3126,6 +3127,41 @@ class _NodeLazyListState extends State<_NodeLazyList> {
   void didUpdateWidget(_NodeLazyList old) {
     super.didUpdateWidget(old);
     _applyScrollRequest();
+    _followTree();
+  }
+
+  /// The list's padding: room inside the scroller, which the rows scroll
+  /// under.
+  EdgeInsets? get _padding => FlutterUIRenderer._edges(widget.props['padding']);
+
+  final _indicator = GlobalKey<RefreshIndicatorState>();
+
+  /// The refresh in progress, which the spinner waits on.
+  Completer<void>? _refresh;
+
+  /// Brings the spinner in line with the tree's `refreshing`, as a scroller
+  /// does.
+  void _followTree() {
+    if (widget.props['refreshing'] != true) {
+      _refresh?.complete();
+      _refresh = null;
+      return;
+    }
+    if (_refresh != null) return;
+    // The app started this one; the spinner is shown for it.
+    _refresh = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _refresh != null) _indicator.currentState?.show();
+    });
+  }
+
+  Future<void> _onRefresh() {
+    final running = _refresh;
+    if (running != null) return running.future;
+    final started = _refresh = Completer<void>();
+    final eventId = widget.props['refreshEventId'];
+    if (eventId is String) widget.renderer.handleEvent(eventId, const {});
+    return started.future;
   }
 
   /// Moves to `scrollOffset` the first time the list is drawn with one, and
@@ -3159,7 +3195,9 @@ class _NodeLazyListState extends State<_NodeLazyList> {
       return;
     }
 
-    final offset = math.max(0.0, position.pixels);
+    // Counted from the first row, which starts below the list's padding.
+    final scrolled = position.pixels - (_padding?.top ?? 0);
+    final offset = math.max(0.0, scrolled);
     if (_rowExtents.isNotEmpty) {
       widget.renderer._reportOffset(
         _listId,
@@ -3173,7 +3211,7 @@ class _NodeLazyListState extends State<_NodeLazyList> {
     final first = (offset / extent).floor();
     final last = math.min(
       _itemCount - 1,
-      ((offset + position.viewportDimension) / extent).ceil() - 1,
+      ((scrolled + position.viewportDimension) / extent).ceil() - 1,
     );
     widget.renderer._reportRange(_listId, eventId, first, last);
   }
@@ -3191,8 +3229,11 @@ class _NodeLazyListState extends State<_NodeLazyList> {
     final start = (FlutterUIRenderer._double(widget.props['startIndex']) ?? 0)
         .toInt();
     final rows = widget.rows;
+    final refreshes = widget.props['refreshEventId'] is String;
+    // A list shorter than its viewport must still be pullable.
+    final physics = refreshes ? const AlwaysScrollableScrollPhysics() : null;
 
-    return NotificationListener<ScrollMetricsNotification>(
+    final list = NotificationListener<ScrollMetricsNotification>(
       onNotification: (_) {
         _report();
         return false;
@@ -3200,6 +3241,8 @@ class _NodeLazyListState extends State<_NodeLazyList> {
       child: rowExtents.isEmpty
           ? ListView.builder(
               controller: _controller,
+              padding: _padding,
+              physics: physics,
               itemCount: _itemCount,
               itemExtent: extent > 0 ? extent : null,
               itemBuilder: (context, index) {
@@ -3218,6 +3261,8 @@ class _NodeLazyListState extends State<_NodeLazyList> {
           // have - so the scrolling is a plain one over a sized column.
           : SingleChildScrollView(
               controller: _controller,
+              padding: _padding,
+              physics: physics,
               child: SizedBox(
                 height: FlutterUIRenderer._double(widget.props['totalExtent']),
                 child: Column(
@@ -3239,6 +3284,13 @@ class _NodeLazyListState extends State<_NodeLazyList> {
                 ),
               ),
             ),
+    );
+    if (!refreshes) return list;
+    return RefreshIndicator(
+      key: _indicator,
+      color: widget.renderer._primaryColor,
+      onRefresh: _onRefresh,
+      child: list,
     );
   }
 }

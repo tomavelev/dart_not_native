@@ -68,7 +68,7 @@ Scaffold(
 | `SingleChildScrollView` | Scroll one child, on either axis. |
 | `ListView` / `ListView.builder` / `.separated` | A scrolling list. `.builder` is **windowed when given `itemExtent`** (or `itemExtentBuilder`); without one every row is built. |
 | `GridView.count` / `.builder` / `.extent` | Equal cells in rows. |
-| `RefreshIndicator` | Pull to refresh, on a scroller that is not windowed. |
+| `RefreshIndicator` | Pull to refresh, on the first vertical scroller under it - a windowed list included. |
 | `ListTile` | Leading, title, subtitle, trailing, `onTap`. `CheckboxListTile`, `SwitchListTile`, `RadioListTile`, `ExpansionTile`. |
 | `Dismissible` / `SwipeActions` | Swipe a row to reveal an action. |
 

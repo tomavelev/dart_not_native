@@ -1888,6 +1888,12 @@ class UIBuilder {
   /// moves a row's view rather than rebuilding every row when the window
   /// shifts.
   ///
+  /// [padding] - left, top, right, bottom - is room inside the scroller: the
+  /// rows are inset by it and scroll under the edges, where a padding node
+  /// around the list would hold the edges themselves in. [onRefresh] gives
+  /// the list the platform's pull-to-refresh, whose spinner stays while
+  /// [refreshing] is true, as on a [scroll].
+  ///
   /// Must be built inside [NativeUIApp.build]: the window lives with the app
   /// between builds, under [id].
   static WidgetNode lazyList({
@@ -1900,6 +1906,9 @@ class UIBuilder {
     int initialCount = 30,
     double? scrollOffset,
     int? scrollVersion,
+    List<double>? padding,
+    void Function()? onRefresh,
+    bool refreshing = false,
   }) {
     assert(
       (itemExtent == null) != (itemExtentBuilder == null),
@@ -1930,6 +1939,11 @@ class UIBuilder {
       );
       if (moved) bindings.invalidate();
     });
+    String? refresh;
+    if (onRefresh != null) {
+      refresh = bindings.allocate(key: '$id.refresh');
+      bindings.onTap(refresh, onRefresh);
+    }
 
     return WidgetNode(
       type: 'LazyList',
@@ -1947,6 +1961,9 @@ class UIBuilder {
         },
         'startIndex': start,
         'rangeEventId': rangeEventId,
+        if (padding != null) 'padding': padding,
+        if (refresh != null) 'refreshEventId': refresh,
+        if (refresh != null) 'refreshing': refreshing,
         // As on a scroll node: jump to this offset when the version is new.
         if (scrollOffset != null) 'scrollOffset': scrollOffset,
         if (scrollOffset != null) 'scrollVersion': scrollVersion ?? 0,

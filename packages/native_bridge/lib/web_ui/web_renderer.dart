@@ -1757,6 +1757,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
     final state = _lazyLists[viewport] = _LazyListState();
     _applyLazyListProps(state, content, p);
+    _applyRefresh(viewport, state.refresh..props = p, refreshes: _refreshes(p));
     _applyScrollAsk(viewport, p);
 
     viewport.addEventListener(
@@ -1787,6 +1788,11 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       return false;
     }
     _applyLazyListProps(state, content, node.props);
+    _applyRefresh(
+      viewport,
+      state.refresh..props = node.props,
+      refreshes: _refreshes(node.props),
+    );
     _applyScrollAsk(viewport, node.props);
     _syncHosted(viewport, node, before.children ?? const []);
     // A different row count can change which rows are visible. Reported after
@@ -1818,9 +1824,19 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final top = state.rowExtents.isEmpty
         ? start * state.extent
         : _num(p['startOffset']) ?? 0;
-    _style(content, 'height', '${total}px');
-    _style(content, 'padding-top', '${top}px');
+    // The list's padding is room inside the scroller: the first row starts
+    // below it, the last ends above it, and both scroll out under the edge.
+    final edges = _edges(p['padding']);
+    state.padTop = edges?.$2 ?? 0;
+    _style(content, 'height', '${total + state.padTop + (edges?.$4 ?? 0)}px');
+    _style(content, 'padding-top', '${top + state.padTop}px');
+    _set(content, 'padding-left', edges == null ? null : '${edges.$1}px');
+    _set(content, 'padding-right', edges == null ? null : '${edges.$3}px');
   }
+
+  /// Whether a node asks for pull-to-refresh at all.
+  static bool _refreshes(Map<String, dynamic> p) =>
+      p['refreshEventId'] is String;
 
   /// Gives every row of a lazy list its fixed height and the full width.
   void _sizeLazyRows(web.Element viewport, web.Element content) {
@@ -1847,7 +1863,9 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // Not laid out, or not in the document: nothing is visible to report.
     if (height <= 0) return;
 
-    final offset = viewport.scrollTop;
+    // Counted from the first row, which starts below the list's padding.
+    final scrolled = viewport.scrollTop - state.padTop;
+    final offset = math.max(0.0, scrolled);
     // Rows of different heights are reported as pixels: only the Dart side
     // knows how tall the rows outside the window are, so only it can say
     // which row an offset lands on.
@@ -1863,7 +1881,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final first = (offset / state.extent).floor();
     final last = math.min(
       state.count - 1,
-      ((offset + height) / state.extent).ceil() - 1,
+      ((scrolled + height) / state.extent).ceil() - 1,
     );
     if (first == state.first && last == state.last) return;
     state
@@ -3467,7 +3485,23 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       _set(content, 'padding', _edgesCss(_edges(p['padding'])));
 
     // Pull-to-refresh is for a list read from the top down.
-    final refreshes = p['refreshEventId'] is String && !horizontal && !reverse;
+    _applyRefresh(
+      viewport,
+      state,
+      refreshes: _refreshes(p) && !horizontal && !reverse,
+    );
+    _applyScrollAsk(viewport, p, horizontal: horizontal, reverse: reverse);
+  }
+
+  /// Gives a scrolling [viewport] its pull-to-refresh spinner, or takes it
+  /// away, and shows it for as long as the tree says `refreshing`. A scroller
+  /// and a windowed list share it.
+  void _applyRefresh(
+    web.Element viewport,
+    _NodeState state, {
+    required bool refreshes,
+  }) {
+    final p = state.props;
     var indicator = viewport.querySelector(':scope > .dnn-scroll__refresh');
     if (refreshes && indicator == null) {
       indicator = _el('div', 'dnn-scroll__refresh')
@@ -3488,7 +3522,6 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
           .toggle('dnn-animate', refreshing && animations);
     }
     viewport.classList.toggle('dnn-scroll--refreshable', refreshes);
-    _applyScrollAsk(viewport, p, horizontal: horizontal, reverse: reverse);
   }
 
   /// Pull-to-refresh, which a browser does not have for anything but the
@@ -4869,6 +4902,13 @@ class _LazyListState {
   /// The last pixels reported, for a list of rows of different heights.
   double? offset;
   double? viewport;
+
+  /// The room above the first row, which a scroll offset includes and a row
+  /// index does not.
+  double padTop = 0;
+
+  /// What the pull-to-refresh gesture reads and remembers.
+  final _NodeState refresh = _NodeState(const {});
 }
 
 /// What a patched node's listeners read: the props the element shows now, and
