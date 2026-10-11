@@ -299,7 +299,7 @@ the top of `CHANGELOG.md`; the ones existing code meets first:
   model is `FormModel`, bound with `ModelTextFormField(field:)`.
 - `Locale('en', 'US')` is positional; a script needs `Locale.fromSubtags`.
 
-Not in the layer at all: `AnimationController` and `Tween`, `PageView`,
+Not in the layer at all: `AnimationController` and `Tween`,
 `CustomScrollView` and slivers, `DataTable`, `Stepper`,
 `ReorderableListView`, `InteractiveViewer`. There in name only,
 so that a screen compiles: `Hero` (no flight), `MouseRegion` (no hover),

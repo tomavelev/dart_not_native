@@ -2933,40 +2933,251 @@ class TabBarView extends Widget {
     final page =
         _renderOneOf(owner, children, controller.index) ?? UIBuilder.sizedBox();
     if (children.length < 2 || (physics?._never ?? false)) return page;
-    // Towards the start of the line is the next tab, whichever way it reads.
-    final forward = owner._direction == TextDirection.rtl ? 1 : -1;
-    return UIBuilder.box(
-      // The page's own size, so that a short page is still swiped over all
-      // the room the view has - and none is invented where there is no end
-      // to the height.
-      expand: owner._unboundedHeight ? 'width' : 'both',
-      panAxis: 'horizontal',
-      onPan: (phase, data) {
-        double n(String key) => (data[key] as num?)?.toDouble() ?? 0;
-        switch (phase) {
-          case 'start':
-            _swipeFrom[controller] = n('x');
-          case 'end':
-            final from = _swipeFrom[controller];
-            _swipeFrom[controller] = null;
-            if (from == null) return;
-            final moved = n('x') - from;
-            final speed = n('vx');
-            // Far enough, or flung - and a fling against the way the finger
-            // went is a change of mind.
-            final far = moved.abs() > _swipeDistance;
-            final flung = speed.abs() > _swipeSpeed && speed.sign == moved.sign;
-            if (!far && !flung) return;
-            controller.index += moved.sign.toInt() * forward;
-        }
-      },
-      child: page,
+    return _swipePages(
+      owner,
+      page,
+      token: controller,
+      onStep: (step) => controller.index += step,
     );
   }
+}
 
-  /// Where each controller's swipe in progress began. Kept by controller
-  /// rather than in the closure, which a rebuild in mid-swipe replaces.
-  static final Expando<double> _swipeFrom = Expando('tabSwipe');
-  static const double _swipeDistance = 80;
-  static const double _swipeSpeed = 300;
+/// Where each swipe in progress began, by what is being swiped - a
+/// controller. Kept there rather than in the closure, which a rebuild in
+/// mid-swipe replaces.
+final Expando<double> _swipeFrom = Expando('pageSwipe');
+const double _swipeDistance = 80;
+const double _swipeSpeed = 300;
+
+/// [page] in a box that hears a swipe along [axis] and calls [onStep] with
+/// +1 for the page after and -1 for the page before, once the finger lifts
+/// having gone far enough or fast enough. A movement that sets off across
+/// the axis is not the box's, so a list in the page still scrolls.
+WidgetNode _swipePages(
+  _Owner owner,
+  WidgetNode page, {
+  required Object token,
+  required void Function(int step) onStep,
+  Axis axis = Axis.horizontal,
+  bool reverse = false,
+}) {
+  final vertical = axis == Axis.vertical;
+  // Towards the start of the line - or up the page - is the next one,
+  // whichever way the line reads.
+  var forward = !vertical && owner._direction == TextDirection.rtl ? 1 : -1;
+  if (reverse) forward = -forward;
+  return UIBuilder.box(
+    // The page's own size, so that a short page is still swiped over all the
+    // room the view has - and none is invented where there is no end to the
+    // height.
+    expand: owner._unboundedHeight ? 'width' : 'both',
+    panAxis: vertical ? 'vertical' : 'horizontal',
+    onPan: (phase, data) {
+      double n(String key) => (data[key] as num?)?.toDouble() ?? 0;
+      final at = n(vertical ? 'y' : 'x');
+      switch (phase) {
+        case 'start':
+          _swipeFrom[token] = at;
+        case 'end':
+          final from = _swipeFrom[token];
+          _swipeFrom[token] = null;
+          if (from == null) return;
+          final moved = at - from;
+          final speed = n(vertical ? 'vy' : 'vx');
+          // Far enough, or flung - and a fling against the way the finger
+          // went is a change of mind.
+          final far = moved.abs() > _swipeDistance;
+          final flung = speed.abs() > _swipeSpeed && speed.sign == moved.sign;
+          if (!far && !flung) return;
+          onStep(moved.sign.toInt() * forward);
+      }
+    },
+    child: page,
+  );
+}
+
+/// Which page a [PageView] shows.
+///
+/// [page] is always a whole number here: a page changes when the finger
+/// lifts, and does not pass through the places in between.
+class PageController extends ChangeNotifier {
+  PageController({
+    this.initialPage = 0,
+    this.keepPage = true,
+    this.viewportFraction = 1.0,
+  }) : _page = initialPage;
+
+  final int initialPage;
+  final bool keepPage;
+
+  /// Accepted and not carried: a page is as wide as the view.
+  final double viewportFraction;
+
+  int _page;
+  int? _count;
+  int _attachedPass = -1;
+  _Owner? _owner;
+
+  /// The page showing, as Flutter spells it.
+  double? get page => _page.toDouble();
+
+  /// Whether a [PageView] built with this controller is on screen.
+  bool get hasClients => _owner != null && _attachedPass == _owner!._pass;
+
+  void _attach(_Owner owner, int? count) {
+    _owner = owner;
+    _attachedPass = owner._pass;
+    _count = count;
+    // A view that lost pages from under the one it was on shows its last.
+    if (count != null && count > 0 && _page >= count) _page = count - 1;
+  }
+
+  /// Shows [page] at once.
+  void jumpToPage(int page) {
+    final count = _count;
+    final held = count == null ? math.max(0, page) : page.clamp(0, count - 1);
+    if (held == _page) return;
+    _page = held;
+    notifyListeners();
+  }
+
+  /// Shows [page]. It arrives at once: [duration] and [curve] are accepted
+  /// and not carried.
+  Future<void> animateToPage(
+    int page, {
+    required Duration duration,
+    required Curve curve,
+  }) async => jumpToPage(page);
+
+  Future<void> nextPage({required Duration duration, required Curve curve}) =>
+      animateToPage(_page + 1, duration: duration, curve: curve);
+
+  Future<void> previousPage({
+    required Duration duration,
+    required Curve curve,
+  }) => animateToPage(_page - 1, duration: duration, curve: curve);
+
+  @override
+  void dispose() {
+    _owner = null;
+    super.dispose();
+  }
+}
+
+/// Pages, one at a time, swiped between.
+///
+/// A swipe along [scrollDirection] moves to the page beside the one showing,
+/// and [onPageChanged] says which. As with a [TabBarView], the page changes
+/// when the finger lifts - it does not follow the finger, and
+/// [PageController.animateToPage] arrives at once.
+///
+/// With [children] every page keeps its `State` while another is in front.
+/// With [PageView.builder] only the page showing is built, so a page's state
+/// goes when it is left.
+class PageView extends StatefulWidget {
+  const PageView({
+    super.key,
+    this.scrollDirection = Axis.horizontal,
+    this.reverse = false,
+    this.controller,
+    this.physics,
+    this.pageSnapping = true,
+    this.onPageChanged,
+    List<Widget> this.children = const [],
+    this.padEnds = true,
+  }) : itemBuilder = null,
+       itemCount = null;
+
+  /// Pages built when they are shown: [itemCount] of them, or without end.
+  const PageView.builder({
+    super.key,
+    this.scrollDirection = Axis.horizontal,
+    this.reverse = false,
+    this.controller,
+    this.physics,
+    this.pageSnapping = true,
+    this.onPageChanged,
+    required NullableIndexedWidgetBuilder this.itemBuilder,
+    this.itemCount,
+    this.padEnds = true,
+  }) : children = null;
+
+  final Axis scrollDirection;
+  final bool reverse;
+  final PageController? controller;
+
+  /// [NeverScrollableScrollPhysics] leaves the controller the only way to
+  /// change the page.
+  final ScrollPhysics? physics;
+  final ValueChanged<int>? onPageChanged;
+  final List<Widget>? children;
+  final NullableIndexedWidgetBuilder? itemBuilder;
+  final int? itemCount;
+
+  /// Accepted and not carried: a page always snaps, and is as wide as the
+  /// view.
+  final bool pageSnapping;
+  final bool padEnds;
+
+  @override
+  State<PageView> createState() => _PageViewState();
+}
+
+class _PageViewState extends State<PageView> {
+  PageController? _own;
+
+  PageController get _controller =>
+      widget.controller ?? (_own ??= PageController());
+
+  @override
+  void dispose() {
+    _own?.dispose();
+    super.dispose();
+  }
+
+  void _step(int step) {
+    final controller = _controller;
+    final before = controller._page;
+    // Pages built without a count end where the builder has none to give.
+    final builder = widget.itemBuilder;
+    if (builder != null &&
+        widget.itemCount == null &&
+        before + step >= 0 &&
+        builder(context, before + step) == null) {
+      return;
+    }
+    controller.jumpToPage(before + step);
+    if (controller._page != before) {
+      widget.onPageChanged?.call(controller._page);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => _NodeWidget((owner) {
+    final controller = _controller;
+    final children = widget.children;
+    final count = children?.length ?? widget.itemCount;
+    controller._attach(owner, count);
+    owner._watch(controller);
+    final WidgetNode page;
+    if (children != null) {
+      page =
+          _renderOneOf(owner, children, controller._page) ??
+          UIBuilder.sizedBox();
+    } else {
+      final built = widget.itemBuilder!(owner._context(), controller._page);
+      page = built == null
+          ? UIBuilder.sizedBox()
+          : owner.inSlot(controller._page, () => built._render(owner));
+    }
+    if (count == 1 || (widget.physics?._never ?? false)) return page;
+    return _swipePages(
+      owner,
+      page,
+      token: controller,
+      axis: widget.scrollDirection,
+      reverse: widget.reverse,
+      onStep: _step,
+    );
+  });
 }

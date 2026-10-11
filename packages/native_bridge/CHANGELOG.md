@@ -100,6 +100,19 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### `PageView`
+
+- `PageView`, `PageView.builder` and `PageController` (`jumpToPage`,
+  `animateToPage`, `nextPage`, `previousPage`, `page`, `hasClients`), with
+  `onPageChanged`, either `scrollDirection`, `reverse` and
+  `NeverScrollableScrollPhysics`. They were missing, so an app with a
+  carousel did not compile.
+- A swipe moves to the page beside the one showing when the finger lifts,
+  on the same pan along one axis a `TabBarView` uses. The page does not
+  follow the finger, `animateToPage` arrives at once and `viewportFraction`
+  is not carried. With `children` each page keeps its `State`; with the
+  builder only the page showing is built.
+
 ### A drag says when it begins and ends
 
 - `Draggable.onDragStarted`, `onDragEnd` and `onDraggableCanceled` are

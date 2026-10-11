@@ -626,7 +626,7 @@ import 'package:dart_not_native/widgets.dart';
 
 Then read the analyzer's list. What it reports falls into three kinds:
 
-- **A widget this layer does not have.** `PageView`,
+- **A widget this layer does not have.**
   `AnimationController` and `Tween`, `CustomScrollView` and slivers,
   `DataTable`, `Stepper`, `ReorderableListView`, `InteractiveViewer`,
   are the common ones. Each needs a decision:

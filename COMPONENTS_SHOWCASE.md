@@ -25,6 +25,7 @@ To see the core widgets running, launch the **Component Showcase**
 | `AppBar` | Top bar: `title`, `leading`, `actions`, `bottom` (a `TabBar`). Gains a back button on a page that can be popped. |
 | `NavigationBar` / `BottomNavigationBar` | The platform's bottom navigation. `NavigationRail` for a wide window. |
 | `TabBar` / `TabBarView` / `DefaultTabController` | Tabs. A swipe across the page moves to the tab beside it. |
+| `PageView` / `PageController` | Pages swiped between, one at a time, along either axis. |
 | `Navigator` | `push`, `pop`, `pushReplacement`, `popUntil`, `pushNamed`. See `ROUTING_GUIDE.md`. |
 
 ```dart
