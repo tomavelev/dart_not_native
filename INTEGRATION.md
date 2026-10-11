@@ -628,7 +628,7 @@ Then read the analyzer's list. What it reports falls into three kinds:
 
 - **A widget this layer does not have.**
   `AnimationController` and `Tween`, `CustomScrollView` and slivers,
-  `DataTable`, `Stepper`, `ReorderableListView`, `InteractiveViewer`,
+  `ReorderableListView`, `InteractiveViewer`, `Table`,
   are the common ones. Each needs a decision:
   restructure with what there is (§8.5), or keep the real Flutter widget in a
   `FlutterSlot` (§8.6).

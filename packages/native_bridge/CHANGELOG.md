@@ -100,6 +100,22 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### `Stepper` and `DataTable`
+
+- `Stepper`, `Step`, `StepState`, `StepperType` and `ControlsDetails`:
+  vertical or horizontal, with `onStepTapped`, `onStepContinue`,
+  `onStepCancel`, `controlsBuilder` and `stepIconBuilder`.
+- `DataTable`, `DataColumn`, `DataRow` and `DataCell`: sorting headings
+  with their arrow, numeric columns, selectable rows with a select-all
+  box, tappable cells, `placeholder` and `showEditIcon`.
+- Both were missing, so an app with either did not compile. They are
+  built in the widget layer from what was already there, so every
+  renderer draws them and the protocol is as it was.
+- **A `DataTable`'s columns share its width equally.** Flutter makes each
+  as wide as its widest cell; nothing here can measure that. A table is as
+  wide as what it is in, `columnSpacing` is 24 where it is not said, and a
+  cell too narrow for its text wraps it.
+
 ### A canvas paints gradients
 
 - `paint.shader = LinearGradient(...).createShader(rect)`, and a

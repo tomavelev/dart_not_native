@@ -103,6 +103,7 @@ part 'src/widgets/gestures.dart';
 part 'src/widgets/motion.dart';
 part 'src/widgets/custom_paint.dart';
 part 'src/widgets/platform_views.dart';
+part 'src/widgets/data.dart';
 
 // ---------------------------------------------------------------------------
 // Foundation: keys, context, the widget/state model and the render owner.

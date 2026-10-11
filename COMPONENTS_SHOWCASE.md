@@ -26,6 +26,8 @@ To see the core widgets running, launch the **Component Showcase**
 | `NavigationBar` / `BottomNavigationBar` | The platform's bottom navigation. `NavigationRail` for a wide window. |
 | `TabBar` / `TabBarView` / `DefaultTabController` | Tabs. A swipe across the page moves to the tab beside it. |
 | `PageView` / `PageController` | Pages swiped between, one at a time, along either axis. |
+| `Stepper` | Numbered steps, one open, vertical or horizontal. |
+| `DataTable` | Headings, rows, sorting and selection. Its columns share the table's width equally. |
 | `Navigator` | `push`, `pop`, `pushReplacement`, `popUntil`, `pushNamed`. See `ROUTING_GUIDE.md`. |
 
 ```dart

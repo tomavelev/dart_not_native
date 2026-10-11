@@ -2085,8 +2085,8 @@ notice.
    more near the end, not for moving something in step with the drag.
    `animateTo` arrives at once (`scrolling.dart`). No scroll notifications.
 6. **Widgets that are not there**, which fail at compile time:
-   `CustomScrollView` and every sliver, `DataTable`, `Stepper`,
-   `ReorderableListView`, `InteractiveViewer`. (`Hero`, `MouseRegion` and
+   `CustomScrollView` and every sliver, `ReorderableListView`,
+   `InteractiveViewer`, `Table`. (`Hero`, `MouseRegion` and
    `PopupMenuButton` were on this list until 2026-10-04; the first two are
    now there in name, the third opens a dialog. `PopScope` was on it until
    2026-10-10 and is Flutter's now, for a page of a `Navigator`, of
@@ -2096,7 +2096,11 @@ notice.
    2026-10-11: a swipe along either axis moves to the page beside the one
    showing when the finger lifts - the page does not follow the finger, and
    `animateToPage` arrives at once - swiped in Chrome and on an iOS
-   simulator.)
+   simulator. `Stepper` and `DataTable` came the same day, built in the
+   widget layer from rows, columns and boxes and seen on an iOS simulator,
+   an Android emulator and in Chrome. A `DataTable`'s columns share its
+   width equally - nothing here measures a column by its widest cell - and
+   a step does not animate open.)
 7. **`TextPainter` cannot measure.** Widths are 0.55 x the font size per
    character (`custom_paint.dart`). Text on a canvas is placed correctly
    because the box travels with it; a painter that *fits* things around
@@ -2376,8 +2380,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2241 tests
-  (1268 in the package, 388 for the example apps and goldens, 542 in the browser,
+  contracts, the plugin system and the design system are covered by 2257 tests
+  (1284 in the package, 388 for the example apps and goldens, 542 in the browser,
   43 in the bloc package,
   counted 2026-10-11), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native
