@@ -100,6 +100,24 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A `TabBarView` is swiped
+
+- A swipe across a `TabBarView`'s page moves to the tab beside it. The
+  strip was the only way. The page changes when the finger lifts - it does
+  not follow the finger - and `NeverScrollableScrollPhysics` turns the
+  swipe off, as in Flutter.
+- The protocol: `panAxis` ('horizontal' or 'vertical') on a box with a pan.
+  A movement that sets off the other way is not the box's, so a list inside
+  a swiped page still scrolls. All four renderers.
+- A `GestureDetector` with only `onHorizontalDrag*`, or only
+  `onVerticalDrag*`, is such a pan: it no longer takes a scroll the other
+  way from the scroller it is in.
+- **Text is written from the top of its box on iOS.** A label given more
+  height than its lines need centred them, where Flutter and the other
+  three renderers start at the top; a page that was one line of text had it
+  halfway down the screen.
+- Swiped on an iOS simulator, an Android emulator and in Chrome with touch.
+
 ### Buttons as Flutter draws them
 
 - **`ElevatedButton` under Material 3 is the surface, raised, with the

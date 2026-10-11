@@ -3901,6 +3901,17 @@ class _NodeBoxState extends State<_NodeBox> {
     }
     final box = widget.frame.wrap(content);
     final tapsHere = !ripple;
+    final axis = switch (widget.props['panAxis']) {
+      'horizontal' => 'horizontal',
+      'vertical' => 'vertical',
+      _ => null,
+    };
+    void start(DragStartDetails details) =>
+        _panned('_start', details.globalPosition);
+    void update(DragUpdateDetails details) =>
+        _panned('_update', details.globalPosition);
+    void end(DragEndDetails details) =>
+        _panned('_end', null, velocity: details.velocity.pixelsPerSecond);
     if (ripple && pan == null) return box;
     return GestureDetector(
       // A box takes touches over all of itself, painted or not.
@@ -3917,19 +3928,19 @@ class _NodeBoxState extends State<_NodeBox> {
       onLongPressStart: tapsHere && longPress != null
           ? (details) => _point(longPress, details.globalPosition)
           : null,
-      onPanStart: pan == null
-          ? null
-          : (details) => _panned('_start', details.globalPosition),
-      onPanUpdate: pan == null
-          ? null
-          : (details) => _panned('_update', details.globalPosition),
-      onPanEnd: pan == null
-          ? null
-          : (details) => _panned(
-              '_end',
-              null,
-              velocity: details.velocity.pixelsPerSecond,
-            ),
+      // A pan along one axis is a drag along it, which leaves the other axis
+      // to the scroller the box is in or holds.
+      onPanStart: pan == null || axis != null ? null : start,
+      onPanUpdate: pan == null || axis != null ? null : update,
+      onPanEnd: pan == null || axis != null ? null : end,
+      onHorizontalDragStart: pan != null && axis == 'horizontal' ? start : null,
+      onHorizontalDragUpdate: pan != null && axis == 'horizontal'
+          ? update
+          : null,
+      onHorizontalDragEnd: pan != null && axis == 'horizontal' ? end : null,
+      onVerticalDragStart: pan != null && axis == 'vertical' ? start : null,
+      onVerticalDragUpdate: pan != null && axis == 'vertical' ? update : null,
+      onVerticalDragEnd: pan != null && axis == 'vertical' ? end : null,
       child: box,
     );
   }

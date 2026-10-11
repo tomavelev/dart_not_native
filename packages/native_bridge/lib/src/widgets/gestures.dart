@@ -153,6 +153,24 @@ class GestureDetector extends Widget {
       onVerticalDragUpdate != null ||
       onVerticalDragEnd != null;
 
+  /// The one axis this detector drags along, when it listens for no other:
+  /// a drag the other way is then the scroller's around it, as in Flutter.
+  String? get _dragAxis {
+    if (onPanStart != null || onPanUpdate != null || onPanEnd != null) {
+      return null;
+    }
+    final horizontal =
+        onHorizontalDragStart != null ||
+        onHorizontalDragUpdate != null ||
+        onHorizontalDragEnd != null;
+    final vertical =
+        onVerticalDragStart != null ||
+        onVerticalDragUpdate != null ||
+        onVerticalDragEnd != null;
+    if (horizontal == vertical) return null;
+    return horizontal ? 'horizontal' : 'vertical';
+  }
+
   void _pan(String phase, Map<String, dynamic> data) {
     double n(String key) => (data[key] as num?)?.toDouble() ?? 0;
     final at = Offset(n('x'), n('y'));
@@ -237,6 +255,7 @@ class GestureDetector extends Widget {
       onDoubleTap: doubleTap == null ? null : (_, _) => doubleTap(),
       onLongPress: longPress == null ? null : (_, _) => longPress(),
       onPan: _drags ? _pan : null,
+      panAxis: _drags ? _dragAxis : null,
       expand: _expandOfChild(node),
       id: _idOf(key),
       child: node,

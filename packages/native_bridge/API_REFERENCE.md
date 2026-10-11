@@ -111,6 +111,7 @@ const AppTheme({
   String info           = '#0288d1',  // info variant, and an alert's default
   double glassTransparency = 0.0,     // iOS 26 modal glass: 0 frosted … 1 clear
   bool glassChrome      = true,       // iOS 26 glass on the app bar and FAB
+  bool material3        = true,       // false: Material 2 shapes on Android
   AppThemeMode mode     = AppThemeMode.light,
   AppTheme? dark,                     // defaults to AppTheme.darkFallback
 });

@@ -837,6 +837,16 @@ body:has(.dnn-modal) { overflow: hidden; }
 .dnn-box[data-tap] { cursor: pointer; }
 .dnn-box[data-tap]:focus-visible { outline: 2px solid var(--dnn-primary); outline-offset: 2px; }
 .dnn-box--pan, .dnn-canvas.dnn-box--pan { touch-action: none; }
+/* A pan along one axis: the browser keeps the scrolling along the other. */
+.dnn-box--pan-x { touch-action: pan-y; }
+.dnn-box--pan-y { touch-action: pan-x; }
+/* And so do the scrollers inside it. A scroller answers for the touches in
+ * it, whatever is around it says, so a list in a page that is swiped
+ * sideways would take the sideways movement too - and then do nothing with
+ * it, a list having nowhere to go that way. */
+.dnn-box--pan-x .dnn-lazylist,
+.dnn-box--pan-x .dnn-scroll:not(.dnn-scroll--horizontal) { touch-action: pan-y; }
+.dnn-box--pan-y .dnn-scroll--horizontal { touch-action: pan-x; }
 .dnn-box--hold { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .dnn-box--dragging { opacity: 0.4; }
 /* Touch feedback: a wash over the box while it is pressed. */

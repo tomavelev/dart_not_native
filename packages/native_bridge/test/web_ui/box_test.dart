@@ -416,6 +416,79 @@ void main() {
       expect(events, isEmpty);
     });
 
+    group('along one axis', () {
+      void drag(num dx, num dy) {
+        final rect = box().getBoundingClientRect();
+        final x = rect.left + 30, y = rect.top + 30;
+        box().dispatchEvent(pointer('pointerdown', x, y, kind: 'touch'));
+        box().dispatchEvent(
+          pointer('pointermove', x + dx, y + dy, kind: 'touch'),
+        );
+        box().dispatchEvent(
+          pointer('pointermove', x + dx * 2, y + dy * 2, kind: 'touch'),
+        );
+        box().dispatchEvent(
+          pointer('pointerup', x + dx * 2, y + dy * 2, kind: 'touch'),
+        );
+      }
+
+      test('a movement along it is the box\'s', () async {
+        listen(['pan_start', 'pan_update', 'pan_end']);
+        await renderer.render(
+          placed({'panEventId': 'pan', 'panAxis': 'horizontal'}),
+        );
+
+        drag(20, 3);
+
+        expect(events.first.$1, 'pan_start');
+        expect(events.last.$1, 'pan_end');
+      });
+
+      test('one that sets off the other way is not, however it goes on',
+          () async {
+        listen(['pan_start', 'pan_update', 'pan_end']);
+        await renderer.render(
+          placed({'panEventId': 'pan', 'panAxis': 'horizontal'}),
+        );
+        final rect = box().getBoundingClientRect();
+        final x = rect.left + 30, y = rect.top + 30;
+
+        box().dispatchEvent(pointer('pointerdown', x, y, kind: 'touch'));
+        box().dispatchEvent(pointer('pointermove', x + 2, y + 20, kind: 'touch'));
+        // Then across, with the same finger still down.
+        box().dispatchEvent(
+          pointer('pointermove', x + 40, y + 22, kind: 'touch'),
+        );
+        box().dispatchEvent(pointer('pointerup', x + 40, y + 22, kind: 'touch'));
+
+        expect(events, isEmpty);
+      });
+
+      test('vertical is the other way round', () async {
+        listen(['pan_start', 'pan_update', 'pan_end']);
+        await renderer.render(
+          placed({'panEventId': 'pan', 'panAxis': 'vertical'}),
+        );
+
+        drag(20, 3);
+        expect(events, isEmpty);
+        drag(3, 20);
+        expect(events.first.$1, 'pan_start');
+      });
+
+      test('the browser keeps the scrolling along the other', () async {
+        await renderer.render(
+          placed({'panEventId': 'pan', 'panAxis': 'horizontal'}),
+        );
+        expect(box().classList.contains('dnn-box--pan-x'), isTrue);
+        expect(box().classList.contains('dnn-box--pan'), isFalse);
+
+        await renderer.render(placed({'panEventId': 'pan'}));
+        expect(box().classList.contains('dnn-box--pan-x'), isFalse);
+        expect(box().classList.contains('dnn-box--pan'), isTrue);
+      });
+    });
+
     test('a pannable box keeps the browser from scrolling with it', () async {
       await renderer.render(placed({'panEventId': 'pan'}));
 

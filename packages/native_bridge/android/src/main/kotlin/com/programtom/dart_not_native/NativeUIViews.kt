@@ -309,6 +309,8 @@ internal data class BoxEvents(
     val doubleTap: String? = null,
     val longPress: String? = null,
     val pan: String? = null,
+    /** 'horizontal' or 'vertical' for a pan along that axis alone. */
+    val panAxis: String? = null,
     val drop: String? = null,
     val size: String? = null,
     val dragData: String? = null,
@@ -834,6 +836,7 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
     private var lastX = 0f
     private var lastY = 0f
     private var panning = false
+    private var panRefused = false
     private var velocity: VelocityTracker? = null
 
     private val detector = GestureDetector(
@@ -994,12 +997,29 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         lastX = ev.x
         lastY = ev.y
         panning = false
+        panRefused = false
         velocity?.recycle()
         velocity = VelocityTracker.obtain().also { it.addMovement(ev) }
     }
 
-    private fun movedPastSlop(ev: MotionEvent) =
-        abs(ev.x - downX) > slop || abs(ev.y - downY) > slop
+    /**
+     * Whether the finger has moved far enough to mean a pan - and, for a pan
+     * along one axis, set off along it. One that set off the other way is the
+     * scroller's, and stays so for the rest of the touch.
+     */
+    private fun movedPastSlop(ev: MotionEvent): Boolean {
+        if (panRefused) return false
+        val dx = abs(ev.x - downX)
+        val dy = abs(ev.y - downY)
+        if (dx <= slop && dy <= slop) return false
+        val mine = when (events.panAxis) {
+            "horizontal" -> dx >= dy
+            "vertical" -> dy > dx
+            else -> true
+        }
+        if (!mine) panRefused = true
+        return mine
+    }
 
     /**
      * The finger has moved far enough to mean it. From here the gesture is this

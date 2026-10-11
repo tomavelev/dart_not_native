@@ -24,7 +24,7 @@ To see the core widgets running, launch the **Component Showcase**
 | `Scaffold` | The frame of a screen: `appBar`, `body`, `floatingActionButton`, `bottomNavigationBar`, `drawer`. **The body does not scroll.** |
 | `AppBar` | Top bar: `title`, `leading`, `actions`, `bottom` (a `TabBar`). Gains a back button on a page that can be popped. |
 | `NavigationBar` / `BottomNavigationBar` | The platform's bottom navigation. `NavigationRail` for a wide window. |
-| `TabBar` / `TabBarView` / `DefaultTabController` | Tabs. No swipe between pages. |
+| `TabBar` / `TabBarView` / `DefaultTabController` | Tabs. A swipe across the page moves to the tab beside it. |
 | `Navigator` | `push`, `pop`, `pushReplacement`, `popUntil`, `pushNamed`. See `ROUTING_GUIDE.md`. |
 
 ```dart

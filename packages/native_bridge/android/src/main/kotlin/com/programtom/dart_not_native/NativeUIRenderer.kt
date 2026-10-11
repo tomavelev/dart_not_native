@@ -5020,6 +5020,7 @@ class NativeUIRenderer(
         doubleTap = node["doubleTapEventId"] as? String,
         longPress = node["longPressEventId"] as? String,
         pan = node["panEventId"] as? String,
+        panAxis = node["panAxis"] as? String,
         drop = node["dropEventId"] as? String,
         size = node["sizeEventId"] as? String,
         dragData = node["dragData"] as? String,

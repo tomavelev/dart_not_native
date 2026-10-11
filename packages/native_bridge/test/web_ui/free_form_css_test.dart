@@ -217,6 +217,20 @@ void main() {
       }
     });
 
+    test('a pan along one axis leaves the browser the other', () {
+      expect(dnn('.dnn-box--pan-x'), contains('touch-action: pan-y'));
+      expect(dnn('.dnn-box--pan-y'), contains('touch-action: pan-x'));
+      // A scroller inside answers for its own touches, so it is told too.
+      expect(dnn('.dnn-box--pan-x .dnn-lazylist'),
+          contains('touch-action: pan-y'));
+      expect(
+        dnn('.dnn-box--pan-x .dnn-scroll:not(.dnn-scroll--horizontal)'),
+        contains('touch-action: pan-y'),
+      );
+      expect(dnn('.dnn-box--pan-y .dnn-scroll--horizontal'),
+          contains('touch-action: pan-x'));
+    });
+
     test('every kit draws elevated on the surface, in the primary', () {
       final mdl = declarationsIn('web_shell/kits/mdl.css');
       final materialize = declarationsIn('web_shell/kits/materialize.css');

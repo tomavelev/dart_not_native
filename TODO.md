@@ -2106,7 +2106,17 @@ notice.
    `childWhenDragging` are not drawn and only `onDragCompleted` is called;
    `GestureDetector`'s `onTapDown`/`onTapUp`/`onTap` fire together after the
    tap (`gestures.dart`).
-9. **`TabBarView` does not swipe**, and a tab change does not animate.
+9. ~~**`TabBarView` does not swipe**~~ It does since 2026-10-11: a swipe
+   across the page moves to the tab beside it - far enough or flung, the
+   other way when the screen reads from the right, and not at all under
+   `NeverScrollableScrollPhysics`. A list in the page still scrolls: the
+   swipe is a pan along one axis (`panAxis`, new in the protocol), which
+   leaves the other to the scroller on all four renderers - and a
+   `GestureDetector` with only horizontal or only vertical drag callbacks
+   is one too. Swiped on an iOS simulator, an Android emulator and in Chrome
+   with touch, over a windowed list. Still open: the page does not follow
+   the finger and a tab change does not animate; and on the web a windowed
+   list in a tab starts from the top when the tab comes back (§6.3 item 9).
 10. ~~**Snackbars are not queued.**~~ Queued since 2026-10-10, as Flutter's
     are. Still open: their colour, shape, margin and `behavior` are not
     carried (`navigation.dart`).
@@ -2342,10 +2352,10 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2171 tests
-  (1213 in the package, 388 for the example apps and goldens, 527 in the browser,
+  contracts, the plugin system and the design system are covered by 2186 tests
+  (1224 in the package, 388 for the example apps and goldens, 531 in the browser,
   43 in the bloc package,
-  counted 2026-10-10), plus 20 integration tests that run on a real Android and
+  counted 2026-10-11), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native
   renderers drawing the whole node vocabulary and every example app. (Four of
   the eighteen - the free-form tree and the two pickers, added 2026-10-09, and

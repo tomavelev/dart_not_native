@@ -380,6 +380,48 @@ void main() {
       expect(events.single.$2, {'x': 50.0, 'y': 60.0});
     });
 
+    testWidgets('a pan along the row leaves the other way to the scroller', (
+      tester,
+    ) async {
+      ['p_start', 'p_update', 'p_end'].forEach(listen);
+      await show(
+        tester,
+        UIBuilder.scroll(
+          child: UIBuilder.column(
+            children: [
+              box({
+                'width': 200,
+                'height': 200,
+                'panEventId': 'p',
+                'panAxis': 'horizontal',
+              }),
+              box({'width': 200, 'height': 1200}),
+            ],
+          ),
+        ),
+      );
+      final scroller = tester.state<ScrollableState>(find.byType(Scrollable));
+      final at = tester.getCenter(find.byType(GestureDetector).first);
+
+      // Down the page, over the box: the page scrolls and the box hears
+      // nothing.
+      await tester.dragFrom(at, const Offset(0, -120));
+      await tester.pump();
+      expect(events, isEmpty);
+      expect(scroller.position.pixels, greaterThan(50));
+
+      // Along the row: the box's, and the page stays where it is.
+      final before = scroller.position.pixels;
+      await tester.dragFrom(
+        tester.getCenter(find.byType(GestureDetector).first),
+        const Offset(120, 0),
+      );
+      await tester.pump();
+      expect(events.first.$1, 'p_start');
+      expect(events.last.$1, 'p_end');
+      expect(scroller.position.pixels, before);
+    });
+
     testWidgets('a pan reports where, how far and how fast', (tester) async {
       ['p_start', 'p_update', 'p_end'].forEach(listen);
       await show(

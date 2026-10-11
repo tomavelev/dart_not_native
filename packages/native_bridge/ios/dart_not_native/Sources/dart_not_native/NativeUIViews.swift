@@ -191,6 +191,8 @@ struct DnnBoxStyle {
   var doubleTapEventId: String?
   var longPressEventId: String?
   var panEventId: String?
+  /// 'horizontal' or 'vertical' for a pan along that axis alone.
+  var panAxis: String?
   var ripple = false
   var dragData: String?
   var dropEventId: String?
@@ -220,8 +222,20 @@ struct DnnBoxStyle {
  of its own, so the surface is free to clip without cutting its own shadow off.
  */
 class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
-  UIDropInteractionDelegate
+  UIDropInteractionDelegate, UIGestureRecognizerDelegate
 {
+  /// A pan along one axis begins only with a movement along it; one that
+  /// sets off the other way is the scroller's the box is in or holds.
+  override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+    guard recognizer === panRecognizer, let axis = style.panAxis,
+      let pan = recognizer as? UIPanGestureRecognizer
+    else { return super.gestureRecognizerShouldBegin(recognizer) }
+    let velocity = pan.velocity(in: surface)
+    return axis == "horizontal"
+      ? abs(velocity.x) >= abs(velocity.y)
+      : abs(velocity.y) > abs(velocity.x)
+  }
+
   let surface = UIView()
   let content = UIView()
 
@@ -712,6 +726,7 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     if style.panEventId != nil {
       if panRecognizer == nil {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        recognizer.delegate = self
         surface.addGestureRecognizer(recognizer)
         panRecognizer = recognizer
       }
@@ -2191,9 +2206,11 @@ final class DnnPickerPanel: UIView {
 
 // MARK: - Text with runs that can be tapped
 
-/// A label that knows which of its runs a tap landed on. A UILabel has no
-/// links of its own, so the text is laid out again the way the label lays it
-/// out and the touch is looked up in that.
+/// The label a `Text` node is drawn with.
+///
+/// It knows which of its runs a tap landed on: a UILabel has no links of its
+/// own, so the text is laid out again the way the label lays it out and the
+/// touch is looked up in that.
 final class DnnLabel: UILabel {
   /// The runs that can be tapped: where each is in the string, and the event
   /// its tap sends.
@@ -2210,6 +2227,17 @@ final class DnnLabel: UILabel {
   var onLink: ((String) -> Void)?
 
   private lazy var tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+
+  /// A label given more height than its lines need writes them from the top,
+  /// as Flutter's text does, where UIKit would centre them: a page that is
+  /// one line of text had it halfway down the screen.
+  override func drawText(in rect: CGRect) {
+    var lines = textRect(forBounds: rect, limitedToNumberOfLines: numberOfLines)
+    lines.origin.y = rect.origin.y
+    lines.origin.x = rect.origin.x
+    lines.size.width = rect.width
+    super.drawText(in: lines)
+  }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
@@ -2237,9 +2265,8 @@ final class DnnLabel: UILabel {
     container.lineBreakMode = lineBreakMode
     layout.addTextContainer(container)
     storage.addLayoutManager(layout)
-    // A label centres its lines in whatever height it was given.
-    let used = layout.usedRect(for: container)
-    let inText = CGPoint(x: point.x, y: point.y - max(0, (bounds.height - used.height) / 2))
+    // The lines are written from the top - see `drawText(in:)`.
+    let inText = point
     let glyph = layout.glyphIndex(for: inText, in: container)
     // The nearest glyph is found for a touch anywhere; only one on it counts.
     let box = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)

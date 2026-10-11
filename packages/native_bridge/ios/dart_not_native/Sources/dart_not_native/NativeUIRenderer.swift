@@ -4647,6 +4647,7 @@ class NativeUIRenderer {
     style.doubleTapEventId = node["doubleTapEventId"] as? String
     style.longPressEventId = node["longPressEventId"] as? String
     style.panEventId = node["panEventId"] as? String
+    style.panAxis = node["panAxis"] as? String
     style.ripple = node["ripple"] as? Bool ?? false
     style.dragData = node["dragData"] as? String
     style.dropEventId = node["dropEventId"] as? String

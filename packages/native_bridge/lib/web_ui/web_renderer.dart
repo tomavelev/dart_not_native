@@ -3079,7 +3079,12 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     if (!fresh || hold || pan) {
       _attr(box, 'data-gesture', hold || pan ? '' : null);
       // A pan is the box's to follow, so the browser must not scroll with it.
-      box.classList.toggle('dnn-box--pan', pan);
+      // A pan along one axis leaves the other to the browser's scrolling.
+      final axis = pan ? p['panAxis'] : null;
+      box.classList
+        ..toggle('dnn-box--pan', pan && axis is! String)
+        ..toggle('dnn-box--pan-x', axis == 'horizontal')
+        ..toggle('dnn-box--pan-y', axis == 'vertical');
       // Holding a finger down must not select the text underneath or raise
       // the system's own menu.
       box.classList.toggle('dnn-box--hold', hold);
@@ -3964,7 +3969,15 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         return;
       }
       final eventId = p['panEventId'];
-      if (eventId is String) {
+      // A pan along one axis begins only with a movement along it; one that
+      // sets off the other way is not this box's, however it goes on.
+      final across = (x - state.downX).abs() >= (y - state.downY).abs();
+      final mine = switch (p['panAxis']) {
+        'horizontal' => across,
+        'vertical' => !across,
+        _ => true,
+      };
+      if (eventId is String && mine) {
         state.panning = true;
         // The pan began where the pointer went down, not where it had got to
         // by the time it was clear this was a pan.

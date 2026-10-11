@@ -1157,6 +1157,9 @@ class UIBuilder {
   /// `<id>_start`, `<id>_update` and `<id>_end` with `{x, y, dx, dy, vx, vy}`:
   /// position, movement since the last event, and (on end) velocity in
   /// pixels per second. [ripple] asks for the platform's touch feedback.
+  /// [panAxis] - 'horizontal' or 'vertical' - makes the pan one along that
+  /// axis alone: a movement that starts the other way is not the box's, and
+  /// is left to the scroller it is in or holds.
   ///
   /// **Drag and drop.** A box with [dragData] can be picked up (after a long
   /// press where the platform distinguishes) and a box with [onDrop] receives
@@ -1212,6 +1215,7 @@ class UIBuilder {
     void Function(double x, double y)? onDoubleTap,
     void Function(double x, double y)? onLongPress,
     void Function(String phase, Map<String, dynamic> data)? onPan,
+    String? panAxis,
     bool ripple = false,
     String? dragData,
     void Function(String data)? onDrop,
@@ -1308,6 +1312,7 @@ class UIBuilder {
         if (doubleTap != null) 'doubleTapEventId': doubleTap,
         if (longPress != null) 'longPressEventId': longPress,
         if (pan != null) 'panEventId': pan,
+        if (pan != null && panAxis != null) 'panAxis': panAxis,
         if (ripple) 'ripple': true,
         if (dragData != null) 'dragData': dragData,
         if (drop != null) 'dropEventId': drop,

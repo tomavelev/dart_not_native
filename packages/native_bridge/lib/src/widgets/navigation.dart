@@ -2902,8 +2902,12 @@ class TabBar extends Widget implements PreferredSizeWidget {
 ///
 /// The children that are not showing are still built - their nodes thrown
 /// away - so a tab keeps its `State` while another is in front, as each page
-/// of Flutter's does once it has been visited. There is no swipe between
-/// pages: the strip is how a tab is chosen.
+/// of Flutter's does once it has been visited.
+///
+/// A swipe across the page moves to the tab beside it, as in Flutter - unless
+/// [physics] is a [NeverScrollableScrollPhysics]. The page does not follow
+/// the finger: it changes when the finger lifts, having gone far or fast
+/// enough.
 class TabBarView extends Widget {
   const TabBarView({
     super.key,
@@ -2926,7 +2930,43 @@ class TabBarView extends Widget {
       );
     }
     owner._watch(controller);
-    return _renderOneOf(owner, children, controller.index) ??
-        UIBuilder.sizedBox();
+    final page =
+        _renderOneOf(owner, children, controller.index) ?? UIBuilder.sizedBox();
+    if (children.length < 2 || (physics?._never ?? false)) return page;
+    // Towards the start of the line is the next tab, whichever way it reads.
+    final forward = owner._direction == TextDirection.rtl ? 1 : -1;
+    return UIBuilder.box(
+      // The page's own size, so that a short page is still swiped over all
+      // the room the view has - and none is invented where there is no end
+      // to the height.
+      expand: owner._unboundedHeight ? 'width' : 'both',
+      panAxis: 'horizontal',
+      onPan: (phase, data) {
+        double n(String key) => (data[key] as num?)?.toDouble() ?? 0;
+        switch (phase) {
+          case 'start':
+            _swipeFrom[controller] = n('x');
+          case 'end':
+            final from = _swipeFrom[controller];
+            _swipeFrom[controller] = null;
+            if (from == null) return;
+            final moved = n('x') - from;
+            final speed = n('vx');
+            // Far enough, or flung - and a fling against the way the finger
+            // went is a change of mind.
+            final far = moved.abs() > _swipeDistance;
+            final flung = speed.abs() > _swipeSpeed && speed.sign == moved.sign;
+            if (!far && !flung) return;
+            controller.index += moved.sign.toInt() * forward;
+        }
+      },
+      child: page,
+    );
   }
+
+  /// Where each controller's swipe in progress began. Kept by controller
+  /// rather than in the closure, which a rebuild in mid-swipe replaces.
+  static final Expando<double> _swipeFrom = Expando('tabSwipe');
+  static const double _swipeDistance = 80;
+  static const double _swipeSpeed = 300;
 }
