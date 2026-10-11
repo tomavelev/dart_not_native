@@ -63,6 +63,134 @@ void main() {
     expect(surface().height, (80 * ratio()).round());
   });
 
+  group('a paint with a gradient', () {
+    test('a linear one runs from its first colour to its last', () async {
+      await renderer.render(
+        picture(
+          [
+            ['rect', 0, 0, 100, 80, 0],
+          ],
+          paints: const [
+            {
+              'color': '#000000',
+              'gradient': {
+                'type': 'linear',
+                'from': [0, 0],
+                'to': [100, 0],
+                'colors': ['#ff0000', '#0000ff'],
+              },
+            },
+          ],
+        ),
+      );
+      final left = pixel(3, 40), right = pixel(96, 40), middle = pixel(50, 40);
+
+      // Red at one end, blue at the other, something of both between - and
+      // not the paint's plain colour anywhere.
+      expect(left[0], greaterThan(230));
+      expect(left[2], lessThan(25));
+      expect(right[2], greaterThan(230));
+      expect(right[0], lessThan(25));
+      expect(middle[0], inInclusiveRange(90, 165));
+      expect(middle[2], inInclusiveRange(90, 165));
+    });
+
+    test('a radial one runs from its centre outwards', () async {
+      await renderer.render(
+        picture(
+          [
+            ['rect', 0, 0, 100, 80, 0],
+          ],
+          paints: const [
+            {
+              'color': '#000000',
+              'gradient': {
+                'type': 'radial',
+                'center': [50, 40],
+                'radius': 30,
+                'colors': ['#ff0000', '#0000ff'],
+              },
+            },
+          ],
+        ),
+      );
+
+      expect(pixel(50, 40)[0], greaterThan(230));
+      // Beyond the radius it holds its last colour.
+      expect(pixel(95, 40), [0, 0, 255, 255]);
+    });
+
+    test('stops say where each colour sits', () async {
+      await renderer.render(
+        picture(
+          [
+            ['rect', 0, 0, 100, 80, 0],
+          ],
+          paints: const [
+            {
+              'color': '#000000',
+              'gradient': {
+                'type': 'linear',
+                'from': [0, 0],
+                'to': [100, 0],
+                'colors': ['#ff0000', '#0000ff'],
+                'stops': [0.8, 1.0],
+              },
+            },
+          ],
+        ),
+      );
+
+      // Still the first colour most of the way along.
+      expect(pixel(60, 40), [255, 0, 0, 255]);
+    });
+
+    test('a stroke is drawn in it too', () async {
+      await renderer.render(
+        picture(
+          [
+            ['line', 0, 40, 100, 40, 0],
+          ],
+          paints: const [
+            {
+              'color': '#000000',
+              'style': 'stroke',
+              'strokeWidth': 10,
+              'gradient': {
+                'type': 'linear',
+                'from': [0, 0],
+                'to': [100, 0],
+                'colors': ['#ff0000', '#0000ff'],
+              },
+            },
+          ],
+        ),
+      );
+
+      expect(pixel(4, 40)[0], greaterThan(230));
+      expect(pixel(96, 40)[2], greaterThan(230));
+      expect(pixel(50, 10), [0, 0, 0, 0]);
+    });
+
+    test('one that says too little is the paint\'s plain colour', () async {
+      await renderer.render(
+        picture(
+          [
+            ['rect', 0, 0, 100, 80, 0],
+          ],
+          paints: const [
+            {
+              'color': '#00ff00',
+              'gradient': {'type': 'radial', 'colors': <String>[]},
+            },
+          ],
+        ),
+      );
+
+      expect(pixel(50, 40), [0, 255, 0, 255]);
+    });
+  });
+
   test('a filled rectangle is where it was put, and nowhere else', () async {
     await renderer.render(
       picture([

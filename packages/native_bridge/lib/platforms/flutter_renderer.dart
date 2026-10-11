@@ -17,6 +17,7 @@ library;
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -4200,6 +4201,7 @@ class _CommandPainter extends CustomPainter {
     final paint = Paint()..isAntiAlias = true;
     if (spec is! Map) return paint..color = textColor;
     return paint
+      ..shader = _shader(spec['gradient'])
       ..color = FlutterUIRenderer._color(spec['color']) ?? textColor
       ..style = spec['style'] == 'stroke'
           ? PaintingStyle.stroke
@@ -4215,6 +4217,39 @@ class _CommandPainter extends CustomPainter {
         'bevel' => StrokeJoin.bevel,
         _ => StrokeJoin.miter,
       };
+  }
+
+  /// A paint's `gradient`, placed in the canvas's coordinates.
+  static Shader? _shader(Object? spec) {
+    if (spec is! Map) return null;
+    Offset point(Object? xy) => xy is List && xy.length >= 2
+        ? Offset(
+            FlutterUIRenderer._double(xy[0]) ?? 0,
+            FlutterUIRenderer._double(xy[1]) ?? 0,
+          )
+        : Offset.zero;
+    final colors = [
+      for (final color in (spec['colors'] as List? ?? const []))
+        FlutterUIRenderer._color(color) ?? const Color(0x00000000),
+    ];
+    if (colors.isEmpty) return null;
+    // One colour is a flat fill; the engine wants two to draw between.
+    if (colors.length == 1) colors.add(colors.first);
+    final raw = spec['stops'];
+    final stops = raw is List && raw.length == colors.length
+        ? [for (final stop in raw) FlutterUIRenderer._double(stop) ?? 0]
+        : null;
+    if (spec['type'] == 'radial') {
+      final radius = FlutterUIRenderer._double(spec['radius']) ?? 0;
+      if (radius <= 0) return null;
+      return ui.Gradient.radial(point(spec['center']), radius, colors, stops);
+    }
+    return ui.Gradient.linear(
+      point(spec['from']),
+      point(spec['to']),
+      colors,
+      stops,
+    );
   }
 
   /// The paint a command names: `p` is the index at [at] of its arguments. One

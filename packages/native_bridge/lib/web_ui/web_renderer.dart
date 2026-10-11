@@ -5060,6 +5060,42 @@ class _Drag {
   late final JSFunction onCancel;
 }
 
+/// A paint's `gradient` as the canvas's own: two points for a linear one, a
+/// centre and a radius for a radial one, in the canvas's coordinates. Null
+/// for a paint with none, or one that says too little to draw.
+JSAny? _canvasGradient(web.CanvasRenderingContext2D context, Object? spec) {
+  if (spec is! Map) return null;
+  double n(Object? list, int i) =>
+      list is List && i < list.length && list[i] is num
+      ? (list[i] as num).toDouble()
+      : 0;
+  final colors = spec['colors'];
+  if (colors is! List || colors.isEmpty) return null;
+  final web.CanvasGradient gradient;
+  if (spec['type'] == 'radial') {
+    final radius = spec['radius'];
+    if (radius is! num || radius <= 0) return null;
+    final x = n(spec['center'], 0), y = n(spec['center'], 1);
+    gradient = context.createRadialGradient(x, y, 0, x, y, radius);
+  } else {
+    gradient = context.createLinearGradient(
+      n(spec['from'], 0),
+      n(spec['from'], 1),
+      n(spec['to'], 0),
+      n(spec['to'], 1),
+    );
+  }
+  final stops = spec['stops'];
+  for (var i = 0; i < colors.length; i++) {
+    // Evenly spaced when no stops are said, as in Flutter.
+    final at = stops is List && i < stops.length && stops[i] is num
+        ? (stops[i] as num).toDouble()
+        : (colors.length == 1 ? 0.0 : i / (colors.length - 1));
+    gradient.addColorStop(at.clamp(0, 1), cssColor('${colors[i]}'));
+  }
+  return gradient;
+}
+
 /// Replays a canvas node's [commands] into [context].
 ///
 /// The vocabulary is `UIBuilder.canvas`'s: each command is a list whose first
@@ -5090,7 +5126,9 @@ void _replayCanvasCommands(
   /// Fills or strokes the current path the way [paint] says.
   void draw(Map<dynamic, dynamic>? paint, {bool stroke = false}) {
     final color = paint?['color'];
-    final css = cssColor(color is String ? color : ink).toJS;
+    final css =
+        _canvasGradient(context, paint?['gradient']) ??
+        cssColor(color is String ? color : ink).toJS;
     if (stroke || paint?['style'] == 'stroke') {
       final width = paint?['strokeWidth'];
       context

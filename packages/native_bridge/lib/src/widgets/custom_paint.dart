@@ -41,11 +41,12 @@ enum PathFillType { nonZero, evenOdd }
 
 /// How a shape is drawn: its colour, and whether it is filled or stroked.
 ///
-/// What travels is [color], [style], [strokeWidth], [strokeCap] and
-/// [strokeJoin]. [shader], [maskFilter], [colorFilter], [blendMode] and
-/// [isAntiAlias] can be set, so a painter written for Flutter compiles, and
-/// are not carried: a gradient or a blur has no place in the paint table, and
-/// a shape painted with one is drawn in its plain [color].
+/// What travels is [color], [style], [strokeWidth], [strokeCap],
+/// [strokeJoin], and a [shader] that is a gradient
+/// (`LinearGradient(...).createShader(rect)`, or a `RadialGradient`'s).
+/// [maskFilter], [colorFilter], [blendMode] and [isAntiAlias] can be set, so
+/// a painter written for Flutter compiles, and are not carried: a shape
+/// painted with a blur is drawn without one.
 class Paint {
   Color color = const Color(0xFF000000);
   PaintingStyle style = PaintingStyle.fill;
@@ -59,7 +60,8 @@ class Paint {
   /// Ignored - see the class doc.
   bool isAntiAlias = true;
 
-  /// Ignored - see the class doc.
+  /// A gradient to draw with in place of [color]: what
+  /// [Gradient.createShader] returns. Anything else is ignored.
   Object? shader;
 
   /// Ignored - see the class doc.
@@ -79,8 +81,10 @@ class Paint {
   /// line - which has no inside to fill, whatever [style] says.
   Map<String, dynamic> _json({bool? stroke}) {
     final stroked = stroke ?? style == PaintingStyle.stroke;
+    final shader = this.shader;
     return {
       'color': color._hex,
+      if (shader is Shader) 'gradient': shader._json,
       if (stroked) 'style': 'stroke',
       if (stroked) 'strokeWidth': strokeWidth <= 0 ? 1.0 : strokeWidth,
       if (stroked && strokeCap != StrokeCap.butt) 'cap': strokeCap.name,
@@ -328,7 +332,7 @@ class Canvas {
     final json = paint._json(stroke: stroke);
     final key =
         '${json['color']}|${json['style']}|${json['strokeWidth']}|'
-        '${json['cap']}|${json['join']}';
+        '${json['cap']}|${json['join']}|${json['gradient']}';
     return _paintIndex.putIfAbsent(key, () {
       _paints.add(json);
       return _paints.length - 1;

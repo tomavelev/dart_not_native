@@ -2133,8 +2133,13 @@ notice.
 11. **`Scaffold.drawer` is a sheet**, opened by a menu button the app bar
     gains - not a panel from the side. A scaffold nested in another's body is
     composed from a column and a stack.
-12. **Canvas paint is flat colour.** Shaders (so gradients), mask filters,
-    blend modes, `clipPath` and `saveLayer` paints are not carried;
+12. **Canvas paint is colour or a gradient.** A `Paint.shader` made by
+    `LinearGradient(...).createShader(rect)` or a `RadialGradient`'s is
+    drawn since 2026-10-11, for a fill and for a stroke, on all four
+    renderers - seen on an iOS simulator and an Android emulator, and
+    checked by pixel in Chrome and the Flutter host. Still not carried: a
+    `SweepGradient`, `dart:ui`'s own `Gradient.linear`, tile modes other
+    than clamp, mask filters, blend modes, `clipPath` and `saveLayer` paints;
     `Path.addRRect` adds the plain rectangle and `arcToPoint` a straight line.
 13. **An image's wait is never seen.** `Image.frameBuilder` and
     `loadingBuilder` are called since 2026-10-10, once per build and as for
@@ -2371,8 +2376,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2230 tests
-  (1262 in the package, 388 for the example apps and goldens, 537 in the browser,
+  contracts, the plugin system and the design system are covered by 2241 tests
+  (1268 in the package, 388 for the example apps and goldens, 542 in the browser,
   43 in the bloc package,
   counted 2026-10-11), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

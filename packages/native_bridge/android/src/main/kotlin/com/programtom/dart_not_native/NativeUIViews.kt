@@ -1479,6 +1479,29 @@ private fun canvasPaint(spec: Map<*, *>?): Paint = Paint(Paint.ANTI_ALIAS_FLAG).
         "bevel" -> Paint.Join.BEVEL
         else -> Paint.Join.MITER
     }
+    shader = canvasShader(spec?.get("gradient") as? Map<*, *>)
+}
+
+/** A paint's `gradient`, placed in the canvas's own coordinates. */
+private fun canvasShader(spec: Map<*, *>?): Shader? {
+    spec ?: return null
+    fun at(key: String, i: Int) = ((spec[key] as? List<*>)?.getOrNull(i) as? Number)?.toFloat() ?: 0f
+    var colors = (spec["colors"] as? List<*>)?.map { parseColorOrNull(it) ?: Color.TRANSPARENT }
+        ?.toIntArray() ?: return null
+    if (colors.isEmpty()) return null
+    // One colour is a flat fill; the platform wants two to draw between.
+    if (colors.size == 1) colors = intArrayOf(colors[0], colors[0])
+    val stops = (spec["stops"] as? List<*>)?.map { (it as? Number)?.toFloat() ?: 0f }
+        ?.takeIf { it.size == colors.size }?.toFloatArray()
+    if (spec["type"] == "radial") {
+        val radius = (spec["radius"] as? Number)?.toFloat() ?: 0f
+        if (radius <= 0f) return null
+        return RadialGradient(
+            at("center", 0), at("center", 1), radius, colors, stops, Shader.TileMode.CLAMP)
+    }
+    return LinearGradient(
+        at("from", 0), at("from", 1), at("to", 0), at("to", 1), colors, stops,
+        Shader.TileMode.CLAMP)
 }
 
 private fun canvasPath(segments: List<*>): Path {

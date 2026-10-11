@@ -1118,7 +1118,9 @@ class NativeUIRenderer {
         let holder = column.arrangedSubviews[columnIndex]
         columnIndex += 1
         if child["type"] as? String == "LazyList" || !bodyScrolls {
-          result.append(holder)
+          // The body is the one view in the holder that takes what is left.
+          guard let body = holder.subviews.first else { return nil }
+          result.append(body)
         } else if let scroll = holder as? UIScrollView, let body = scroll.subviews.first {
           result.append(body)
         } else {
@@ -1814,8 +1816,27 @@ class NativeUIRenderer {
         // view around it would take away. So does a body that asked not to
         // be scrolled: it is pinned between the bars and takes what is left.
         if child["type"] as? String == "LazyList" || !bodyScrolls {
-          body.setContentHuggingPriority(UILayoutPriority(1), for: .vertical)
-          column.addArrangedSubview(body)
+          // In a holder that takes what is left, with the body at its top
+          // and as tall as it - unless the body has a height of its own
+          // that it will not give up, a canvas of a stated size: then the
+          // room below it stays empty. Without the holder that body left
+          // the spare height to the app bar, which came out half a screen
+          // tall.
+          let holder = UIView()
+          holder.setContentHuggingPriority(UILayoutPriority(1), for: .vertical)
+          body.translatesAutoresizingMaskIntoConstraints = false
+          holder.addSubview(body)
+          let fill = body.bottomAnchor.constraint(equalTo: holder.bottomAnchor)
+          // Just under the app bar's own height, so the bar wins a tie.
+          fill.priority = UILayoutPriority(739)
+          NSLayoutConstraint.activate([
+            body.topAnchor.constraint(equalTo: holder.topAnchor),
+            body.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: holder.trailingAnchor),
+            body.bottomAnchor.constraint(lessThanOrEqualTo: holder.bottomAnchor),
+            fill,
+          ])
+          column.addArrangedSubview(holder)
           continue
         }
         // The body scrolls, so a screen taller than the window is reachable

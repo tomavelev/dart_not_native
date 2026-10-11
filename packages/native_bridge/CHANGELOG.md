@@ -100,6 +100,18 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A canvas paints gradients
+
+- `paint.shader = LinearGradient(...).createShader(rect)`, and a
+  `RadialGradient`'s, are drawn - filled or stroked. A paint's shader was
+  ignored, so the shape was drawn in the paint's plain colour.
+- The protocol: a canvas paint may carry `gradient` - `{type: 'linear',
+  from, to, colors, stops?}` or `{type: 'radial', center, radius, colors,
+  stops?}`, in the canvas's own coordinates. All four renderers.
+- **On iOS a page whose body does not scroll and has a size of its own
+  keeps its app bar the right height.** The spare height went to the bar,
+  which came out half a screen tall over a canvas of a stated size.
+
 ### `PageView`
 
 - `PageView`, `PageView.builder` and `PageController` (`jumpToPage`,

@@ -1085,7 +1085,68 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
 // MARK: - Canvas
 
 /// One entry of a canvas's `paints`.
+/// A paint's gradient, placed in the canvas's own coordinates: two points
+/// for a linear one, a centre and a radius for a radial one.
+struct DnnPaintGradient {
+  let gradient: CGGradient
+  let radial: Bool
+  let from: CGPoint
+  let to: CGPoint
+  let radius: CGFloat
+
+  init?(_ raw: Any?) {
+    guard let spec = raw as? [String: Any],
+      var colors = (spec["colors"] as? [Any])?.map({ dnnColor($0) ?? .clear }),
+      !colors.isEmpty
+    else { return nil }
+    // One colour is a flat fill; Core Graphics wants two to draw between.
+    if colors.count == 1 { colors.append(colors[0]) }
+    func point(_ key: String) -> CGPoint {
+      let xy = spec[key] as? [Any] ?? []
+      return CGPoint(
+        x: xy.count > 0 ? dnnNumber(xy[0]) ?? 0 : 0,
+        y: xy.count > 1 ? dnnNumber(xy[1]) ?? 0 : 0)
+    }
+    var stops = (spec["stops"] as? [Any])?.map { dnnNumber($0) ?? 0 }
+    if stops?.count != colors.count {
+      // Evenly spaced when no stops are said, as in Flutter.
+      stops = colors.indices.map { CGFloat($0) / CGFloat(colors.count - 1) }
+    }
+    guard
+      let made = CGGradient(
+        colorsSpace: CGColorSpaceCreateDeviceRGB(),
+        colors: colors.map { $0.cgColor } as CFArray, locations: stops)
+    else { return nil }
+    gradient = made
+    radial = spec["type"] as? String == "radial"
+    if radial {
+      radius = dnnNumber(spec["radius"]) ?? 0
+      guard radius > 0 else { return nil }
+      from = point("center")
+      to = from
+    } else {
+      radius = 0
+      from = point("from")
+      to = point("to")
+    }
+  }
+
+  /// Fills the context's clip with the gradient, held at its end colours
+  /// beyond its ends.
+  func draw(in context: CGContext) {
+    let beyond: CGGradientDrawingOptions = [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+    if radial {
+      context.drawRadialGradient(
+        gradient, startCenter: from, startRadius: 0, endCenter: from, endRadius: radius,
+        options: beyond)
+    } else {
+      context.drawLinearGradient(gradient, start: from, end: to, options: beyond)
+    }
+  }
+}
+
 struct DnnPaint {
+  var gradient: DnnPaintGradient?
   var color = UIColor.black
   var stroke = false
   var width: CGFloat = 0
@@ -1129,6 +1190,7 @@ final class DnnCanvasDrawingView: UIView {
       var paint = DnnPaint()
       guard let map = raw as? [String: Any] else { return paint }
       paint.color = dnnColor(map["color"]) ?? .black
+      paint.gradient = DnnPaintGradient(map["gradient"])
       paint.stroke = (map["style"] as? String) == "stroke"
       paint.width = dnnNumber(map["strokeWidth"]) ?? 0
       switch map["cap"] as? String {
@@ -1198,13 +1260,25 @@ final class DnnCanvasDrawingView: UIView {
     _ context: CGContext, _ path: CGPath, _ paint: DnnPaint, strokeOnly: Bool = false
   ) {
     context.addPath(path)
-    if paint.stroke || strokeOnly {
+    let stroked = paint.stroke || strokeOnly
+    if stroked {
       context.setStrokeColor(paint.color.cgColor)
       // A width of zero is a hairline, as it is in Flutter.
       let hairline = 1 / max(contentScaleFactor, 1)
       context.setLineWidth(paint.width > 0 ? paint.width : hairline)
       context.setLineCap(paint.cap)
       context.setLineJoin(paint.join)
+    }
+    if let gradient = paint.gradient {
+      // Core Graphics paints a gradient over a region rather than with it:
+      // the shape - or the outline of its stroke - becomes the clip, and the
+      // gradient is drawn through that.
+      context.saveGState()
+      if stroked { context.replacePathWithStrokedPath() }
+      context.clip()
+      gradient.draw(in: context)
+      context.restoreGState()
+    } else if stroked {
       context.strokePath()
     } else {
       context.setFillColor(paint.color.cgColor)

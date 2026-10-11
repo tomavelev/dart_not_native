@@ -1007,6 +1007,37 @@ void main() {
       );
     }
 
+    testWidgets('a paint with a gradient is drawn in it', (tester) async {
+      final image = await paint(
+        tester,
+        UIBuilder.canvas(
+          width: 100,
+          height: 80,
+          commands: const [
+            ['rect', 0, 0, 100, 80, 0],
+          ],
+          paints: const [
+            {
+              'color': '#000000',
+              'gradient': {
+                'type': 'linear',
+                'from': [0, 0],
+                'to': [100, 0],
+                'colors': ['#ff0000', '#0000ff'],
+              },
+            },
+          ],
+        ),
+      );
+
+      final left = await pixel(tester, image, 3, 40);
+      final right = await pixel(tester, image, 96, 40);
+      expect(left.r, greaterThan(0.9));
+      expect(left.b, lessThan(0.1));
+      expect(right.b, greaterThan(0.9));
+      expect(right.r, lessThan(0.1));
+    });
+
     testWidgets('replays shapes, transforms, clips and paths', (tester) async {
       final image = await paint(
         tester,

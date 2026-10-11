@@ -872,7 +872,8 @@ CustomPaint(
 
 A painter written for Flutter usually moves over as it is. The canvas records
 a command list that each renderer replays into its own canvas, so what does
-not survive is what a command list cannot say: shaders, mask filters, blend
+not survive is what a command list cannot say: shaders other than a linear or
+radial gradient (`gradient.createShader(rect)` is drawn), mask filters, blend
 modes, `clipPath`, `saveLayer` paints, and `TextPainter` measuring real glyphs
 (§8.9). In the migrated apps: the reminders app's donut chart is a
 `CustomPaint` and its month calendar is boxes; the games draw snake, frog and

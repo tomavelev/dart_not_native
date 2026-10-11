@@ -2341,6 +2341,22 @@ abstract class Gradient {
 
   /// The node's `gradient` prop.
   Map<String, dynamic> get _json;
+
+  /// This gradient laid over [rect], for a [Paint] on a canvas:
+  /// `paint.shader = gradient.createShader(rect)`. [textDirection] resolves a
+  /// directional alignment; left out, it reads from the left.
+  Shader createShader(Rect rect, {TextDirection? textDirection});
+
+  List<String> get _hexes => [for (final color in colors) color._hex];
+}
+
+/// What a [Paint] draws with in place of one colour: a gradient, placed in
+/// the canvas's own coordinates. Made by [Gradient.createShader].
+class Shader {
+  const Shader._(this._json);
+
+  /// The paint's `gradient` entry.
+  final Map<String, dynamic> _json;
 }
 
 /// A gradient along a line from [begin] to [end].
@@ -2365,6 +2381,19 @@ class LinearGradient extends Gradient {
     'begin': begin._resolved._xy,
     'end': end._resolved._xy,
   };
+
+  @override
+  Shader createShader(Rect rect, {TextDirection? textDirection}) {
+    final from = begin.resolve(textDirection).withinRect(rect);
+    final to = end.resolve(textDirection).withinRect(rect);
+    return Shader._({
+      'type': 'linear',
+      'from': [from.dx, from.dy],
+      'to': [to.dx, to.dy],
+      'colors': _hexes,
+      if (stops != null) 'stops': stops,
+    });
+  }
 }
 
 /// A gradient outwards from [center].
@@ -2396,6 +2425,19 @@ class RadialGradient extends Gradient {
       'begin': middle._xy,
       'end': [middle.x + radius * 2, middle.y],
     };
+  }
+
+  @override
+  Shader createShader(Rect rect, {TextDirection? textDirection}) {
+    final middle = center.resolve(textDirection).withinRect(rect);
+    return Shader._({
+      'type': 'radial',
+      'center': [middle.dx, middle.dy],
+      // A fraction of the shorter side, as in Flutter.
+      'radius': radius * math.min(rect.width, rect.height),
+      'colors': _hexes,
+      if (stops != null) 'stops': stops,
+    });
   }
 }
 

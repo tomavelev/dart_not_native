@@ -286,8 +286,32 @@ WidgetNode _freeFormTree() => UIBuilder.scaffold(
               semanticLabel: 'Three bars',
               paints: const [
                 {'color': '#1976d2'},
+                // A gradient, which each native draws its own way - on iOS
+                // through a clip.
+                {
+                  'color': '#1976d2',
+                  'gradient': {
+                    'type': 'linear',
+                    'from': [0, 0],
+                    'to': [72, 0],
+                    'colors': ['#1976d2', '#f57c00'],
+                  },
+                },
+                {
+                  'color': '#1976d2',
+                  'style': 'stroke',
+                  'strokeWidth': 3,
+                  'gradient': {
+                    'type': 'radial',
+                    'center': [36, 20],
+                    'radius': 20,
+                    'colors': ['#ffffff', '#1976d2'],
+                  },
+                },
               ],
               commands: const [
+                ['rect', 0, 0, 72, 4, 1],
+                ['circle', 36, 20, 12, 2],
                 ['rect', 0, 27, 20, 13, 0],
                 ['rect', 26, 13, 20, 27, 0],
                 ['rect', 52, 0, 20, 40, 0],
