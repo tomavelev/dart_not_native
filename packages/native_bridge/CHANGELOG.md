@@ -100,6 +100,21 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A rail draws what is put above and below it
+
+- `NavigationRail(leading:, trailing:, extended:)` are drawn. They were
+  accepted and left out, so a rail was its destinations and nothing else.
+- The protocol: a `BottomNavigation` node with `rail` takes `extended`, and
+  `hasLeading` / `hasTrailing` for its children - the leading, when there is
+  one, and then the trailing. `UIBuilder.bottomNavigation` takes the three.
+- All four renderers. Seen on an iOS simulator, an Android emulator and in
+  Chrome under both style kits. An extended rail does not animate open and
+  is 256 wide; on Android it is drawn here, since Material's rail has no
+  such form in the version this builds against.
+- **A rail in a row is drawn on iOS.** It had no height of its own and a row
+  gave it none, so it was a blank strip the width of a rail. It is as tall as
+  its row now, as Flutter's is.
+
 ### A text field takes the look it is given
 
 - `TextField.style` (the colour, size and weight of what is typed) and

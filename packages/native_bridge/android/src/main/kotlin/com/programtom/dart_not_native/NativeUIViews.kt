@@ -2162,17 +2162,116 @@ internal class SnackbarHost(context: Context) :
     }
 }
 
-/** A navigation rail in the scroller that lets it be taller than the window. */
+/**
+ * A navigation rail in the scroller that lets it be taller than the window.
+ *
+ * [destinations] is Material's rail, or [ExtendedRail] for a rail the app
+ * extended. What the app put above and below them is added with [addSlot],
+ * and [slots] remembers those views so their nodes can be patched.
+ */
 @SuppressLint("ViewConstructor")
-internal class RailScroller(context: Context, val rail: NavigationRailView) :
+internal class RailScroller(context: Context, val destinations: View) :
     ScrollView(context) {
+    val rail: NavigationRailView? get() = destinations as? NavigationRailView
+    val slots = ArrayList<View>()
+    private val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+
     init {
         isFillViewport = true
         isVerticalScrollBarEnabled = false
         addView(
-            rail,
+            column,
             LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
+        column.addView(
+            destinations,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
+    }
+
+    /** Puts [view] above the destinations or below them, [margin] clear of the edges. */
+    fun addSlot(view: View, above: Boolean, gravity: Int, margin: Int) {
+        val params = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        params.gravity = gravity
+        params.setMargins(margin, margin, margin, margin)
+        if (above) column.addView(view, 0, params) else column.addView(view, params)
+        slots += view
+    }
+}
+
+/**
+ * An extended rail's destinations: each a row, its label beside its icon,
+ * the selected one on a pill. Material's rail has no such form in the
+ * version this is built against, so it is drawn here.
+ */
+@SuppressLint("ViewConstructor")
+internal class ExtendedRail(
+    context: Context,
+    private val tint: Int,
+    private val idle: Int,
+    private val pill: Int,
+) : LinearLayout(context) {
+    /** The index of the destination that was tapped. */
+    var onSelect: ((Int) -> Unit)? = null
+    private var icons: List<Pair<Drawable?, Drawable?>> = emptyList()
+    private val density = context.resources.displayMetrics.density
+    private fun dp(value: Int) = (value * density).toInt()
+
+    init {
+        orientation = VERTICAL
+        setPadding(dp(12), dp(8), dp(12), dp(8))
+    }
+
+    /** One row per label, with its icon and the one it shows while selected. */
+    fun fill(labels: List<String>, icons: List<Pair<Drawable?, Drawable?>>) {
+        removeAllViews()
+        this.icons = icons
+        for ((index, text) in labels.withIndex()) {
+            val row = LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(16), 0, dp(24), 0)
+                isClickable = true
+                isFocusable = true
+                contentDescription = text
+                setOnClickListener { onSelect?.invoke(index) }
+            }
+            row.addView(android.widget.ImageView(context), LayoutParams(dp(24), dp(24)))
+            row.addView(
+                TextView(context).apply {
+                    this.text = text
+                    textSize = 14f
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    maxLines = 1
+                },
+                LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+                    marginStart = dp(12)
+                },
+            )
+            addView(row, LayoutParams(dp(232), dp(56)))
+        }
+    }
+
+    fun select(index: Int) {
+        for (position in 0 until childCount) {
+            val row = getChildAt(position) as? LinearLayout ?: continue
+            val chosen = position == index
+            val colour = if (chosen) tint else idle
+            val (normal, selected) = icons.getOrNull(position) ?: (null to null)
+            (row.getChildAt(0) as? android.widget.ImageView)?.apply {
+                setImageDrawable(if (chosen) selected ?: normal else normal)
+                imageTintList = ColorStateList.valueOf(colour)
+            }
+            (row.getChildAt(1) as? TextView)?.setTextColor(colour)
+            row.isSelected = chosen
+            row.background = if (!chosen) null else
+                android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(28).toFloat()
+                    setColor(pill)
+                }
+        }
     }
 }
 

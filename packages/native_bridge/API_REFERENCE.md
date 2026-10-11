@@ -208,7 +208,7 @@ Each `UIBuilder` method's doc comment is the specification; in brief:
 | `UIBuilder.dropdown` | One of a list, from the platform's own menu |
 | `UIBuilder.datePicker`, `timePicker` | The platform's pickers, as overlays; dates are `yyyy-mm-dd` |
 | `UIBuilder.bottomBar` | Pins its child along a scaffold's bottom edge |
-| `UIBuilder.bottomNavigation` | The app's destinations; `rail: true` lays them down the leading edge |
+| `UIBuilder.bottomNavigation` | The app's destinations; `rail: true` lays them down the leading edge, where `leading` and `trailing` are nodes drawn above and below them and `extended` writes each label beside its icon |
 | `UIBuilder.flutterSlot` | A region the Flutter engine paints - see *FlutterSlot* below |
 
 ### Props added to the older nodes

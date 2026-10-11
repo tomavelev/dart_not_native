@@ -2767,6 +2767,16 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       rail ? 'dnn-bottomnav dnn-bottomnav--rail' : 'dnn-bottomnav',
     )..setAttribute('role', 'navigation');
     final state = _nodes[nav] = _NodeState(p);
+    // What a rail has above and below its destinations: the node's children,
+    // in one holder that takes no box of its own, so each is laid out as the
+    // rail's own - the stylesheet puts the first above the destinations when
+    // the rail has a leading, and the rest below. The holder is written
+    // before the destinations when there is a leading, so that Tab reaches
+    // it first.
+    final slots = rail && (p['hasLeading'] == true || p['hasTrailing'] == true)
+        ? _host(_el('div', 'dnn-bottomnav__slots'))
+        : null;
+    if (slots != null && p['hasLeading'] == true) nav.appendChild(slots);
     final items = p['items'] is List ? p['items'] as List : const [];
     for (var i = 0; i < items.length; i++) {
       final index = i;
@@ -2788,6 +2798,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       );
       nav.appendChild(item);
     }
+    if (slots != null && slots.parentNode == null) nav.appendChild(slots);
     _applyBottomNavigation(nav, p);
     return nav;
   }
@@ -2803,7 +2814,10 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     return was is List &&
         now is List &&
         was.length == now.length &&
-        (before['rail'] == true) == (after['rail'] == true);
+        (before['rail'] == true) == (after['rail'] == true) &&
+        // Where the holder of a rail's children is written depends on these.
+        (before['hasLeading'] == true) == (after['hasLeading'] == true) &&
+        (before['hasTrailing'] == true) == (after['hasTrailing'] == true);
   }
 
   /// Labels, glyphs and which destination is selected.
@@ -2813,9 +2827,15 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   void _applyBottomNavigation(web.Element nav, Map<String, dynamic> p) {
     final items = p['items'] is List ? p['items'] as List : const [];
     final selected = (_num(p['selectedIndex']) ?? 0).toInt();
-    for (var i = 0; i < items.length && i < nav.children.length; i++) {
+    nav.classList
+      ..toggle('dnn-bottomnav--extended', p['extended'] == true)
+      ..toggle('dnn-bottomnav--leading', p['hasLeading'] == true);
+    // By class rather than by position: a rail's leading and trailing are
+    // among its children too.
+    final buttons = nav.querySelectorAll(':scope > .dnn-bottomnav__item');
+    for (var i = 0; i < items.length && i < buttons.length; i++) {
       final item = items[i];
-      final button = nav.children.item(i)!;
+      final button = buttons.item(i)! as web.Element;
       if (item is! Map) continue;
       final chosen = i == selected;
       button.classList.toggle('dnn-bottomnav__item--selected', chosen);

@@ -1060,6 +1060,13 @@ class NativeUIRenderer {
       guard let bar = view as? DnnAppBarView, bar.nodeViews.count == kids.count
       else { return nil }
       return bar.nodeViews
+    case "BottomNavigation":
+      // A rail's leading and trailing, which it remembers because they sit
+      // either side of its destinations.
+      if kids.isEmpty { return [] }
+      guard let rail = view as? DnnRailView, rail.nodeViews.count == kids.count
+      else { return nil }
+      return rail.nodeViews
     case "Image":
       // The one child is the fallback, which stays in its host - hidden once
       // the picture is in - so that it can still be found here.
@@ -5083,9 +5090,20 @@ class NativeUIRenderer {
 
     if node["rail"] as? Bool == true {
       let rail = DnnRailView()
-      rail.configure(items: items, tint: tint, idle: idle, background: surfaceColor())
+      rail.configure(
+        items: items, tint: tint, idle: idle, background: surfaceColor(),
+        extended: node["extended"] as? Bool == true)
       rail.selectIndex(selected)
       rail.onSelect = navHandler(node)
+      // The children are the leading, when there is one, and then the
+      // trailing.
+      var kids = childNodes(node)
+      if node["hasLeading"] as? Bool == true, !kids.isEmpty {
+        rail.addSlot(railSlot(kids.removeFirst()), above: true)
+      }
+      if node["hasTrailing"] as? Bool == true, let last = kids.first {
+        rail.addSlot(railSlot(last), above: false)
+      }
       return rail
     }
 
@@ -5107,12 +5125,27 @@ class NativeUIRenderer {
     return bar
   }
 
+  /// The view of a rail's leading or trailing. A round floating button has
+  /// no size of its own - the scaffold that pins one gives it its 56 points -
+  /// so here the rail does.
+  private func railSlot(_ node: [String: Any]) -> UIView {
+    let view = buildChild(node)
+    if node["type"] as? String == "FloatingActionButton", node["label"] == nil {
+      NSLayoutConstraint.activate([
+        view.widthAnchor.constraint(equalToConstant: 56),
+        view.heightAnchor.constraint(equalToConstant: 56),
+      ])
+    }
+    return view
+  }
+
   private func patchBottomNavigation(
     _ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any]
   ) -> Bool {
     // Different destinations are a different bar; only the selection moves in
     // place, which is what a tap changes.
-    for key in ["items", "rail"] where !valueEqual(oldNode[key], newNode[key]) {
+    for key in ["items", "rail", "extended", "hasLeading", "hasTrailing"]
+    where !valueEqual(oldNode[key], newNode[key]) {
       return false
     }
     let selected = Int(number(newNode["selectedIndex"]) ?? 0)

@@ -1586,6 +1586,85 @@ void main() {
       expect(events.single, event('nav', {'index': 1}));
     });
 
+    testWidgets('a rail draws its leading above and its trailing below', (
+      tester,
+    ) async {
+      listen('nav');
+      await show(
+        tester,
+        UIBuilder.bottomNavigation(
+          eventId: 'nav',
+          selectedIndex: 0,
+          rail: true,
+          leading: UIBuilder.text('Above'),
+          trailing: UIBuilder.text('Below'),
+          items: [
+            (label: 'Home', icon: 0xe318, selectedIcon: null),
+            (label: 'Search', icon: 0xe567, selectedIcon: null),
+          ],
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      final above = tester.getCenter(find.text('Above')).dy;
+      final below = tester.getCenter(find.text('Below')).dy;
+      expect(above, lessThan(tester.getCenter(find.text('Home')).dy));
+      expect(below, greaterThan(tester.getCenter(find.text('Search')).dy));
+    });
+
+    testWidgets('a trailing alone is not taken for a leading', (tester) async {
+      listen('nav');
+      await show(
+        tester,
+        UIBuilder.bottomNavigation(
+          eventId: 'nav',
+          selectedIndex: 0,
+          rail: true,
+          trailing: UIBuilder.text('Below'),
+          items: [
+            (label: 'Home', icon: 0xe318, selectedIcon: null),
+            (label: 'Search', icon: 0xe567, selectedIcon: null),
+          ],
+        ),
+      );
+
+      final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+      expect(rail.leading, isNull);
+      expect(rail.trailing, isNotNull);
+    });
+
+    testWidgets('an extended rail writes each label beside its icon', (
+      tester,
+    ) async {
+      listen('nav');
+      await show(
+        tester,
+        UIBuilder.bottomNavigation(
+          eventId: 'nav',
+          selectedIndex: 0,
+          rail: true,
+          extended: true,
+          items: [
+            (label: 'Home', icon: 0xe318, selectedIcon: null),
+            (label: 'Search', icon: 0xe567, selectedIcon: null),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.widget<NavigationRail>(find.byType(NavigationRail)).extended,
+        isTrue,
+      );
+      final icon = tester.getCenter(find.byType(Icon).first);
+      final label = tester.getCenter(find.text('Home'));
+      expect((icon.dy - label.dy).abs(), lessThan(2));
+      expect(label.dx, greaterThan(icon.dx));
+      await tester.tap(find.text('Search'));
+      expect(events.single, event('nav', {'index': 1}));
+    });
+
     testWidgets('a rail with more destinations than fit scrolls to them', (
       tester,
     ) async {

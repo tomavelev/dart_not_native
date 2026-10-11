@@ -1673,12 +1673,20 @@ class UIBuilder {
   /// Each item is `(label, icon, selectedIcon)`, the icons being Material
   /// Icons codepoints. `rail: true` lays the same destinations out down the
   /// leading edge, for a wide window.
+  ///
+  /// A rail takes three things a bar does not. [leading] is drawn above its
+  /// destinations and [trailing] below them - they are the node's children,
+  /// in that order, and `hasLeading` / `hasTrailing` say which are there.
+  /// [extended] widens the rail and writes each label beside its icon.
   static WidgetNode bottomNavigation({
     required List<({String label, int icon, int? selectedIcon})> items,
     required int selectedIndex,
     String? eventId,
     void Function(int index)? onChanged,
     bool rail = false,
+    bool extended = false,
+    WidgetNode? leading,
+    WidgetNode? trailing,
     String? id,
   }) {
     if (onChanged != null) {
@@ -1703,8 +1711,14 @@ class UIBuilder {
         ],
         'selectedIndex': selectedIndex,
         if (rail) 'rail': true,
+        if (rail && extended) 'extended': true,
+        if (rail && leading != null) 'hasLeading': true,
+        if (rail && trailing != null) 'hasTrailing': true,
         if (id != null) 'id': id,
       },
+      children: !rail || (leading == null && trailing == null)
+          ? null
+          : [?leading, ?trailing],
     );
   }
 

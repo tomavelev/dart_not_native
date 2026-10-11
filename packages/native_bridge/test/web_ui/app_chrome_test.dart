@@ -318,6 +318,112 @@ void main() {
     });
   });
 
+  group('a navigation rail', () {
+    WidgetNode rail({
+      int selected = 0,
+      String? leading,
+      String? trailing,
+      bool extended = false,
+    }) => UIBuilder.bottomNavigation(
+      items: navItems,
+      selectedIndex: selected,
+      eventId: 'nav',
+      rail: true,
+      extended: extended,
+      leading: leading == null ? null : UIBuilder.text(leading),
+      trailing: trailing == null ? null : UIBuilder.text(trailing),
+    );
+
+    web.Element nav() => of('BottomNavigation');
+
+    /// The rail's own children, in the order they are written.
+    List<String> written() => [
+      for (var i = 0; i < nav().children.length; i++)
+        nav().children.item(i)!.classList.contains('dnn-bottomnav__slots')
+            ? 'slots'
+            : 'item',
+    ];
+
+    List<String?> slots() {
+      final host = nav().querySelector('.dnn-bottomnav__slots')!;
+      return [
+        for (var i = 0; i < host.children.length; i++)
+          host.children.item(i)!.textContent,
+      ];
+    }
+
+    // Where each stands is the stylesheet's: see nested_placement_css_test.
+    test('holds its leading and its trailing, the leading first', () async {
+      await renderer.render(rail(leading: 'Above', trailing: 'Below'));
+
+      expect(slots(), ['Above', 'Below']);
+      expect(nav().classList.contains('dnn-bottomnav--leading'), isTrue);
+      // Before the destinations, so that Tab reaches the leading first.
+      expect(written(), ['slots', 'item', 'item', 'item']);
+    });
+
+    test('a trailing alone is not marked as a leading', () async {
+      await renderer.render(rail(trailing: 'Below'));
+
+      expect(slots(), ['Below']);
+      expect(nav().classList.contains('dnn-bottomnav--leading'), isFalse);
+      expect(written(), ['item', 'item', 'item', 'slots']);
+    });
+
+    test('a rail with neither has no holder', () async {
+      await renderer.render(rail());
+
+      expect(nav().querySelector('.dnn-bottomnav__slots'), isNull);
+    });
+
+    test('choosing a destination leaves what is around them alone', () async {
+      await renderer.render(rail(leading: 'Above', trailing: 'Below'));
+      final before = nav();
+      final above = before.querySelector('.dnn-bottomnav__slots')!.firstChild;
+
+      await renderer.render(
+        rail(selected: 2, leading: 'Above', trailing: 'Below'),
+      );
+
+      expect(nav(), same(before));
+      expect(
+        nav().querySelector('.dnn-bottomnav__slots')!.firstChild,
+        same(above),
+      );
+      expect(
+        nav().querySelector('.dnn-bottomnav__item--selected')!.textContent,
+        contains('Settings'),
+      );
+    });
+
+    test('a leading that changes is patched where it stands', () async {
+      await renderer.render(rail(leading: 'Above'));
+      final before = nav();
+
+      await renderer.render(rail(leading: 'Changed'));
+
+      expect(nav(), same(before));
+      expect(slots(), ['Changed']);
+    });
+
+    test('a rail that gains a leading is built again around it', () async {
+      await renderer.render(rail(trailing: 'Below'));
+
+      await renderer.render(rail(leading: 'Above', trailing: 'Below'));
+
+      expect(slots(), ['Above', 'Below']);
+      expect(written(), ['slots', 'item', 'item', 'item']);
+    });
+
+    test('says when it is extended, and when it no longer is', () async {
+      await renderer.render(rail(extended: true));
+      expect(nav().classList.contains('dnn-bottomnav--extended'), isTrue);
+
+      await renderer.render(rail());
+      expect(nav().classList.contains('dnn-bottomnav--extended'), isFalse);
+    });
+  });
+
   group('a floating button', () {
     for (final kit in _kits) {
       test('${kit.name}: a label makes it the extended button', () async {

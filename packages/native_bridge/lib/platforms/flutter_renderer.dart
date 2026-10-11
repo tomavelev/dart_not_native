@@ -492,7 +492,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         // Pinned by the Scaffold that finds it; anywhere else it is its child.
         return _single(children, context);
       case 'BottomNavigation':
-        return _bottomNavigation(p);
+        return _bottomNavigation(p, children, context);
       case 'FlutterSlot':
         return _flutterSlot(p, children, context);
       default:
@@ -2199,7 +2199,11 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
   /// The destinations of an app: a NavigationBar, or a NavigationRail down
   /// the leading edge when the node asks for one.
-  Widget _bottomNavigation(Map<String, dynamic> p) {
+  Widget _bottomNavigation(
+    Map<String, dynamic> p,
+    List<WidgetNode> children,
+    BuildContext context,
+  ) {
     final items = [
       for (final item in (p['items'] as List? ?? const []))
         if (item is Map) item,
@@ -2234,10 +2238,26 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         ],
       );
     }
+    // The children are the leading, when there is one, and then the trailing.
+    final slots = [...children];
+    final leading = p['hasLeading'] == true && slots.isNotEmpty
+        ? buildNode(slots.removeAt(0), context)
+        : null;
+    final trailing = p['hasTrailing'] == true && slots.isNotEmpty
+        ? buildNode(slots.first, context)
+        : null;
+    final extended = p['extended'] == true;
     final rail = NavigationRail(
       selectedIndex: selected,
       onDestinationSelected: select,
-      labelType: NavigationRailLabelType.all,
+      extended: extended,
+      leading: leading,
+      trailing: trailing,
+      // An extended rail writes its labels beside the icons and asserts on
+      // being asked to write them underneath as well.
+      labelType: extended
+          ? NavigationRailLabelType.none
+          : NavigationRailLabelType.all,
       destinations: [
         for (final item in items)
           NavigationRailDestination(
@@ -2261,6 +2281,10 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
                 child: IntrinsicHeight(child: rail),
               ),
             )
+          // What stands above and below the destinations is as tall as it
+          // is, which only it knows.
+          : leading != null || trailing != null
+          ? IntrinsicHeight(child: rail)
           : SizedBox(height: items.length * 72.0 + 16, child: rail),
     );
   }

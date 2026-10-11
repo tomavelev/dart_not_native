@@ -305,6 +305,30 @@ WidgetNode _freeFormTree() => UIBuilder.scaffold(
       ),
     );
 
+/// A rail with something above its destinations and something below, and an
+/// extended one beside it: both natives draw these with views of their own,
+/// which the rest of this file never reaches.
+WidgetNode _railTree() => UIBuilder.scaffold(
+      body: UIBuilder.row(
+        children: [
+          for (final extended in [false, true])
+            UIBuilder.bottomNavigation(
+              id: extended ? 'wide_rail' : 'rail',
+              rail: true,
+              extended: extended,
+              selectedIndex: 0,
+              onChanged: (_) {},
+              leading: UIBuilder.text('Above'),
+              trailing: UIBuilder.text('Below'),
+              items: const [
+                (label: 'Home', icon: 0xe318, selectedIcon: null),
+                (label: 'Settings', icon: 0xe57f, selectedIcon: null),
+              ],
+            ),
+        ],
+      ),
+    );
+
 /// A screen with one picker open over it.
 WidgetNode _pickerTree(WidgetNode picker) => UIBuilder.overlay(
       child: UIBuilder.scaffold(
@@ -386,6 +410,14 @@ void main() {
 
   testWidgets('draws the navigation vocabulary too', (tester) async {
     final errors = await drawErrors(_EveryNodeApp(_navigationTree));
+
+    expect(errors, isEmpty, reason: describe(errors));
+  }, skip: !native);
+
+  testWidgets('draws a rail with a leading, a trailing and extended', (
+    tester,
+  ) async {
+    final errors = await drawErrors(_EveryNodeApp(_railTree));
 
     expect(errors, isEmpty, reason: describe(errors));
   }, skip: !native);

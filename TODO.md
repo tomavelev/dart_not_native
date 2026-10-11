@@ -1983,7 +1983,8 @@ the apps walked.
 
 The device lane's tree has the twelve new node types now:
 `native_renderer_test.dart` draws a free-form tree and a screen under each
-picker (17 tests), green on the simulator - and on Android since 2026-10-10,
+picker (18 tests since a rail with a leading, a trailing and extended
+joined them on 2026-10-10), green on the simulator - and on Android since 2026-10-10,
 when `tool/device_check.sh android` ran on an emulator (Android 17, API 37):
 the five Maestro flows, `app_test.dart` (2) and `native_renderer_test.dart`
 (17), then the six agent-device flows, all green.
@@ -2205,7 +2206,17 @@ event, and then the same work in four renderers.
    `{offset, maxExtent, viewport}` through its `scrollEventId` now; `LazyList`
    still reports its visible range of rows and nothing finer, which is the
    remainder of §6.2 item 5.
-10. **`NavigationRail`'s `leading`, `trailing` and `extended`** are not drawn.
+10. ~~**`NavigationRail`'s `leading`, `trailing` and `extended`** are not
+    drawn.~~ Drawn since 2026-10-10 by all four renderers: the leading above
+    the destinations, the trailing below, and an extended rail wide with each
+    label beside its icon. The two are the node's children, so a button in
+    one is a button, and each is patched where it stands. Seen on an iOS
+    simulator, an Android emulator and in Chrome under both kits. Looking
+    found that a rail in a row was a blank strip on iOS - it had no height -
+    which is fixed with it. Short of Flutter: an extended rail does not
+    animate open, its width is 256 whatever `minExtendedWidth` says, and on
+    Android it is drawn here rather than by Material, whose rail has no
+    such form in the version this builds against.
 11. ~~**`MaterialApp(routes:)` and `Navigator.push` are not in the browser's
     history.**~~ In it since 2026-10-10, with nothing for the app to wire: a
     named route is an entry and a fragment in the URL, a link straight to one
@@ -2306,13 +2317,14 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2115 tests
-  (1178 in the package, 388 for the example apps and goldens, 506 in the browser,
+  contracts, the plugin system and the design system are covered by 2132 tests
+  (1188 in the package, 388 for the example apps and goldens, 513 in the browser,
   43 in the bloc package,
-  counted 2026-10-10), plus 19 integration tests that run on a real Android and
-  a real iOS - two of them the Flutter-hosted app, seventeen the native
-  renderers drawing the whole node vocabulary and every example app. (Three of
-  the seventeen - the free-form tree and the two pickers, added 2026-10-09 -
+  counted 2026-10-10), plus 20 integration tests that run on a real Android and
+  a real iOS - two of them the Flutter-hosted app, eighteen the native
+  renderers drawing the whole node vocabulary and every example app. (Four of
+  the eighteen - the free-form tree and the two pickers, added 2026-10-09, and
+  the rail, added 2026-10-10 -
   have run on an iOS simulator and an Android emulator, not on hardware.)
 - The web DOM renderer is tested in a real browser, including markup goldens
   for three style kits, reconciliation behaviour, the back button, overlays

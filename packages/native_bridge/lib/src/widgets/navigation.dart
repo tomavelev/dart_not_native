@@ -2613,8 +2613,9 @@ enum NavigationRailLabelType { none, selected, all }
 
 /// The destinations of an app down its leading edge, for a wide window.
 ///
-/// [leading], [trailing] and [extended] are accepted and not drawn: the rail
-/// is the platform's own list of destinations.
+/// [leading] is drawn above the destinations and [trailing] below them, and
+/// an [extended] rail is wide, with each label beside its icon. The rest of
+/// its look is the platform's own.
 class NavigationRail extends Widget {
   const NavigationRail({
     super.key,
@@ -2661,6 +2662,11 @@ class NavigationRail extends Widget {
     ],
     selectedIndex: selectedIndex ?? 0,
     onChanged: onDestinationSelected ?? (_) {},
+    extended: extended,
+    leading: leading == null ? null : _renderChild(owner, leading!, 'leading'),
+    trailing: trailing == null
+        ? null
+        : _renderChild(owner, trailing!, 'trailing'),
     id: _idOf(key),
   );
 }

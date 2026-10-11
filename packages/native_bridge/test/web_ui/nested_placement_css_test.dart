@@ -42,6 +42,29 @@ void main() {
     expect(dnn('.dnn-bottomnav--rail'), contains('overflow-y: auto'));
   });
 
+  test('a rail puts its leading above its destinations, the rest below', () {
+    // One holder with no box of its own, so each child is the rail's item.
+    expect(dnn('.dnn-bottomnav__slots'), contains('display: contents'));
+    expect(dnn('.dnn-bottomnav--rail > .dnn-bottomnav__item'),
+        contains('order: 1'));
+    expect(dnn('.dnn-bottomnav__slots > *'), contains('order: 2'));
+    expect(
+      dnn('.dnn-bottomnav--leading > .dnn-bottomnav__slots > :first-child'),
+      contains('order: 0'),
+    );
+    // Flutter's own example of a leading is a floating button, which on its
+    // own is fixed to the window's corner.
+    expect(dnn('.dnn-bottomnav__slots > .dnn-fab'),
+        allOf(contains('position: relative'), contains('inset: auto')));
+  });
+
+  test('an extended rail is wide, each label beside its icon', () {
+    expect(dnn('.dnn-bottomnav--rail.dnn-bottomnav--extended'),
+        contains('width: 256px'));
+    expect(dnn('.dnn-bottomnav--extended > .dnn-bottomnav__item'),
+        contains('flex-direction: row'));
+  });
+
   test('a dropdown in a row is as wide as its choices, not the row', () {
     final inRow = dnn('.dnn-row > .dnn-dropdown');
     expect(inRow, contains('width: auto'));

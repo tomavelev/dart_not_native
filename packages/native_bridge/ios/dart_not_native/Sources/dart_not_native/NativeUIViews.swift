@@ -2252,8 +2252,16 @@ final class DnnRailView: UIView {
   private var buttons: [UIButton] = []
   private var icons: [UIImageView] = []
   private var labels: [UILabel] = []
+  /// The pill behind each destination of an extended rail.
+  private var pills: [UIView] = []
   private var tint = UIColor.systemBlue
   private var idle = UIColor.gray
+  private var extended = false
+  private var width: NSLayoutConstraint?
+  private var fill: NSLayoutConstraint?
+  /// The views of the rail's leading and trailing nodes, in that order, kept
+  /// so their nodes can be patched: they sit among the destinations.
+  private(set) var nodeViews: [UIView] = []
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -2288,19 +2296,69 @@ final class DnnRailView: UIView {
       stack.trailingAnchor.constraint(equalTo: scroller.frameLayoutGuide.trailingAnchor),
       scroller.contentLayoutGuide.widthAnchor.constraint(
         equalTo: scroller.frameLayoutGuide.widthAnchor),
-      widthAnchor.constraint(equalToConstant: 80),
     ])
+    width = widthAnchor.constraint(equalToConstant: 80)
+    width?.isActive = true
+    // Where nothing says how tall the rail is, it is as tall as what it
+    // holds - the scroller has no height of its own to offer.
+    let natural = heightAnchor.constraint(equalTo: stack.heightAnchor, constant: 8)
+    natural.priority = .defaultLow
+    natural.isActive = true
   }
 
-  func configure(items: [DnnNavItem], tint: UIColor, idle: UIColor, background: UIColor) {
+  /// A rail is as tall as the row it stands in, as Flutter's is: a row
+  /// centres its children at their own height, and this one's was nothing,
+  /// so the rail was a blank strip.
+  override func didMoveToSuperview() {
+    super.didMoveToSuperview()
+    fill?.isActive = false
+    fill = nil
+    guard let parent = superview else { return }
+    let constraint = dnnFill(self, parent, horizontal: false)
+    constraint.isActive = true
+    fill = constraint
+  }
+
+  /// Puts [view] above the destinations or below them: centred over a rail's
+  /// icons, at the leading edge of an extended one. Called after `configure`.
+  func addSlot(_ view: UIView, above: Bool) {
+    let holder = UIView()
+    view.translatesAutoresizingMaskIntoConstraints = false
+    holder.addSubview(view)
+    let inset: CGFloat = extended ? 12 : 8
+    NSLayoutConstraint.activate([
+      view.topAnchor.constraint(equalTo: holder.topAnchor, constant: 8),
+      view.bottomAnchor.constraint(equalTo: holder.bottomAnchor, constant: -8),
+      view.leadingAnchor.constraint(greaterThanOrEqualTo: holder.leadingAnchor, constant: inset),
+      view.trailingAnchor.constraint(lessThanOrEqualTo: holder.trailingAnchor, constant: -inset),
+      extended
+        ? view.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset)
+        : view.centerXAnchor.constraint(equalTo: holder.centerXAnchor),
+    ])
+    if above {
+      stack.insertArrangedSubview(holder, at: 0)
+    } else {
+      stack.addArrangedSubview(holder)
+    }
+    nodeViews.append(view)
+  }
+
+  func configure(
+    items: [DnnNavItem], tint: UIColor, idle: UIColor, background: UIColor,
+    extended: Bool = false
+  ) {
     self.items = items
     self.tint = tint
     self.idle = idle
+    self.extended = extended
+    width?.constant = extended ? 256 : 80
     backgroundColor = background
     stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+    nodeViews = []
     buttons = []
     icons = []
     labels = []
+    pills = []
 
     for (index, item) in items.enumerated() {
       let button = UIButton(type: .custom)
@@ -2312,24 +2370,46 @@ final class DnnRailView: UIView {
       icon.contentMode = .center
       let label = UILabel()
       label.text = item.label
-      label.font = .systemFont(ofSize: 12, weight: .medium)
-      label.textAlignment = .center
+      label.font = .systemFont(ofSize: extended ? 14 : 12, weight: .medium)
+      label.textAlignment = extended ? .natural : .center
 
-      // The button takes the touch; what is drawn inside it does not.
+      // The button takes the touch; what is drawn inside it does not. An
+      // extended rail writes the label beside the icon, and the row is the
+      // pill the selected one stands on.
       let inner = UIStackView(arrangedSubviews: [icon, label])
-      inner.axis = .vertical
+      inner.axis = extended ? .horizontal : .vertical
       inner.alignment = .center
-      inner.spacing = 4
+      inner.spacing = extended ? 12 : 4
       inner.isUserInteractionEnabled = false
       inner.translatesAutoresizingMaskIntoConstraints = false
       button.addSubview(inner)
+      let side: CGFloat = extended ? 28 : 4
       NSLayoutConstraint.activate([
         inner.topAnchor.constraint(equalTo: button.topAnchor, constant: 8),
         inner.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -8),
-        inner.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
-        inner.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
+        inner.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: side),
+        extended
+          ? inner.trailingAnchor.constraint(
+            lessThanOrEqualTo: button.trailingAnchor, constant: -side)
+          : inner.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -side),
         icon.heightAnchor.constraint(equalToConstant: 24),
       ])
+      if extended {
+        button.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        let pill = UIView()
+        pill.isUserInteractionEnabled = false
+        pill.layer.cornerRadius = 28
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        button.insertSubview(pill, at: 0)
+        pills.append(pill)
+        NSLayoutConstraint.activate([
+          pill.topAnchor.constraint(equalTo: button.topAnchor),
+          pill.bottomAnchor.constraint(equalTo: button.bottomAnchor),
+          pill.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 12),
+          pill.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -12),
+        ])
+      }
 
       stack.addArrangedSubview(button)
       buttons.append(button)
@@ -2345,6 +2425,9 @@ final class DnnRailView: UIView {
       icons[position].image = chosen ? (item.selectedIcon ?? item.icon) : item.icon
       icons[position].tintColor = chosen ? tint : idle
       labels[position].textColor = chosen ? tint : idle
+      if position < pills.count {
+        pills[position].backgroundColor = chosen ? tint.withAlphaComponent(0.16) : .clear
+      }
       if chosen {
         buttons[position].accessibilityTraits.insert(.selected)
       } else {

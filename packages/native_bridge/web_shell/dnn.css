@@ -1028,6 +1028,26 @@ body:has(.dnn-modal) { overflow: hidden; }
 }
 .dnn-bottomnav--rail .dnn-bottomnav__item { flex: 0 0 auto; height: 56px; }
 .dnn-bottomnav--rail .dnn-bottomnav__indicator { width: 56px; }
+/* What an app puts above and below a rail's destinations. The holder has no
+ * box, so each child is the rail's own item: the first goes above when the
+ * rail has a leading, and whatever else there is goes below. */
+.dnn-bottomnav__slots { display: contents; }
+.dnn-bottomnav--rail > .dnn-bottomnav__item { order: 1; }
+.dnn-bottomnav__slots > * { order: 2; flex: 0 0 auto; align-self: center; }
+.dnn-bottomnav--leading > .dnn-bottomnav__slots > :first-child { order: 0; }
+/* A floating button there is the rail's, not the window's corner's. Relative
+ * rather than static: MDL places the button's glyph against the button. */
+.dnn-bottomnav__slots > .dnn-fab { position: relative; inset: auto; margin: 0; }
+/* An extended rail: wide, each label beside its icon. */
+.dnn-bottomnav--rail.dnn-bottomnav--extended { width: 256px; align-items: stretch; }
+.dnn-bottomnav--extended > .dnn-bottomnav__item {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+.dnn-bottomnav--extended > .dnn-bottomnav__slots > * { align-self: flex-start; margin-inline-start: 12px; }
 
 /* A floating button a Positioned holds is placed by that: a scaffold built
  * inside another's body pins its button to its own corner, clear of the outer

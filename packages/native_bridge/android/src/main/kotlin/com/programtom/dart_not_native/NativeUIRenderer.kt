@@ -1562,6 +1562,12 @@ class NativeUIRenderer(
                 (0 until foreground.childCount).map { foreground.getChildAt(it) }
             }
             "AppBar", "NavigationBar" -> appBarChildViews(view, node)
+            "BottomNavigation" -> {
+                // A rail's leading and trailing, which its scroller remembers
+                // because they sit either side of the destinations.
+                if (kids.isEmpty()) return emptyList()
+                (view as? RailScroller)?.slots?.takeIf { it.size == kids.size }
+            }
             "Image" -> {
                 // The one child is the fallback, which is the first view in
                 // the image's frame, in front of the picture or hidden by it.
@@ -5606,6 +5612,7 @@ class NativeUIRenderer(
      */
     private fun renderBottomNavigation(node: Map<*, *>): View {
         val rail = node["rail"] == true
+        if (rail && node["extended"] == true) return renderExtendedRail(node)
         val bar: NavigationBarView =
             if (rail) NavigationRailView(materialContext) else BottomNavigationView(materialContext)
         val match = ViewGroup.LayoutParams.MATCH_PARENT
@@ -5654,10 +5661,59 @@ class NativeUIRenderer(
         // seven of them are taller than a phone held sideways and the last
         // were cut off. It scrolls where it does not fit, and fills the
         // height - its colour with it - where it does.
-        return RailScroller(activity, bar).apply {
-            layoutParams = LinearLayout.LayoutParams(wrap, match)
+        return railScroller(bar, node)
+    }
+
+    /**
+     * A rail's destinations in their scroller, with what the node's children
+     * say goes above and below them: the leading, when there is one, and then
+     * the trailing.
+     */
+    private fun railScroller(destinations: View, node: Map<*, *>): RailScroller {
+        val scroller = RailScroller(activity, destinations).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
             setBackgroundColor(color(null, themeSurfaceVariant))
         }
+        // Centred over a rail's icons; at the start, over an extended one's.
+        val extended = node["extended"] == true
+        val gravity = if (extended) Gravity.START else Gravity.CENTER_HORIZONTAL
+        val margin = if (extended) dp(12) else dp(8)
+        val kids = childNodes(node).toMutableList()
+        if (node["hasLeading"] == true && kids.isNotEmpty()) {
+            renderWidget(kids.removeAt(0))?.let { scroller.addSlot(it, true, gravity, margin) }
+        }
+        if (node["hasTrailing"] == true && kids.isNotEmpty()) {
+            renderWidget(kids.first())?.let { scroller.addSlot(it, false, gravity, margin) }
+        }
+        return scroller
+    }
+
+    /** A rail the app extended: wide, each label beside its icon. */
+    private fun renderExtendedRail(node: Map<*, *>): View {
+        val primary = color(null, themePrimary)
+        val rail = ExtendedRail(
+            activity, primary, color(null, themeTextSecondary), withAlpha(primary, 0.16f))
+        fillExtendedRail(rail, node)
+        val scroller = railScroller(rail, node)
+        scroller.tag = node
+        rail.onSelect = { index ->
+            (scroller.tag as? Map<*, *>)?.let { sendEvent(it, mapOf("index" to index)) }
+        }
+        return scroller
+    }
+
+    private fun fillExtendedRail(rail: ExtendedRail, node: Map<*, *>) {
+        val items = (node["items"] as? List<*>)?.filterIsInstance<Map<*, *>>() ?: emptyList()
+        rail.fill(
+            items.map { it["label"]?.toString() ?: "" },
+            items.map { item ->
+                fun glyph(key: String) = (item[key] as? Number)?.toInt()
+                    ?.let { iconGlyphDrawable(it, Color.WHITE) }
+                glyph("icon") to glyph("selectedIcon")
+            },
+        )
+        rail.select((node["selectedIndex"] as? Number)?.toInt() ?: 0)
     }
 
     /** Rebuilds the bar's menu from the node's items, and selects the one it names. */
@@ -5704,9 +5760,22 @@ class NativeUIRenderer(
         oldNode: Map<*, *>,
         newNode: Map<*, *>,
     ): Boolean {
+        // A rail and a bar are different views, and so are a rail and an
+        // extended one; what stands above and below a rail is placed once.
+        for (key in listOf("rail", "extended", "hasLeading", "hasTrailing")) {
+            if (oldNode[key] != newNode[key]) return false
+        }
+        val extended = (view as? RailScroller)?.destinations as? ExtendedRail
+        if (extended != null) {
+            view.tag = newNode
+            if (valueEqual(oldNode["items"], newNode["items"])) {
+                extended.select((newNode["selectedIndex"] as? Number)?.toInt() ?: 0)
+            } else {
+                fillExtendedRail(extended, newNode)
+            }
+            return true
+        }
         val bar = (view as? RailScroller)?.rail ?: view as? NavigationBarView ?: return false
-        // A rail and a bar are different views.
-        if (oldNode["rail"] != newNode["rail"]) return false
         bar.tag = newNode
         if (valueEqual(oldNode["items"], newNode["items"])) selectNavigation(bar, newNode)
         else fillNavigation(bar, newNode)
