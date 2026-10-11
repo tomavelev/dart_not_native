@@ -416,6 +416,24 @@ void main() {
       expect(events, isEmpty);
     });
 
+    test('a pointer between two pixels pans like any other', () async {
+      // A finger is reported in fractions of a pixel, and so is a mouse on a
+      // zoomed page. The coordinates were read through a getter typed as a
+      // whole number, which threw on one - and every pan went dead.
+      listen(['pan_start', 'pan_update', 'pan_end']);
+      await renderer.render(placed({'panEventId': 'pan'}));
+      final rect = box().getBoundingClientRect();
+      final x = rect.left + 10.25, y = rect.top + 10.75;
+
+      box().dispatchEvent(fractionalPointer('pointerdown', x, y));
+      box().dispatchEvent(fractionalPointer('pointermove', x + 20.5, y));
+      box().dispatchEvent(fractionalPointer('pointerup', x + 20.5, y));
+
+      expect(events.map((e) => e.$1), ['pan_start', 'pan_update', 'pan_end']);
+      expect(events[1].$2['dx'], closeTo(20.5, 0.01));
+      expect(events[0].$2['x'], closeTo(10.25, 0.01));
+    });
+
     group('along one axis', () {
       void drag(num dx, num dy) {
         final rect = box().getBoundingClientRect();
@@ -536,6 +554,28 @@ void main() {
       expect(events[1].$2, {'over': false});
       expect(events.last.$2, {'data': 'card-7'});
       expect(web.document.querySelector('.dnn-drag-ghost'), isNull);
+    });
+
+    test('a pointer between two pixels drags like any other', () async {
+      listen(['drop']);
+      await renderer.render(board());
+      final (sx, sy) = middle('source');
+      final (tx, ty) = middle('target');
+
+      byId('source').dispatchEvent(
+        fractionalPointer('pointerdown', sx + 0.5, sy + 0.5, kind: 'mouse'),
+      );
+      byId('source').dispatchEvent(
+        fractionalPointer('pointermove', sx + 10.5, sy + 10.5, kind: 'mouse'),
+      );
+      web.document.dispatchEvent(
+        fractionalPointer('pointermove', tx + 0.5, ty + 0.5, kind: 'mouse'),
+      );
+      web.document.dispatchEvent(
+        fractionalPointer('pointerup', tx + 0.5, ty + 0.5, kind: 'mouse'),
+      );
+
+      expect(events.single.$2, {'data': 'card-7'});
     });
 
     group('a box that asks to hear its own drag', () {

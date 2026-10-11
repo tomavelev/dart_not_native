@@ -1,6 +1,9 @@
 /// DOM helpers for the browser tests.
 library;
 
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
 import 'package:dart_not_native/core.dart';
 import 'package:web/web.dart' as web;
 
@@ -72,6 +75,27 @@ web.PointerEvent pointer(
     cancelable: true,
   ),
 );
+
+/// A pointer event at a point between two pixels, which is where a browser
+/// puts a finger, and a mouse on a zoomed page or a dense screen. The typed
+/// initialiser above only takes whole numbers, so this one is built by name.
+web.PointerEvent fractionalPointer(
+  String type,
+  double x,
+  double y, {
+  String kind = 'touch',
+  int id = 1,
+}) {
+  final init = JSObject()
+    ..setProperty('clientX'.toJS, x.toJS)
+    ..setProperty('clientY'.toJS, y.toJS)
+    ..setProperty('pointerId'.toJS, id.toJS)
+    ..setProperty('pointerType'.toJS, kind.toJS)
+    ..setProperty('button'.toJS, 0.toJS)
+    ..setProperty('bubbles'.toJS, true.toJS)
+    ..setProperty('cancelable'.toJS, true.toJS);
+  return web.PointerEvent(type, init as web.PointerEventInit);
+}
 
 /// A click where a pointer was, rather than the pointerless `element.click()`.
 web.MouseEvent clickAt(num x, num y) => web.MouseEvent(

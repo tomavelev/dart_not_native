@@ -15,6 +15,7 @@ library;
 
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:math' as math;
 
 import 'package:web/web.dart' as web;
@@ -1650,7 +1651,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ((web.Event e) {
         final pe = e as web.PointerEvent;
         dragging = true;
-        startX = pe.clientX.toDouble();
+        startX = pe.placeX;
         fg.setPointerCapture(pe.pointerId);
       }).toJS,
     );
@@ -1659,7 +1660,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ((web.Event e) {
         if (!dragging) return;
         final pe = e as web.PointerEvent;
-        offset = ((pe.clientX.toDouble() - startX) * sign()).clamp(
+        offset = ((pe.placeX - startX) * sign()).clamp(
           open * 1.8,
           openLeading * 1.8,
         );
@@ -2250,8 +2251,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       'pointerdown',
       ((web.PointerEvent event) {
         dragging = true;
-        lastX = event.clientX.toDouble();
-        lastY = event.clientY.toDouble();
+        lastX = event.placeX;
+        lastY = event.placeY;
         (frame as web.HTMLElement).setPointerCapture(event.pointerId);
       }).toJS,
     );
@@ -2259,10 +2260,10 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       'pointermove',
       ((web.PointerEvent event) {
         if (!dragging) return;
-        final dx = event.clientX.toDouble() - lastX;
-        final dy = event.clientY.toDouble() - lastY;
-        lastX = event.clientX.toDouble();
-        lastY = event.clientY.toDouble();
+        final dx = event.placeX - lastX;
+        final dy = event.placeY - lastY;
+        lastX = event.placeX;
+        lastY = event.placeY;
         final zoom = zoomOf();
         _mapState[frame]?['longitude'] = _pixelsToLon(
           _lonToPixels(centre('longitude'), zoom) - dx,
@@ -3870,7 +3871,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // pointed at: element.click(), which is how assistive technology presses.
     final point = event.detail == 0
         ? _centre(box)
-        : _local(box, event.clientX, event.clientY);
+        : _local(box, event.placeX, event.placeY);
 
     if (doubleTap is! String) {
       handleEvent(tap as String, point);
@@ -3913,10 +3914,10 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     state
       ..pointer = event.pointerId
       ..touch = event.pointerType != 'mouse'
-      ..downX = event.clientX.toDouble()
-      ..downY = event.clientY.toDouble()
-      ..lastX = event.clientX.toDouble()
-      ..lastY = event.clientY.toDouble()
+      ..downX = event.placeX
+      ..downY = event.placeY
+      ..lastX = event.placeX
+      ..lastY = event.placeY
       ..lastTime = event.timeStamp.toDouble()
       ..vx = 0
       ..vy = 0
@@ -3961,8 +3962,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     web.PointerEvent event,
   ) {
     if (state.pointer != event.pointerId || _drag != null) return;
-    final x = event.clientX.toDouble();
-    final y = event.clientY.toDouble();
+    final x = event.placeX;
+    final y = event.placeY;
     final p = state.props;
     if (!state.moved) {
       final travelled = math.sqrt(
@@ -4047,7 +4048,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         // A pointer that stopped before it lifted was not flung.
         final rested = event.timeStamp - state.lastTime > 100;
         handleEvent('${eventId}_end', {
-          ..._local(box, event.clientX, event.clientY),
+          ..._local(box, event.placeX, event.placeY),
           'dx': 0.0,
           'dy': 0.0,
           'vx': rested || cancelled ? 0.0 : state.vx,
@@ -4127,7 +4128,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
   void _onDragMove(web.PointerEvent event) {
     if (_drag?.pointer != event.pointerId) return;
-    _moveDrag(event.clientX.toDouble(), event.clientY.toDouble());
+    _moveDrag(event.placeX, event.placeY);
   }
 
   /// Moves the copy to the pointer and tells the targets it entered and left.
@@ -5058,6 +5059,19 @@ class _Drag {
   late final JSFunction onMove;
   late final JSFunction onUp;
   late final JSFunction onCancel;
+}
+
+/// Where a pointer is in the window, as the number the browser gives.
+///
+/// Read as a number rather than through `MouseEvent.clientX`, which is typed
+/// an integer: a browser reports a finger - and a mouse on a zoomed page or a
+/// dense screen - in fractions of a pixel, and the typed getter throws on one.
+/// Every pan, drag and long press went dead with it.
+extension _PointerPlace on web.MouseEvent {
+  double get placeX =>
+      (this as JSObject).getProperty<JSNumber>('clientX'.toJS).toDartDouble;
+  double get placeY =>
+      (this as JSObject).getProperty<JSNumber>('clientY'.toJS).toDartDouble;
 }
 
 /// A paint's `gradient` as the canvas's own: two points for a linear one, a
