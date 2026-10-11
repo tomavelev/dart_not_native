@@ -1850,6 +1850,10 @@ class UIBuilder {
     void Function()? onDismiss,
     String? dismissEventId,
     Duration duration = const Duration(seconds: 4),
+    String? backgroundColor,
+    String? textColor,
+    String? actionColor,
+    double? borderRadius,
     String? id,
   }) {
     if (onAction != null) {
@@ -1865,6 +1869,13 @@ class UIBuilder {
         if (actionEventId != null) 'actionEventId': actionEventId,
         ...?_dismiss(dismissEventId, onDismiss, id),
         'durationMs': duration.inMilliseconds,
+        // Its look, where the app states one: the fill, the message's colour,
+        // the action's, and how round the corners are. Unsaid, each is the
+        // renderer's own dark bar.
+        if (backgroundColor != null) 'backgroundColor': backgroundColor,
+        if (textColor != null) 'textColor': textColor,
+        if (actionColor != null) 'actionColor': actionColor,
+        if (borderRadius != null) 'borderRadius': borderRadius,
         if (id != null) 'id': id,
       },
     );

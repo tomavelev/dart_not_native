@@ -667,3 +667,585 @@ class DataTable extends StatelessWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Table.
+// ---------------------------------------------------------------------------
+
+/// How wide a [Table]'s column is.
+///
+/// Nothing here measures a cell, so the widths that depend on measuring -
+/// [IntrinsicColumnWidth], and the smaller or larger of two - cannot be what
+/// they are in Flutter: they share the width like a [FlexColumnWidth].
+abstract class TableColumnWidth {
+  const TableColumnWidth();
+
+  /// A stated width in pixels, for a column that has one.
+  double? get _fixed => null;
+
+  /// The column's share of the width the fixed columns leave.
+  double get _flex => 1;
+}
+
+/// A share of the width left once the fixed columns have theirs.
+class FlexColumnWidth extends TableColumnWidth {
+  const FlexColumnWidth([this.value = 1.0]);
+  final double value;
+  @override
+  double get _flex => value;
+}
+
+/// A width in pixels.
+class FixedColumnWidth extends TableColumnWidth {
+  const FixedColumnWidth(this.value);
+  final double value;
+  @override
+  double? get _fixed => value;
+}
+
+/// A fraction of the table's width. Drawn as that share against the other
+/// columns', which is the same thing where the fractions add up to one.
+class FractionColumnWidth extends TableColumnWidth {
+  const FractionColumnWidth(this.value);
+  final double value;
+  @override
+  double get _flex => value;
+}
+
+/// As wide as its widest cell in Flutter; here a share of the width, [flex]
+/// of it or one.
+class IntrinsicColumnWidth extends TableColumnWidth {
+  const IntrinsicColumnWidth({this.flex});
+  final double? flex;
+  @override
+  double get _flex => flex ?? 1;
+}
+
+/// The larger of two widths in Flutter; here the first.
+class MaxColumnWidth extends TableColumnWidth {
+  const MaxColumnWidth(this.a, this.b);
+  final TableColumnWidth a;
+  final TableColumnWidth b;
+  @override
+  double? get _fixed => a._fixed;
+  @override
+  double get _flex => a._flex;
+}
+
+/// The smaller of two widths in Flutter; here the first.
+class MinColumnWidth extends MaxColumnWidth {
+  const MinColumnWidth(super.a, super.b);
+}
+
+/// Where a cell sits in a row taller than it.
+enum TableCellVerticalAlignment {
+  top,
+  middle,
+  bottom,
+  baseline,
+  fill,
+  intrinsicHeight,
+}
+
+/// The lines of a [Table]: round the outside and between the cells.
+class TableBorder {
+  const TableBorder({
+    this.top = BorderSide.none,
+    this.right = BorderSide.none,
+    this.bottom = BorderSide.none,
+    this.left = BorderSide.none,
+    this.horizontalInside = BorderSide.none,
+    this.verticalInside = BorderSide.none,
+    this.borderRadius = BorderRadius.zero,
+  });
+
+  /// The same line everywhere.
+  factory TableBorder.all({
+    Color color = const Color(0xFF000000),
+    double width = 1.0,
+    BorderStyle style = BorderStyle.solid,
+    BorderRadius borderRadius = BorderRadius.zero,
+  }) {
+    final side = BorderSide(color: color, width: width, style: style);
+    return TableBorder(
+      top: side,
+      right: side,
+      bottom: side,
+      left: side,
+      horizontalInside: side,
+      verticalInside: side,
+      borderRadius: borderRadius,
+    );
+  }
+
+  /// One line for between the cells and one for round the outside.
+  const TableBorder.symmetric({
+    BorderSide inside = BorderSide.none,
+    BorderSide outside = BorderSide.none,
+    this.borderRadius = BorderRadius.zero,
+  }) : top = outside,
+       right = outside,
+       bottom = outside,
+       left = outside,
+       horizontalInside = inside,
+       verticalInside = inside;
+
+  final BorderSide top;
+  final BorderSide right;
+  final BorderSide bottom;
+  final BorderSide left;
+  final BorderSide horizontalInside;
+  final BorderSide verticalInside;
+  final BorderRadius borderRadius;
+
+  static bool _drawn(BorderSide side) =>
+      side != BorderSide.none && side.width > 0;
+}
+
+/// A row of a [Table].
+class TableRow {
+  const TableRow({this.key, this.decoration, this.children = const []});
+  final Key? key;
+  final Decoration? decoration;
+  final List<Widget> children;
+}
+
+/// A cell that sits differently in its row from the table's other cells.
+class TableCell extends StatelessWidget {
+  const TableCell({super.key, this.verticalAlignment, required this.child});
+  final TableCellVerticalAlignment? verticalAlignment;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+/// Rows of cells in columns that line up.
+///
+/// A column is a stated number of pixels ([FixedColumnWidth]) or a share of
+/// what is left ([FlexColumnWidth], the default) - see [TableColumnWidth]
+/// for the widths that would need measuring. A cell is as tall as its own
+/// content, so the line between two columns ([TableBorder.verticalInside])
+/// is as tall as the cell it stands beside rather than the row.
+class Table extends StatelessWidget {
+  const Table({
+    super.key,
+    this.children = const [],
+    this.columnWidths,
+    this.defaultColumnWidth = const FlexColumnWidth(),
+    this.textDirection,
+    this.border,
+    this.defaultVerticalAlignment = TableCellVerticalAlignment.top,
+    this.textBaseline,
+  });
+  final List<TableRow> children;
+  final Map<int, TableColumnWidth>? columnWidths;
+  final TableColumnWidth defaultColumnWidth;
+  final TextDirection? textDirection;
+  final TableBorder? border;
+  final TableCellVerticalAlignment defaultVerticalAlignment;
+
+  /// Accepted and not carried: see [CrossAxisAlignment.baseline].
+  final Object? textBaseline;
+
+  Widget _row(TableRow row) {
+    final lines = border;
+    final between =
+        lines != null && TableBorder._drawn(lines.verticalInside)
+        ? lines.verticalInside
+        : null;
+    final cells = <Widget>[];
+    for (final (index, child) in row.children.indexed) {
+      final width = columnWidths?[index] ?? defaultColumnWidth;
+      final own = child is TableCell ? child.verticalAlignment : null;
+      Widget cell = child;
+      if (own != null && own != defaultVerticalAlignment) {
+        cell = Align(
+          alignment: switch (own) {
+            TableCellVerticalAlignment.middle => Alignment.centerLeft,
+            TableCellVerticalAlignment.bottom => Alignment.bottomLeft,
+            _ => Alignment.topLeft,
+          },
+          child: cell,
+        );
+      }
+      if (between != null && index > 0) {
+        cell = Container(
+          decoration: BoxDecoration(border: Border(left: between)),
+          child: cell,
+        );
+      }
+      final fixed = width._fixed;
+      cells.add(
+        fixed != null
+            ? SizedBox(width: fixed, child: cell)
+            // Flex is whole numbers; a thousandth is fine enough for 1.5.
+            : Expanded(
+                flex: math.max(1, (width._flex * 1000).round()),
+                child: cell,
+              ),
+      );
+    }
+    final line = Row(
+      crossAxisAlignment: switch (defaultVerticalAlignment) {
+        TableCellVerticalAlignment.middle => CrossAxisAlignment.center,
+        TableCellVerticalAlignment.bottom => CrossAxisAlignment.end,
+        _ => CrossAxisAlignment.start,
+      },
+      children: cells,
+    );
+    final decoration = row.decoration;
+    return KeyedSubtree(
+      key: row.key,
+      child: decoration == null
+          ? line
+          : Container(decoration: decoration, child: line),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = border;
+    final inside =
+        lines != null && TableBorder._drawn(lines.horizontalInside)
+        ? lines.horizontalInside
+        : null;
+    Widget table = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final (index, row) in children.indexed) ...[
+          if (inside != null && index > 0)
+            Container(height: inside.width, color: inside.color),
+          _row(row),
+        ],
+      ],
+    );
+    if (lines != null &&
+        [lines.top, lines.right, lines.bottom, lines.left].any(
+          TableBorder._drawn,
+        )) {
+      table = Container(
+        decoration: BoxDecoration(
+          border: Border(
+            top: lines.top,
+            right: lines.right,
+            bottom: lines.bottom,
+            left: lines.left,
+          ),
+          borderRadius: lines.borderRadius == BorderRadius.zero
+              ? null
+              : lines.borderRadius,
+        ),
+        child: table,
+      );
+    }
+    final direction = textDirection;
+    return direction == null
+        ? table
+        : Directionality(textDirection: direction, child: table);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A list whose rows are dragged into a new order.
+// ---------------------------------------------------------------------------
+
+/// Called when a row has been dropped: it was at [oldIndex] and goes before
+/// the row now at [newIndex] - Flutter's convention, so an app moving it
+/// down takes one off: `if (newIndex > oldIndex) newIndex--`.
+typedef ReorderCallback = void Function(int oldIndex, int newIndex);
+
+/// A list whose rows are picked up and dropped into a new order.
+///
+/// Built on the platform's drag and drop: a row is picked up (after a long
+/// press on a touch screen) and dropped on the row whose place it takes.
+/// The rows do not part to show where it will land - the row under it is
+/// what says so, by what the app draws there - and there is no drag handle:
+/// the whole row is what is held.
+class ReorderableListView extends StatelessWidget {
+  const ReorderableListView({
+    super.key,
+    required List<Widget> this.children,
+    required this.onReorder,
+    this.onReorderStart,
+    this.onReorderEnd,
+    this.header,
+    this.footer,
+    this.padding,
+    this.reverse = false,
+    this.scrollController,
+    this.primary,
+    this.physics,
+    this.shrinkWrap = false,
+    this.buildDefaultDragHandles = true,
+    this.proxyDecorator,
+    this.scrollDirection = Axis.vertical,
+  }) : itemBuilder = null,
+       itemCount = null;
+
+  /// Rows built from an index; each needs a key, as in Flutter.
+  const ReorderableListView.builder({
+    super.key,
+    required IndexedWidgetBuilder this.itemBuilder,
+    required int this.itemCount,
+    required this.onReorder,
+    this.onReorderStart,
+    this.onReorderEnd,
+    this.header,
+    this.footer,
+    this.padding,
+    this.reverse = false,
+    this.scrollController,
+    this.primary,
+    this.physics,
+    this.shrinkWrap = false,
+    this.buildDefaultDragHandles = true,
+    this.proxyDecorator,
+    this.scrollDirection = Axis.vertical,
+  }) : children = null;
+
+  final List<Widget>? children;
+  final IndexedWidgetBuilder? itemBuilder;
+  final int? itemCount;
+  final ReorderCallback onReorder;
+  final void Function(int index)? onReorderStart;
+  final void Function(int index)? onReorderEnd;
+  final Widget? header;
+  final Widget? footer;
+  final EdgeInsetsGeometry? padding;
+  final bool reverse;
+  final ScrollController? scrollController;
+  final ScrollPhysics? physics;
+  final bool shrinkWrap;
+  final Axis scrollDirection;
+
+  /// Accepted and not carried: the whole row is what is held, and the
+  /// lifted picture is the row itself.
+  final bool? primary;
+  final bool buildDefaultDragHandles;
+  final Object? proxyDecorator;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = children?.length ?? itemCount!;
+    Widget rowAt(int index) => children?[index] ?? itemBuilder!(context, index);
+    return ListView(
+      padding: padding,
+      reverse: reverse,
+      controller: scrollController,
+      physics: physics,
+      shrinkWrap: shrinkWrap,
+      scrollDirection: scrollDirection,
+      children: [
+        ?header,
+        for (var index = 0; index < count; index++)
+          _ReorderRow(
+            key: rowAt(index).key,
+            index: index,
+            onReorder: onReorder,
+            onStart: onReorderStart,
+            onEnd: onReorderEnd,
+            child: rowAt(index),
+          ),
+        ?footer,
+      ],
+    );
+  }
+}
+
+/// A row that can be picked up, and dropped on.
+class _ReorderRow extends StatelessWidget {
+  const _ReorderRow({
+    super.key,
+    required this.index,
+    required this.onReorder,
+    required this.child,
+    this.onStart,
+    this.onEnd,
+  });
+  final int index;
+  final ReorderCallback onReorder;
+  final void Function(int index)? onStart;
+  final void Function(int index)? onEnd;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => DragTarget<_Reordered>(
+    onWillAcceptWithDetails: (details) => details.data.index != index,
+    onAcceptWithDetails: (details) {
+      final from = details.data.index;
+      // Before the row it was dropped on - which, coming from above, is
+      // the place after it once the row itself has gone.
+      onReorder(from, from < index ? index + 1 : index);
+    },
+    builder: (context, candidates, rejected) => Draggable<_Reordered>(
+      data: _Reordered(index),
+      feedback: const SizedBox.shrink(),
+      onDragStarted: onStart == null ? null : () => onStart!(index),
+      onDragEnd: onEnd == null ? null : (_) => onEnd!(index),
+      // Something is over this row: it is where the dragged one will go.
+      child: candidates.isEmpty ? child : Opacity(opacity: 0.5, child: child),
+    ),
+  );
+}
+
+/// What a row of a [ReorderableListView] carries while it is dragged.
+class _Reordered {
+  const _Reordered(this.index);
+  final int index;
+}
+
+/// Starts a reorder from a handle in Flutter; here the whole row is what is
+/// held, so this is its child.
+class ReorderableDragStartListener extends StatelessWidget {
+  const ReorderableDragStartListener({
+    super.key,
+    required this.child,
+    required this.index,
+    this.enabled = true,
+  });
+  final Widget child;
+  final int index;
+  final bool enabled;
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+/// As [ReorderableDragStartListener], after a long press.
+class ReorderableDelayedDragStartListener extends ReorderableDragStartListener {
+  const ReorderableDelayedDragStartListener({
+    super.key,
+    required super.child,
+    required super.index,
+    super.enabled,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A child that is moved about under the finger.
+// ---------------------------------------------------------------------------
+
+/// The transform an [InteractiveViewer] is showing, for an app that wants to
+/// read it or set it - to zoom from a button, or put the child back.
+class TransformationController extends ValueNotifier<Matrix4> {
+  TransformationController([Matrix4? value])
+    : super(value ?? Matrix4.identity());
+}
+
+/// A child that is dragged about, and zoomed by its controller.
+///
+/// A finger pans the child. **Two fingers do not zoom it:** no renderer
+/// reports a pinch, so the scale is whatever the [transformationController]
+/// says - which is how an app gives it zoom buttons - held between
+/// [minScale] and [maxScale]. The child is not kept inside the viewer:
+/// [boundaryMargin] is accepted and not carried.
+class InteractiveViewer extends StatefulWidget {
+  const InteractiveViewer({
+    super.key,
+    this.clipBehavior = Clip.hardEdge,
+    this.panAxis = PanAxis.free,
+    this.boundaryMargin = EdgeInsets.zero,
+    this.constrained = true,
+    this.maxScale = 2.5,
+    this.minScale = 0.8,
+    this.onInteractionEnd,
+    this.onInteractionStart,
+    this.onInteractionUpdate,
+    this.panEnabled = true,
+    this.scaleEnabled = true,
+    this.transformationController,
+    required this.child,
+  });
+  final Widget child;
+  final Clip clipBehavior;
+
+  /// Which way a finger may pan the child.
+  final PanAxis panAxis;
+  final bool panEnabled;
+  final double minScale;
+  final double maxScale;
+  final TransformationController? transformationController;
+  final void Function(Object details)? onInteractionStart;
+  final void Function(Object details)? onInteractionUpdate;
+  final void Function(Object details)? onInteractionEnd;
+
+  /// Accepted and not carried.
+  final EdgeInsets boundaryMargin;
+  final bool constrained;
+  final bool scaleEnabled;
+
+  @override
+  State<InteractiveViewer> createState() => _InteractiveViewerState();
+}
+
+/// Which way an [InteractiveViewer] pans.
+enum PanAxis { horizontal, vertical, aligned, free }
+
+class _InteractiveViewerState extends State<InteractiveViewer> {
+  TransformationController? _own;
+
+  TransformationController get _controller =>
+      widget.transformationController ?? (_own ??= TransformationController());
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_changed);
+  }
+
+  @override
+  void didUpdateWidget(InteractiveViewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.transformationController != widget.transformationController) {
+      (oldWidget.transformationController ?? _own)?.removeListener(_changed);
+      _controller.addListener(_changed);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_changed);
+    _own?.dispose();
+    super.dispose();
+  }
+
+  void _pan(DragUpdateDetails details) {
+    final across = widget.panAxis != PanAxis.vertical;
+    final down = widget.panAxis != PanAxis.horizontal;
+    _controller.value = _controller.value.clone()
+      ..translate(across ? details.delta.dx : 0, down ? details.delta.dy : 0);
+    widget.onInteractionUpdate?.call(details);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = _controller.value.clone();
+    // Held to the scales the viewer allows, whoever asked for more.
+    final scale = shown._scaleX;
+    final held = scale.clamp(widget.minScale, widget.maxScale).toDouble();
+    if (held != scale) shown.scale(held / scale);
+    final moved = Transform(transform: shown, child: widget.child);
+    final clipped = widget.clipBehavior == Clip.none
+        ? moved as Widget
+        : ClipRect(child: moved);
+    if (!widget.panEnabled) return clipped;
+    final across = widget.panAxis == PanAxis.horizontal;
+    final down = widget.panAxis == PanAxis.vertical;
+    return GestureDetector(
+      onPanStart: across || down ? null : widget.onInteractionStart,
+      onPanUpdate: across || down ? null : _pan,
+      onPanEnd: across || down ? null : widget.onInteractionEnd,
+      onHorizontalDragStart: across ? widget.onInteractionStart : null,
+      onHorizontalDragUpdate: across ? _pan : null,
+      onHorizontalDragEnd: across ? widget.onInteractionEnd : null,
+      onVerticalDragStart: down ? widget.onInteractionStart : null,
+      onVerticalDragUpdate: down ? _pan : null,
+      onVerticalDragEnd: down ? widget.onInteractionEnd : null,
+      child: clipped,
+    );
+  }
+}

@@ -13,6 +13,10 @@
 .dnn-mdl-button--sm { height: 28px; line-height: 28px; font-size: 12px; padding: 0 12px; min-width: 0; }
 .dnn-mdl-button--lg { height: 44px; line-height: 44px; font-size: 16px; padding: 0 24px; }
 .dnn-mdl-button.mdl-button[disabled] { background: rgba(0, 0, 0, 0.12); color: rgba(0, 0, 0, 0.26); }
+/* A button with no fill has none switched off either: an outlined or a text
+ * button that is disabled is its faded words, not a grey block. */
+.dnn-kit-mdl .dnn-mdl-button--outlined[disabled],
+.dnn-kit-mdl .dnn-mdl-button--tertiary[disabled] { background: transparent; }
 
 .dnn-fab.mdl-button--fab { background: var(--dnn-primary); }
 
@@ -51,3 +55,5 @@
 
 /* MDL gives an icon inside a button a line-height of its own. */
 .mdl-button .dnn-button__icon.material-icons { vertical-align: middle; }
+/* MDL's text button is its own indigo; this is the app's primary. */
+.dnn-kit-mdl .dnn-mdl-button--tertiary:not([disabled]) { color: var(--dnn-primary); }

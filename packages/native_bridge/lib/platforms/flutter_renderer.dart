@@ -2994,10 +2994,18 @@ class _NodeSnackbarState extends State<_NodeSnackbar> {
             container: true,
             liveRegion: true,
             child: Material(
-              color: FlutterUIRenderer._color(inverse.surface) ??
+              color: FlutterUIRenderer._color(p['backgroundColor']) ??
+                  FlutterUIRenderer._color(inverse.surface) ??
                   const Color(0xff323232),
               elevation: 6,
-              borderRadius: BorderRadius.circular(4),
+              // As round as the app said - which, for a stadium, is as round
+              // as the bar is tall - or the bar's own four.
+              borderRadius: BorderRadius.circular(
+                math.min(
+                  FlutterUIRenderer._double(p['borderRadius']) ?? 4,
+                  1000,
+                ),
+              ),
               child: Padding(
                 padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 8, 4),
                 child: Row(
@@ -3008,7 +3016,8 @@ class _NodeSnackbarState extends State<_NodeSnackbar> {
                         child: Text(
                           FlutterUIRenderer._string(p['message']),
                           style: TextStyle(
-                            color: FlutterUIRenderer._color(inverse.text) ??
+                            color: FlutterUIRenderer._color(p['textColor']) ??
+                                FlutterUIRenderer._color(inverse.text) ??
                                 Colors.white,
                           ),
                         ),
@@ -3024,8 +3033,9 @@ class _NodeSnackbarState extends State<_NodeSnackbar> {
                             : null,
                         style: TextButton.styleFrom(
                           foregroundColor:
+                              FlutterUIRenderer._color(p['actionColor']) ??
                               FlutterUIRenderer._color(inverse.primary) ??
-                                  const Color(0xff90caf9),
+                              const Color(0xff90caf9),
                         ),
                         child: Text(actionLabel),
                       ),

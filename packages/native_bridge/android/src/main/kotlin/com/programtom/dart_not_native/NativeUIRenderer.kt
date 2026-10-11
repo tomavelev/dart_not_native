@@ -4768,8 +4768,11 @@ class NativeUIRenderer(
             // narrower on the action's when the screen runs right to left.
             setPaddingRelative(dp(16), dp(6), dp(8), dp(6))
             background = GradientDrawable().apply {
-                setColor(color(null, inversePalette.surface))
-                cornerRadius = dp(4).toFloat()
+                // The look the app stated, or the bar's own.
+                setColor(color(node["backgroundColor"], inversePalette.surface))
+                cornerRadius = (node["borderRadius"] as? Number)?.toFloat()
+                    ?.let { it * activity.resources.displayMetrics.density }
+                    ?: dp(4).toFloat()
             }
             elevation = dp(6).toFloat()
             // Taps on the bar itself do not fall through to the screen below.
@@ -4779,7 +4782,7 @@ class NativeUIRenderer(
         bar.addView(AppCompatTextView(activity).apply {
             text = node["message"] as? String ?: ""
             textSize = 14f
-            setTextColor(color(null, inversePalette.text))
+            setTextColor(color(node["textColor"], inversePalette.text))
             setPaddingRelative(0, dp(8), dp(8), dp(8))
         }, linear(width = 0, weight = 1f))
 
@@ -4792,7 +4795,7 @@ class NativeUIRenderer(
                 setBackgroundColor(Color.TRANSPARENT)
                 stateListAnimator = null
                 elevation = 0f
-                setTextColor(color(null, inversePalette.primary))
+                setTextColor(color(node["actionColor"], inversePalette.primary))
                 (node["actionEventId"] as? String)?.let { eventId ->
                     setOnClickListener { sendEvent(eventId, emptyMap()) }
                 }

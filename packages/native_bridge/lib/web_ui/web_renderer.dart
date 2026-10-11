@@ -1707,11 +1707,20 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ..setAttribute('role', 'status')
       ..setAttribute('aria-live', 'polite');
     bar.appendChild(_el('span', 'dnn-snackbar__message', text: message));
+    // The look the app stated; unsaid, each is the stylesheet's.
+    final fill = _optStr(p['backgroundColor']);
+    if (fill != null) _style(bar, 'background', cssColor(fill));
+    final ink = _optStr(p['textColor']);
+    if (ink != null) _style(bar, 'color', cssColor(ink));
+    final radius = _num(p['borderRadius']);
+    if (radius != null) _style(bar, 'border-radius', '${radius}px');
 
     final label = _optStr(p['actionLabel']);
     final actionId = p['actionEventId'];
     if (label != null) {
       final action = _el('button', 'dnn-snackbar__action', text: label);
+      final actionInk = _optStr(p['actionColor']);
+      if (actionInk != null) _style(action, 'color', cssColor(actionInk));
       if (actionId is String) {
         action.addEventListener(
           'click',

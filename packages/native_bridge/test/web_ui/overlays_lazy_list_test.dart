@@ -239,6 +239,37 @@ void main() {
       duration: duration,
     );
 
+    test('take the look they are given, and keep their own without one',
+        () async {
+      await renderer.render(
+        withOverlays([
+          UIBuilder.snackbar(
+            id: 'styled',
+            message: 'Saved',
+            actionLabel: 'Undo',
+            actionEventId: 'undo',
+            duration: Duration.zero,
+            backgroundColor: '#2e7d32',
+            textColor: '#fffde7',
+            actionColor: '#ffeb3b',
+            borderRadius: 12,
+          ),
+        ]),
+      );
+      final bar = web.document.getElementById('styled')! as web.HTMLElement;
+      final action = bar.querySelector('button')! as web.HTMLElement;
+
+      expect(bar.style.background, 'rgb(46, 125, 50)');
+      expect(bar.style.color, 'rgb(255, 253, 231)');
+      expect(bar.style.borderRadius, '12px');
+      expect(action.style.color, 'rgb(255, 235, 59)');
+
+      await renderer.render(withOverlays([deleted(duration: Duration.zero)]));
+      final plain = web.document.getElementById('deleted')! as web.HTMLElement;
+      expect(plain.style.background, isEmpty);
+      expect(plain.style.borderRadius, isEmpty);
+    });
+
     test('are announced politely, and their action sends its event', () async {
       final undone = <Map<String, dynamic>>[];
       renderer.onEvent('undo', undone.add);

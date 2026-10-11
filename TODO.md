@@ -2084,9 +2084,19 @@ notice.
    listeners follow the reader: enough for a "back to top" button or loading
    more near the end, not for moving something in step with the drag.
    `animateTo` arrives at once (`scrolling.dart`). No scroll notifications.
-6. **Widgets that are not there**, which fail at compile time:
-   `CustomScrollView` and every sliver, `ReorderableListView`,
-   `InteractiveViewer`, `Table`. (`Hero`, `MouseRegion` and
+6. **Widgets that are not there.** The ones this list named are all there
+   now, each with what it gives up said in its doc comment. The last four
+   came on 2026-10-11, built in the widget layer: `Table` (columns are a
+   stated width or a share of the rest - nothing measures a cell),
+   `ReorderableListView` (on the platform's drag and drop: the whole row is
+   held, and the rows do not part to show where it will land),
+   `InteractiveViewer` (a finger pans; no renderer reports a pinch, so the
+   scale is the controller's) and `CustomScrollView` with `SliverList`,
+   `SliverGrid`, `SliverToBoxAdapter`, `SliverPadding`, `SliverAppBar`,
+   `SliverPersistentHeader`, `SliverFillRemaining` and a few more (a sliver
+   is the boxes it would lay out: nothing is lazy, and a pinned or floating
+   bar scrolls away). Seen on an iOS simulator, an Android emulator and in
+   Chrome; rows reordered by hand on Android and in Chrome. (`Hero`, `MouseRegion` and
    `PopupMenuButton` were on this list until 2026-10-04; the first two are
    now there in name, the third opens a dialog. `PopScope` was on it until
    2026-10-10 and is Flutter's now, for a page of a `Navigator`, of
@@ -2132,8 +2142,9 @@ notice.
    the finger and a tab change does not animate; and on the web a windowed
    list in a tab starts from the top when the tab comes back (§6.3 item 9).
 10. ~~**Snackbars are not queued.**~~ Queued since 2026-10-10, as Flutter's
-    are. Still open: their colour, shape, margin and `behavior` are not
-    carried (`navigation.dart`).
+    are. Their fill, their message's and action's colours and how round
+    they are travel since 2026-10-11, on all four renderers. Still open:
+    `margin`, `width`, `behavior` and `elevation` are not carried.
 11. **`Scaffold.drawer` is a sheet**, opened by a menu button the app bar
     gains - not a panel from the side. A scaffold nested in another's body is
     composed from a column and a stack.
@@ -2380,8 +2391,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2257 tests
-  (1284 in the package, 388 for the example apps and goldens, 542 in the browser,
+  contracts, the plugin system and the design system are covered by 2288 tests
+  (1312 in the package, 388 for the example apps and goldens, 545 in the browser,
   43 in the bloc package,
   counted 2026-10-11), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

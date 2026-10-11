@@ -4319,8 +4319,10 @@ class NativeUIRenderer {
     snackbarHost = host
 
     let bar = UIView()
-    bar.backgroundColor = color(inversePalette.surface, fallback: inversePalette.surface)
-    bar.layer.cornerRadius = 4
+    // The look the app stated, or the bar's own.
+    bar.backgroundColor = color(node["backgroundColor"], fallback: inversePalette.surface)
+    // No rounder than a stadium: half the bar's least height.
+    bar.layer.cornerRadius = min(number(node["borderRadius"]) ?? 4, 24)
     bar.translatesAutoresizingMaskIntoConstraints = false
     host.addSubview(bar)
 
@@ -4336,7 +4338,7 @@ class NativeUIRenderer {
 
     let message = UILabel()
     message.text = node["message"] as? String ?? ""
-    message.textColor = color(inversePalette.text, fallback: inversePalette.text)
+    message.textColor = color(node["textColor"], fallback: inversePalette.text)
     message.font = .systemFont(ofSize: 14)
     message.numberOfLines = 0
     stack.addArrangedSubview(message)
@@ -4345,7 +4347,7 @@ class NativeUIRenderer {
       let action = UIButton(type: .system)
       action.setTitle(actionLabel, for: .normal)
       action.setTitleColor(
-        color(inversePalette.primary, fallback: inversePalette.primary), for: .normal)
+        color(node["actionColor"], fallback: inversePalette.primary), for: .normal)
       action.setContentHuggingPriority(.required, for: .horizontal)
       action.setContentCompressionResistancePriority(.required, for: .horizontal)
       bindings[action.hash] = node

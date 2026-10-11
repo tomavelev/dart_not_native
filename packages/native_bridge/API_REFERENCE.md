@@ -286,7 +286,8 @@ Flutter's names, signatures and semantics; pure Dart.
 | Motion | `lib/src/widgets/motion.dart` | `Curves`, `AnimatedOpacity`, `AnimatedContainer`, `AnimatedScale`, `AnimatedRotation`, `AnimatedSlide`, and - without their animation - `AnimatedPadding`, `AnimatedAlign`, `AnimatedSwitcher`, `AnimatedSize`, `AnimatedCrossFade` |
 | Drawing | `lib/src/widgets/custom_paint.dart` | `CustomPaint`, `CustomPainter`, `Canvas`, `Paint`, `Path`, `TextPainter` |
 | Platform views | `lib/src/widgets/platform_views.dart` | `SwipeActions`, `WebView`, `MapView`, `CameraPreview`, `Badge`, `Alert`, `FlutterSlot` |
-| Steppers and tables | `lib/src/widgets/data.dart` | `Stepper`, `Step`, `StepState`, `StepperType`, `ControlsDetails`, `DataTable`, `DataColumn`, `DataRow`, `DataCell` |
+| Steppers and tables | `lib/src/widgets/data.dart` | `Stepper`, `Step`, `StepState`, `StepperType`, `ControlsDetails`, `DataTable`, `DataColumn`, `DataRow`, `DataCell`, `Table`, `TableRow`, `TableCell`, `TableBorder`, the column widths, `ReorderableListView`, `InteractiveViewer`, `TransformationController` |
+| Slivers | `lib/src/widgets/slivers.dart` | `CustomScrollView`, `SliverList`, `SliverGrid`, `SliverToBoxAdapter`, `SliverPadding`, `SliverAppBar`, `FlexibleSpaceBar`, `SliverPersistentHeader`, `SliverFillRemaining`, the child delegates |
 
 What is deliberately different from Flutter is collected in `INTEGRATION.md`
 §8.9. The breaking changes that brought the layer to Flutter's shape are at
@@ -300,9 +301,7 @@ the top of `CHANGELOG.md`; the ones existing code meets first:
   model is `FormModel`, bound with `ModelTextFormField(field:)`.
 - `Locale('en', 'US')` is positional; a script needs `Locale.fromSubtags`.
 
-Not in the layer at all: `AnimationController` and `Tween`,
-`CustomScrollView` and slivers, `ReorderableListView`,
-`InteractiveViewer`, `Table`. There in name only,
+Not in the layer at all: `AnimationController` and `Tween`. There in name only,
 so that a screen compiles: `Hero` (no flight), `MouseRegion` (no hover),
 `FadeTransition` (the value when built). `PopupMenuButton` opens its menu as
 a dialog.

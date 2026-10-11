@@ -396,6 +396,46 @@ void main() {
       expect(events, isEmpty);
     });
 
+    testWidgets('takes the look it is given', (tester) async {
+      await show(
+        tester,
+        UIBuilder.overlay(
+          child: screen(),
+          overlays: [
+            UIBuilder.snackbar(
+              message: 'Saved',
+              id: 'styled',
+              actionLabel: 'Undo',
+              actionEventId: 'action',
+              duration: Duration.zero,
+              backgroundColor: '#2e7d32',
+              textColor: '#fffde7',
+              actionColor: '#ffeb3b',
+              borderRadius: 12,
+            ),
+          ],
+        ),
+      );
+
+      final bar = tester.widget<Material>(
+        find.ancestor(of: find.text('Saved'), matching: find.byType(Material)).first,
+      );
+      expect(bar.color, const Color(0xff2e7d32));
+      expect(bar.borderRadius, BorderRadius.circular(12));
+      expect(
+        tester.widget<Text>(find.text('Saved')).style!.color,
+        const Color(0xfffffde7),
+      );
+      expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, 'Undo'))
+            .style!
+            .foregroundColor!
+            .resolve({}),
+        const Color(0xffffeb3b),
+      );
+    });
+
     WidgetNode snackbarOver(WidgetNode scaffold) => UIBuilder.overlay(
       child: scaffold,
       overlays: [UIBuilder.snackbar(message: 'Saved', id: 'saved')],

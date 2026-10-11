@@ -232,8 +232,10 @@ class SnackBarAction {
   final String label;
   final VoidCallback onPressed;
 
-  /// Accepted and not carried: the button is the platform's.
+  /// The colour the action is written in.
   final Color? textColor;
+
+  /// Accepted and not carried: the action is words, on the bar's own fill.
   final Color? backgroundColor;
 }
 

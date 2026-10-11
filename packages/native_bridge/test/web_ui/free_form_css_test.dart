@@ -231,6 +231,36 @@ void main() {
           contains('touch-action: pan-x'));
     });
 
+    test('a disabled button with no fill gains none, and one with a fill '
+        'keeps one', () {
+      final mdl = declarationsIn('web_shell/kits/mdl.css');
+      final materialize = declarationsIn('web_shell/kits/materialize.css');
+
+      // MDL greys every disabled button's background; not these two.
+      expect(mdl('.dnn-kit-mdl .dnn-mdl-button--outlined[disabled]'),
+          contains('background: transparent'));
+      expect(mdl('.dnn-kit-mdl .dnn-mdl-button--tertiary[disabled]'),
+          contains('background: transparent'));
+      expect(dnn('.dnn-button--outlined[disabled]'),
+          contains('background: transparent'));
+      // Materialize clears every disabled flat button's; not a tonal one's.
+      expect(
+        materialize('.dnn-mz-button--tonal.btn-flat[disabled]'),
+        contains('background-color: rgba(0, 0, 0, 0.12)'),
+      );
+    });
+
+    test('a text button is written in the primary in every kit', () {
+      final mdl = declarationsIn('web_shell/kits/mdl.css');
+      final materialize = declarationsIn('web_shell/kits/materialize.css');
+
+      expect(dnn('.dnn-button--tertiary'), contains('color: var(--dnn-primary)'));
+      expect(materialize('.dnn-mz-button.btn-flat'),
+          contains('color: var(--dnn-primary)'));
+      // MDL's own class for it.
+      expect(mdl('.dnn-kit-mdl .dnn-mdl-button--tertiary[disabled]'), isNotEmpty);
+    });
+
     test('every kit draws elevated on the surface, in the primary', () {
       final mdl = declarationsIn('web_shell/kits/mdl.css');
       final materialize = declarationsIn('web_shell/kits/materialize.css');

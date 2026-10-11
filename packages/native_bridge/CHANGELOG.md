@@ -100,6 +100,48 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A pointer between two pixels (web)
+
+- **Every pan, drag and long press on the web threw on a pointer whose
+  position was not a whole number**, and did nothing. The coordinates were
+  read through `MouseEvent.clientX`, which is typed an integer; a browser
+  reports a finger, and a mouse on a zoomed page or a dense screen, in
+  fractions of a pixel. They are read as numbers now. The tests made
+  pointer events at whole pixels, which is why none of them saw it.
+
+### Four more widgets
+
+- `Table`, with `TableRow`, `TableCell`, `TableBorder` and the column
+  widths. A column is a stated width or a share of the rest: nothing here
+  measures a cell, so `IntrinsicColumnWidth` is a share too.
+- `ReorderableListView` and `.builder`, on the platform's drag and drop.
+  The whole row is what is held; the rows do not part to show where it
+  will land.
+- `InteractiveViewer` and `TransformationController`. A finger pans the
+  child. Two fingers do not zoom it - no renderer reports a pinch - so the
+  scale is what the controller says.
+- `CustomScrollView` and the slivers apps use: `SliverList`,
+  `SliverFixedExtentList`, `SliverGrid`, `SliverToBoxAdapter`,
+  `SliverPadding`, `SliverSafeArea`, `SliverFillRemaining`,
+  `SliverVisibility`, `SliverOpacity`, `SliverPersistentHeader`,
+  `SliverAppBar` and `FlexibleSpaceBar`, with the list and builder
+  delegates. A sliver is the boxes it would lay out: every child is built,
+  and a pinned or floating bar scrolls away with the rest.
+- All built in the widget layer; the protocol is as it was.
+
+### A snackbar takes the look it is given
+
+- `SnackBar.backgroundColor` and `shape`, the colour of its content's text
+  and `SnackBarAction.textColor` are drawn, on all four renderers. They
+  were accepted and sent nowhere. `margin`, `width`, `behavior` and
+  `elevation` still are.
+
+### Disabled buttons on the web
+
+- Under MDL a disabled outlined or text button is its faded words, not a
+  grey block; under Materialize a disabled tonal button keeps a fill.
+  A text button is written in the app's primary under both.
+
 ### `Stepper` and `DataTable`
 
 - `Stepper`, `Step`, `StepState`, `StepperType` and `ControlsDetails`:

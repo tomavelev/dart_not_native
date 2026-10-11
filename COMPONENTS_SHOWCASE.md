@@ -28,6 +28,10 @@ To see the core widgets running, launch the **Component Showcase**
 | `PageView` / `PageController` | Pages swiped between, one at a time, along either axis. |
 | `Stepper` | Numbered steps, one open, vertical or horizontal. |
 | `DataTable` | Headings, rows, sorting and selection. Its columns share the table's width equally. |
+| `Table` | Rows of cells in columns of a stated width or a share of the rest. |
+| `ReorderableListView` | Rows dragged into a new order. |
+| `InteractiveViewer` | A child panned by a finger and zoomed by its controller. |
+| `CustomScrollView` and slivers | A scroll view of lists, grids, boxes and an app bar. Nothing is lazy and nothing is pinned. |
 | `Navigator` | `push`, `pop`, `pushReplacement`, `popUntil`, `pushNamed`. See `ROUTING_GUIDE.md`. |
 
 ```dart

@@ -104,6 +104,7 @@ part 'src/widgets/motion.dart';
 part 'src/widgets/custom_paint.dart';
 part 'src/widgets/platform_views.dart';
 part 'src/widgets/data.dart';
+part 'src/widgets/slivers.dart';
 
 // ---------------------------------------------------------------------------
 // Foundation: keys, context, the widget/state model and the render owner.
@@ -1195,10 +1196,21 @@ class _Owner {
     final snackBar = _snackBars.firstOrNull?.snackBar;
     if (snackBar != null) {
       final action = snackBar.action;
+      final content = snackBar.content;
+      final shape = snackBar.shape;
       overlays.add(
         UIBuilder.snackbar(
           id: 'snackbar_$_snackBarSeq',
-          message: _plainText(snackBar.content, this) ?? '',
+          message: _plainText(content, this) ?? '',
+          backgroundColor: snackBar.backgroundColor?._hex,
+          textColor: content is Text ? content.style?.color?._hex : null,
+          actionColor: action?.textColor?._hex,
+          borderRadius: switch (shape) {
+            RoundedRectangleBorder() => shape.borderRadius._resolved.topLeft.x,
+            // As round as a bar gets.
+            StadiumBorder() => 999,
+            _ => null,
+          },
           actionLabel: action?.label,
           onAction: action == null
               ? null
