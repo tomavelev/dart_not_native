@@ -46,9 +46,8 @@ class ClampingScrollPhysics extends ScrollPhysics {
 /// load more near the end or to show a "back to top" button, not to move
 /// something in step with the drag.
 ///
-/// This applies to what is drawn as a scroller (a [SingleChildScrollView], a
-/// [GridView], a [ListView] that is not windowed). A windowed list reports
-/// rows, not pixels, and its controller still hears the app's moves only.
+/// This applies to every scroller: a [SingleChildScrollView], a [GridView]
+/// and a [ListView], windowed or not.
 class ScrollController extends ChangeNotifier {
   ScrollController({
     this.initialScrollOffset = 0.0,
@@ -139,9 +138,10 @@ class ScrollController extends ChangeNotifier {
     _viewport = viewport;
   }
 
-  /// What a windowed list's node carries: nothing until the app has asked for
-  /// a position. A scroller's node always carries [_offset] instead - see
-  /// [_scroller].
+  /// What a windowed list's node carries: nothing until there is a position
+  /// to send it to - one the app asked for, or the one it was at when its
+  /// page was last on screen. A scroller's node always carries [_offset]
+  /// instead - see [_scroller].
   double? get _wireOffset =>
       _version > 0 || initialScrollOffset != 0 ? _offset : null;
 
@@ -567,6 +567,12 @@ class ListView extends Widget {
       contentExtent: extent == null ? null : extent * count,
       viewport: viewport.height,
     );
+    // A position that outlives the list's view, as every scroller has: the
+    // app's controller, or one kept here by where the list sits. It hears
+    // where the reader has got to, and sends the list back there when its
+    // page returns.
+    final position = controller ?? owner._scrollPosition();
+    if (owner._hidden == 0) position._shown(owner);
     // Pull-to-refresh belongs to the first vertical scroller under the
     // indicator, and a windowed list is one.
     _RefreshIndicatorState? refresh;
@@ -592,8 +598,9 @@ class ListView extends Widget {
             () => (builder(owner._context(), index) ?? const SizedBox.shrink())
                 ._render(owner),
           ),
-          scrollOffset: controller?._wireOffset,
-          scrollVersion: controller?._version,
+          scrollOffset: position._wireOffset,
+          scrollVersion: position._version,
+          onScroll: position._report,
           // Room inside the scroller, as Flutter's is: the rows scroll under
           // the edges rather than stopping short of them.
           padding: padding?._resolved._ltrb,

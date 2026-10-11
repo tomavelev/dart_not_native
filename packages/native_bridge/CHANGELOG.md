@@ -100,6 +100,42 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A windowed list says where it is
+
+- A `ScrollController` on a `ListView` with `itemExtent` follows the
+  reader: `offset`, `position` and listeners, when the list comes to rest
+  and at most every 100 ms on the way. It heard the app's own moves only.
+- A windowed list comes back where it was when its tab or page returns.
+  On the web it started again from the top.
+- The protocol: `scrollEventId` on a `LazyList`, reporting `{offset,
+  maxExtent, viewport}` as on a `Scroll`. `UIBuilder.lazyList` takes
+  `onScroll`. All four renderers.
+
+### A `Dismissible` slides away
+
+- **The row follows the finger and is gone**, as in Flutter, with the
+  app's own `background` behind it. It used to reveal a platform swipe
+  action - a button in the background's colour and words - and did nothing
+  for a vertical direction. `confirmDismiss`, `dismissThresholds`,
+  `movementDuration` and all six directions are honoured. An app that
+  relied on the revealed button gets the swipe instead;
+  `UIBuilder.swipeActions` is still the node for actions behind a row.
+- Built in the widget layer, so on every renderer at once. Each movement
+  of the finger is a build; the gap a dismissed row leaves does not close
+  until the app removes it.
+- **A pan reports how far the finger moved on the screen** on iOS and
+  Android. It was measured inside the box, so a box that followed the
+  finger was told the finger had hardly moved - the web and the Flutter
+  host always measured on the screen.
+- **On iOS a scroller waits for a pan along one axis**, where the two
+  raced and the scroller around a row took a sideways swipe.
+- **A short list is not stretched to fill the screen on iOS.** A scroller
+  was tied to its content's length by a constraint, which on a page taller
+  than the list was met by stretching a row - a `ListTile` several times
+  its height. The scroller is naturally as long as its content now, which
+  asks nothing of the content.
+- Swiped on an iOS simulator, an Android emulator and in Chrome with touch.
+
 ### A `TabBarView` is swiped
 
 - A swipe across a `TabBarView`'s page moves to the tab beside it. The

@@ -941,7 +941,7 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> beginTouch(ev)
             MotionEvent.ACTION_MOVE -> {
-                velocity?.addMovement(ev)
+                track(ev)
                 if (!panning && movedPastSlop(ev)) {
                     beginPan(ev)
                     return true
@@ -965,13 +965,17 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                 isPressed = true
             }
             MotionEvent.ACTION_MOVE -> {
-                velocity?.addMovement(ev)
+                track(ev)
                 if (events.pan != null) {
                     if (!panning && movedPastSlop(ev)) beginPan(ev)
                     if (panning) {
-                        pan("update", ev, ev.x - lastX, ev.y - lastY, 0f, 0f)
-                        lastX = ev.x
-                        lastY = ev.y
+                        // How far the finger moved is measured on the screen,
+                        // not in the box: a box that follows the finger - a
+                        // row being swiped away - has the finger at the same
+                        // place in it all the while.
+                        pan("update", ev, ev.rawX - lastX, ev.rawY - lastY, 0f, 0f)
+                        lastX = ev.rawX
+                        lastY = ev.rawY
                     }
                 }
             }
@@ -992,14 +996,24 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
     }
 
     private fun beginTouch(ev: MotionEvent) {
-        downX = ev.x
-        downY = ev.y
-        lastX = ev.x
-        lastY = ev.y
+        downX = ev.rawX
+        downY = ev.rawY
+        lastX = ev.rawX
+        lastY = ev.rawY
         panning = false
         panRefused = false
         velocity?.recycle()
-        velocity = VelocityTracker.obtain().also { it.addMovement(ev) }
+        velocity = VelocityTracker.obtain()
+        track(ev)
+    }
+
+    /** Follows the finger's speed on the screen, as its distance is - see the update. */
+    private fun track(ev: MotionEvent) {
+        val tracker = velocity ?: return
+        val onScreen = MotionEvent.obtain(ev)
+        onScreen.setLocation(ev.rawX, ev.rawY)
+        tracker.addMovement(onScreen)
+        onScreen.recycle()
     }
 
     /**
@@ -1009,8 +1023,8 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
      */
     private fun movedPastSlop(ev: MotionEvent): Boolean {
         if (panRefused) return false
-        val dx = abs(ev.x - downX)
-        val dy = abs(ev.y - downY)
+        val dx = abs(ev.rawX - downX)
+        val dy = abs(ev.rawY - downY)
         if (dx <= slop && dy <= slop) return false
         val mine = when (events.panAxis) {
             "horizontal" -> dx >= dy

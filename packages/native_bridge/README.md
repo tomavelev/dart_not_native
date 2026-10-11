@@ -130,8 +130,8 @@ for is either composed from the nodes there are or accepted and left alone,
 and the widget's doc comment says which - in the same few phrases ("accepted
 and not carried", "accepted and not consulted"), so they can be searched for.
 The ones that change what a user sees are gathered in `INTEGRATION.md` §8.9:
-no page transitions, no `AnimationController`, `Dismissible` reveals an
-action, `TextPainter` metrics are estimated, a snackbar's look is the platform's.
+no page transitions, no `AnimationController`, `TextPainter` metrics are
+estimated, a snackbar's look is the platform's.
 
 ## Companions
 

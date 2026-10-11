@@ -1898,7 +1898,10 @@ class UIBuilder {
   /// rows are inset by it and scroll under the edges, where a padding node
   /// around the list would hold the edges themselves in. [onRefresh] gives
   /// the list the platform's pull-to-refresh, whose spinner stays while
-  /// [refreshing] is true, as on a [scroll].
+  /// [refreshing] is true, as on a [scroll]. [onScroll] hears where the
+  /// reader has got to in pixels - `{offset, maxExtent, viewport}` through a
+  /// `scrollEventId`, when the list comes to rest and at most every 100 ms
+  /// on the way - again as on a [scroll].
   ///
   /// Must be built inside [NativeUIApp.build]: the window lives with the app
   /// between builds, under [id].
@@ -1915,6 +1918,8 @@ class UIBuilder {
     List<double>? padding,
     void Function()? onRefresh,
     bool refreshing = false,
+    void Function(double offset, double? maxExtent, double? viewport)?
+    onScroll,
   }) {
     assert(
       (itemExtent == null) != (itemExtentBuilder == null),
@@ -1950,6 +1955,21 @@ class UIBuilder {
       refresh = bindings.allocate(key: '$id.refresh');
       bindings.onTap(refresh, onRefresh);
     }
+    // Where the reader has got to, in pixels, as a scroller says it: the
+    // rows above are for the window, and say nothing finer than a row.
+    String? scrolled;
+    if (onScroll != null) {
+      scrolled = bindings.allocate(key: '$id.scroll');
+      bindings.on(scrolled, (data) {
+        final offset = (data['offset'] as num?)?.toDouble();
+        if (offset == null) return;
+        onScroll(
+          offset,
+          (data['maxExtent'] as num?)?.toDouble(),
+          (data['viewport'] as num?)?.toDouble(),
+        );
+      });
+    }
 
     return WidgetNode(
       type: 'LazyList',
@@ -1970,6 +1990,7 @@ class UIBuilder {
         if (padding != null) 'padding': padding,
         if (refresh != null) 'refreshEventId': refresh,
         if (refresh != null) 'refreshing': refreshing,
+        if (scrolled != null) 'scrollEventId': scrolled,
         // As on a scroll node: jump to this offset when the version is new.
         if (scrollOffset != null) 'scrollOffset': scrollOffset,
         if (scrollOffset != null) 'scrollVersion': scrollVersion ?? 0,

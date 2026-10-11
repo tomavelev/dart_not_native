@@ -24,7 +24,8 @@
             "itemCount": 10000,
             "itemExtent": 104.0,
             "startIndex": 0,
-            "rangeEventId": "cb:inbox.range"
+            "rangeEventId": "cb:inbox.range",
+            "scrollEventId": "cb:inbox.scroll"
           },
           "children": [
             {

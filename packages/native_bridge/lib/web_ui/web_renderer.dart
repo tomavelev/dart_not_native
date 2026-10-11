@@ -1795,6 +1795,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       'scroll',
       ((web.Event _) => _reportRange(viewport)).toJS,
     );
+    // And where it is in pixels, for a node that asks, as a scroller says.
+    _reportScroll(viewport, () => state.refresh.props);
     // Fires once the list is first laid out, and whenever its height changes.
     web.ResizeObserver(
       ((JSArray<web.ResizeObserverEntry> _, web.ResizeObserver _) =>
@@ -3461,7 +3463,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final viewport = _el('div', 'dnn-scroll');
     viewport.appendChild(_host(_el('div', 'dnn-scroll__content')));
     _applyScroll(viewport, _nodes[viewport] = _NodeState(p));
-    _reportScroll(viewport);
+    _reportScroll(viewport, () => _nodes[viewport]?.props);
     return viewport;
   }
 
@@ -3469,14 +3471,20 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   /// (`scrollEventId`): when it comes to rest, and at most every 100 ms on the
   /// way. The browser fires `scroll` once a frame, and a report per frame
   /// would be a rebuild per frame for an app that listens.
-  void _reportScroll(web.Element viewport) {
+  ///
+  /// [propsOf] is the node's props as they are now, for a scroller and for a
+  /// windowed list alike.
+  void _reportScroll(
+    web.Element viewport,
+    Map<String, dynamic>? Function() propsOf,
+  ) {
     Timer? settle;
     double? reported;
     var reportedAt = 0.0;
     void report() {
       // Read when it fires, not when it was built: the id is a prop like any
       // other, and a later build may have changed it or taken it away.
-      final p = _nodes[viewport]?.props;
+      final p = propsOf();
       final eventId = p?['scrollEventId'];
       if (eventId is! String || !viewport.isConnected) return;
       final horizontal = p!['axis'] == 'horizontal';

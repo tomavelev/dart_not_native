@@ -2078,15 +2078,12 @@ notice.
    and `AnimatedAlign` do not animate; `AnimatedSwitcher`, `AnimatedCrossFade`
    and `AnimatedSize` show the new child with no transition (`motion.dart`).
    All curves collapse to the five every renderer has.
-5. **A `ScrollController` hears scrolling a step behind, and on a windowed
-   list not at all.** A scroller reports its offset when it comes to rest and
-   at most every 100 ms on the way (verified on the Android emulator,
-   2026-10-03), so `offset` and listeners follow the reader - enough for a
-   "back to top" button or loading more near the end, not for moving
-   something in step with the drag. A windowed `ListView` reports rows, not
-   pixels: its controller still hears the app's moves only, and its
-   `maxScrollExtent` comes from the stated row heights. `animateTo` arrives
-   at once (`scrolling.dart`). No scroll notifications.
+5. **A `ScrollController` hears scrolling a step behind.** A scroller - a
+   windowed list included, since 2026-10-11 - reports its offset when it
+   comes to rest and at most every 100 ms on the way, so `offset` and
+   listeners follow the reader: enough for a "back to top" button or loading
+   more near the end, not for moving something in step with the drag.
+   `animateTo` arrives at once (`scrolling.dart`). No scroll notifications.
 6. **Widgets that are not there**, which fail at compile time: `PageView`,
    `CustomScrollView` and every sliver, `DataTable`, `Stepper`,
    `ReorderableListView`, `InteractiveViewer`. (`Hero`, `MouseRegion` and
@@ -2101,8 +2098,17 @@ notice.
    because the box travels with it; a painter that *fits* things around
    measured text - a chart's axis labels, a word game's tiles - is working
    from an estimate.
-8. **`Dismissible` reveals an action rather than sliding the row away**, and
-   does nothing for a vertical direction; a `Draggable`'s `feedback` and
+8. ~~**`Dismissible` reveals an action rather than sliding the row away**,
+   and does nothing for a vertical direction~~ Since 2026-10-11 the row
+   follows the finger with `background` (or `secondaryBackground`) behind
+   it, slides away past the threshold or when flung, and goes back short of
+   it; `confirmDismiss`, `dismissThresholds`, `movementDuration`, a screen
+   read from the right and the vertical directions are all honoured. It is
+   built in the widget layer from a pan along one axis and a moving box, so
+   every movement of the finger is a build. Swiped on an iOS simulator, an
+   Android emulator and in Chrome with touch. Short of Flutter: the gap the
+   row leaves does not close by itself (`resizeDuration`, `onResize`) and
+   `onUpdate` is not called. Still open here: a `Draggable`'s `feedback` and
    `childWhenDragging` are not drawn and only `onDragCompleted` is called;
    `GestureDetector`'s `onTapDown`/`onTapUp`/`onTap` fire together after the
    tap (`gestures.dart`).
@@ -2225,10 +2231,13 @@ event, and then the same work in four renderers.
    on Android a field with a floating label is Material's filled box, which
    takes the fill, the padding and "no border" but keeps its own line; and
    the hint's, label's and helper's styles do not travel.
-9. **No pixel offset back from a `LazyList`.** `Scroll` reports
-   `{offset, maxExtent, viewport}` through its `scrollEventId` now; `LazyList`
-   still reports its visible range of rows and nothing finer, which is the
-   remainder of §6.2 item 5.
+9. ~~**No pixel offset back from a `LazyList`.**~~ It reports
+   `{offset, maxExtent, viewport}` through a `scrollEventId` since
+   2026-10-11, as a `Scroll` does and at the same pace, on all four
+   renderers. A `ScrollController` on a windowed `ListView` follows the
+   reader, and a windowed list behind another tab or page comes back where
+   it was - which on the web it did not. Scrolled, left and returned to on
+   an iOS simulator, an Android emulator and in Chrome.
 10. ~~**`NavigationRail`'s `leading`, `trailing` and `extended`** are not
     drawn.~~ Drawn since 2026-10-10 by all four renderers: the leading above
     the destinations, the trailing below, and an extended rail wide with each
@@ -2275,9 +2284,9 @@ bar staying at 56dp as Flutter's does); the widget layer's `AppBar` resolves
 its colours as Flutter does and always sends them. The changelog's "Three
 real apps on an Android emulator" has each. What is left:
 
-1. **A windowed list's offset.** `LazyList` reports rows, not pixels (§6.3
-   item 9), so a `ScrollController` on a `ListView` with `itemExtent` does not
-   follow the reader.
+1. ~~**A windowed list's offset.**~~ Reported in pixels since 2026-10-11
+   (§6.3 item 9), so a `ScrollController` on a `ListView` with `itemExtent`
+   follows the reader.
 2. **A snackbar does not know a nested scaffold's floating button.** A
    scaffold nested in another's body is composed, its button with it, and the
    snackbar clears only what the outer scaffold owns.
@@ -2352,8 +2361,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2186 tests
-  (1224 in the package, 388 for the example apps and goldens, 531 in the browser,
+  contracts, the plugin system and the design system are covered by 2209 tests
+  (1244 in the package, 388 for the example apps and goldens, 534 in the browser,
   43 in the bloc package,
   counted 2026-10-11), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

@@ -1269,6 +1269,7 @@ class NativeUIRenderer(
             it.eventId = newNode["refreshEventId"] as? String
             it.shown = newNode["refreshing"] == true
         }
+        scroll.memory.onReport = scrollReport(newNode)
         val rows = scroll.getChildAt(0) as? FrameLayout ?: return false
         val oldRowNodes = childNodes(oldNode)
         val newRowNodes = childNodes(newNode)
@@ -4453,6 +4454,7 @@ class NativeUIRenderer(
             layoutParams = matchParent()
             addView(rows, matchWidth())
         }
+        list.memory.onReport = scrollReport(node)
         val refresh = node["refreshEventId"] as? String ?: return list
         return refreshFrame(list, refresh, node["refreshing"] == true).apply {
             layoutParams = matchParent()
@@ -5187,9 +5189,14 @@ class NativeUIRenderer(
         memory.reverse = node["reverse"] == true
         // Set on every patch: the id is a prop like any other, and names a
         // different callback from one build to the next.
-        val scrolled = node["scrollEventId"] as? String
+        memory.onReport = scrollReport(node)
+    }
+
+    /** What a scroller, or a windowed list, sends when its node asks where it is. */
+    private fun scrollReport(node: Map<*, *>): ((Int, Int, Int) -> Unit)? {
+        val scrolled = node["scrollEventId"] as? String ?: return null
         val density = activity.resources.displayMetrics.density
-        memory.onReport = if (scrolled == null) null else { offset, range, viewport ->
+        return { offset, range, viewport ->
             sendEvent(scrolled, mapOf(
                 "offset" to offset / density,
                 "maxExtent" to range / density,
@@ -6582,9 +6589,13 @@ class NativeUIRenderer(
             onLaidOut(this)
         }
 
+        /** Tells the app where the list is in pixels, when its node asks - see [ScrollMemory]. */
+        val memory = ScrollMemory(this, horizontal = false)
+
         override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
             super.onScrollChanged(l, t, oldl, oldt)
             onScrolled(this)
+            memory.scrolled()
         }
     }
 }

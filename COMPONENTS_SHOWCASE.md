@@ -70,7 +70,7 @@ Scaffold(
 | `GridView.count` / `.builder` / `.extent` | Equal cells in rows. |
 | `RefreshIndicator` | Pull to refresh, on the first vertical scroller under it - a windowed list included. |
 | `ListTile` | Leading, title, subtitle, trailing, `onTap`. `CheckboxListTile`, `SwitchListTile`, `RadioListTile`, `ExpansionTile`. |
-| `Dismissible` / `SwipeActions` | Swipe a row to reveal an action. |
+| `Dismissible` / `SwipeActions` | Swipe a row away, as in Flutter; `SwipeActions` reveals the platform's action buttons behind it instead. |
 
 ```dart
 ListView.builder(

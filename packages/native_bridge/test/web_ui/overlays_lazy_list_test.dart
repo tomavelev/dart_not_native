@@ -387,6 +387,42 @@ void main() {
       expect(content.getBoundingClientRect().height, 50000);
     });
 
+    test('says where it is in pixels, to a node that asks', () async {
+      final reports = <Map<String, dynamic>>[];
+      renderer.onEvent('scrolled', reports.add);
+      await renderer.render(withProps({'scrollEventId': 'scrolled'}));
+
+      viewport().scrollTop = 300;
+      viewport().dispatchEvent(web.Event('scroll'));
+      // At rest, a little after the last movement.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(reports.last['offset'], 300);
+      expect(reports.last['viewport'], 200);
+      expect(reports.last['maxExtent'], 50000 - 200);
+    });
+
+    test('a list whose node does not ask sends no such thing', () async {
+      final reports = <Map<String, dynamic>>[];
+      renderer.onEvent('scrolled', reports.add);
+      await renderer.render(withProps({}));
+
+      viewport().scrollTop = 300;
+      viewport().dispatchEvent(web.Event('scroll'));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(reports, isEmpty);
+    });
+
+    test('an offset sent with the list puts a new element there', () async {
+      await renderer.render(
+        withProps({'scrollOffset': 450.0, 'scrollVersion': 3}, start: 5),
+      );
+      await pumpEventQueue();
+
+      expect(viewport().scrollTop, 450);
+    });
+
     group('pull to refresh', () {
       web.TouchEvent touch(String type, web.Element target, num y) {
         final point = web.Touch(

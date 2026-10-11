@@ -236,6 +236,18 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
       : abs(velocity.y) > abs(velocity.x)
   }
 
+  /// A scroller waits for a pan along one axis to say whether the movement
+  /// is its own. Left to race, the scroller around a row took a sideways
+  /// swipe before the row could; this way the pan answers first, and when it
+  /// declines - the movement set off the other way - the scroller has it.
+  func gestureRecognizer(
+    _ recognizer: UIGestureRecognizer,
+    shouldBeRequiredToFailBy other: UIGestureRecognizer
+  ) -> Bool {
+    recognizer === panRecognizer && style.panAxis != nil
+      && other is UIPanGestureRecognizer && other.view is UIScrollView
+  }
+
   let surface = UIView()
   let content = UIView()
 
@@ -758,12 +770,16 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
     guard let eventId = style.panEventId else { return }
     let point = recognizer.location(in: surface)
-    let velocity = recognizer.velocity(in: surface)
+    // How far the finger moved is measured on the screen, not in the box: a
+    // box that follows the finger - a row being swiped away - has the finger
+    // at the same place in it all the while, and would be told it never moved.
+    let onScreen = recognizer.location(in: nil)
+    let velocity = recognizer.velocity(in: nil)
     let suffix: String
     switch recognizer.state {
     case .began:
       suffix = "_start"
-      lastPan = point
+      lastPan = onScreen
     case .changed:
       suffix = "_update"
     case .ended, .cancelled, .failed:
@@ -774,12 +790,12 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     let data: [String: Any] = [
       "x": Double(point.x),
       "y": Double(point.y),
-      "dx": Double(point.x - lastPan.x),
-      "dy": Double(point.y - lastPan.y),
+      "dx": Double(onScreen.x - lastPan.x),
+      "dy": Double(onScreen.y - lastPan.y),
       "vx": Double(velocity.x),
       "vy": Double(velocity.y),
     ]
-    lastPan = point
+    lastPan = onScreen
     onEvent?(eventId + suffix, data)
   }
 
@@ -1579,6 +1595,29 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
 
   private weak var child: UIView?
   private var childConstraints: [NSLayoutConstraint] = []
+
+  /// How long the content was when it was last laid out: the length the
+  /// scroller takes where nothing else gives it one.
+  private var fitted = UIView.noIntrinsicMetric
+
+  /// As long as its content, as a wish that is easily overruled - by any
+  /// height it is given, and by content longer than the room there is,
+  /// which is what scrolling is for. Unlike a constraint between the two it
+  /// asks nothing of the content.
+  override var intrinsicContentSize: CGSize {
+    if shrinkWrap { return super.intrinsicContentSize }
+    return horizontal
+      ? CGSize(width: fitted, height: UIView.noIntrinsicMetric)
+      : CGSize(width: UIView.noIntrinsicMetric, height: fitted)
+  }
+
+  private func noteFitted() {
+    let length = horizontal ? contentSize.width : contentSize.height
+    guard !shrinkWrap, length > 0, abs(length - fitted) > 0.5 else { return }
+    fitted = length
+    invalidateIntrinsicContentSize()
+  }
+
   private var settled = false
   private var wasAtEnd = true
   private var lastExtent: CGFloat = -1
@@ -1589,6 +1628,16 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
     super.init(frame: frame)
     // The scaffold has already kept the content clear of the system insets.
     contentInsetAdjustmentBehavior = .never
+    setNaturalLength()
+  }
+
+  /// How firmly the scroller holds to its content's length: barely, either
+  /// way. Shorter than its content is every scroller on a full page.
+  private func setNaturalLength() {
+    for axis in [NSLayoutConstraint.Axis.horizontal, .vertical] {
+      setContentHuggingPriority(UILayoutPriority(50), for: axis)
+      setContentCompressionResistancePriority(UILayoutPriority(1), for: axis)
+    }
   }
 
   required init?(coder: NSCoder) {
@@ -1631,27 +1680,31 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
       view.leftAnchor.constraint(equalTo: contentGuide.leftAnchor, constant: padding.left),
       contentGuide.rightAnchor.constraint(equalTo: view.rightAnchor, constant: padding.right),
     ]
-    // Along the axis the scroller is as long as its content when that is all
-    // it was asked to be (`shrinkWrap`), and otherwise only when nothing else
-    // gives it a length at all.
-    let along: NSLayoutConstraint
+    // Across the axis the content is as wide (or tall) as the scroller.
     if horizontal {
       next.append(
         view.heightAnchor.constraint(
           equalTo: frameGuide.heightAnchor, constant: -(padding.top + padding.bottom)))
-      along = frameGuide.widthAnchor.constraint(equalTo: contentGuide.widthAnchor)
     } else {
       next.append(
         view.widthAnchor.constraint(
           equalTo: frameGuide.widthAnchor, constant: -(padding.left + padding.right)))
-      along = frameGuide.heightAnchor.constraint(equalTo: contentGuide.heightAnchor)
     }
-    // Weaker than a box hugging its child (100): a scroller that *was* given
-    // a length longer than its content otherwise met this by stretching the
-    // content to match - one list tile on a short page came out half as tall
-    // again as the ones beside it.
-    along.priority = UILayoutPriority(shrinkWrap ? 999 : 50)
-    next.append(along)
+    // Along it, a scroller asked to be as long as its content (`shrinkWrap`)
+    // is tied to it. One that was not is only *naturally* that long - see
+    // `intrinsicContentSize` - because a constraint works both ways: on a
+    // page taller than a short list it was met by stretching the list, and
+    // however weak it was made, something in a row was weaker.
+    if shrinkWrap {
+      let along =
+        horizontal
+        ? frameGuide.widthAnchor.constraint(equalTo: contentGuide.widthAnchor)
+        : frameGuide.heightAnchor.constraint(equalTo: contentGuide.heightAnchor)
+      along.priority = UILayoutPriority(999)
+      next.append(along)
+    }
+    fitted = UIView.noIntrinsicMetric
+    invalidateIntrinsicContentSize()
     childConstraints = next
     NSLayoutConstraint.activate(next)
   }
@@ -1682,6 +1735,7 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    noteFitted()
     let viewport = horizontal ? bounds.width : bounds.height
     let extent = horizontal ? contentSize.width : contentSize.height
     guard viewport > 0, extent > 0 else { return }

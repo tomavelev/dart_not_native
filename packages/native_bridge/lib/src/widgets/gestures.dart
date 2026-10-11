@@ -461,20 +461,19 @@ enum DismissDirection {
   none,
 }
 
-/// A row that is swiped to dismiss it.
+/// A row that is swiped away.
 ///
-/// Drawn with the platform's swipe actions, which is the same gesture with
-/// one difference worth knowing: in Flutter the row slides away under the
-/// finger and is gone; here the swipe *reveals an action* behind the row - a
-/// button in the colour and words of [background] - and a full swipe, or a
-/// tap on it, dismisses. [onDismissed] is called either way, after
-/// [confirmDismiss] agrees, and as in Flutter the app must then take the row
-/// out of its list.
+/// The row follows the finger, with [background] showing behind it - or
+/// [secondaryBackground], for a swipe towards the start. Let go past the
+/// threshold, or flung, it slides the rest of the way and [onDismissed] is
+/// called, once [confirmDismiss] agrees; let go short of it, it slides back.
+/// As in Flutter the app must then take the row out of its list.
 ///
-/// The button's label is the text found in [background] (or
-/// [secondaryBackground], for a swipe from the end) and "Delete" if there is
-/// none; its colour is that background's.
-class Dismissible extends Widget {
+/// Short of Flutter: the gap the row leaves does not close by itself
+/// ([resizeDuration] and [onResize] are accepted and not carried) and
+/// [onUpdate] is not called. Each movement of the finger is a build, so on a
+/// long screen the row is a little behind the finger.
+class Dismissible extends StatefulWidget {
   const Dismissible({
     required Key super.key,
     required this.child,
@@ -498,74 +497,177 @@ class Dismissible extends Widget {
   final Widget? background;
   final Widget? secondaryBackground;
 
-  /// Asked before dismissing; false or null keeps the row.
+  /// Asked before dismissing; false or null puts the row back.
   final Future<bool?> Function(DismissDirection direction)? confirmDismiss;
   final VoidCallback? onResize;
   final void Function(Object details)? onUpdate;
   final void Function(DismissDirection direction)? onDismissed;
   final DismissDirection direction;
 
-  /// Accepted and not carried: the swipe is the platform's own.
-  final Duration? resizeDuration;
+  /// How far, as a part of the row's own extent, a swipe has to go to
+  /// dismiss: 0.4 where a direction is not named.
   final Map<DismissDirection, double> dismissThresholds;
+
+  /// How long the row takes to slide away, or back.
   final Duration movementDuration;
+
+  /// Accepted and not carried.
+  final Duration? resizeDuration;
   final double crossAxisEndOffset;
   final HitTestBehavior behavior;
 
-  Future<void> _dismiss(DismissDirection way) async {
-    final confirm = confirmDismiss;
-    if (confirm != null && await confirm(way) != true) return;
-    onDismissed?.call(way);
+  @override
+  State<Dismissible> createState() => _DismissibleState();
+}
+
+class _DismissibleState extends State<Dismissible> {
+  /// How far the row is from where it sits, along its axis, in pixels.
+  double _offset = 0;
+
+  /// Whether a finger has it, in which case it moves at once.
+  bool _dragging = false;
+
+  /// The way it was dismissed, once it has been.
+  DismissDirection? _dismissed;
+  Size? _size;
+
+  static const double _fling = 700;
+
+  bool get _vertical =>
+      widget.direction == DismissDirection.vertical ||
+      widget.direction == DismissDirection.up ||
+      widget.direction == DismissDirection.down;
+
+  /// The direction a movement of [sign] along the axis is, where the screen
+  /// reads [rtl]; null for one this row is not swiped in.
+  DismissDirection? _way(double sign, bool rtl) {
+    if (sign == 0) return null;
+    final DismissDirection way;
+    if (_vertical) {
+      way = sign < 0 ? DismissDirection.up : DismissDirection.down;
+    } else {
+      // Towards the end of the line is startToEnd, whichever side that is.
+      way = (sign > 0) != rtl
+          ? DismissDirection.startToEnd
+          : DismissDirection.endToStart;
+    }
+    final allowed = switch (widget.direction) {
+      DismissDirection.horizontal || DismissDirection.vertical => true,
+      DismissDirection.none => false,
+      final one => one == way,
+    };
+    return allowed ? way : null;
   }
 
-  /// The colour a background paints itself, if it says.
-  static Color? _colorOf(Widget? background) => switch (background) {
-    Container() =>
-      background.color ??
-          (background.decoration is BoxDecoration
-              ? (background.decoration as BoxDecoration).color
-              : null),
-    ColoredBox() => background.color,
-    _ => null,
-  };
+  double _extent(_Owner owner) {
+    final size = _size;
+    if (size != null) return _vertical ? size.height : size.width;
+    final screen = _mediaOf(owner).size;
+    return _vertical ? screen.height : screen.width;
+  }
 
-  ({String label, String color, void Function() onPressed}) _action(
-    _Owner owner,
-    Widget? background,
-    DismissDirection way,
-  ) => (
-    label: _plainText(background, owner) ?? 'Delete',
-    color:
-        (_colorOf(background) ?? _themeOf(owner).colorScheme.error)._hex,
-    onPressed: () => unawaited(_dismiss(way)),
-  );
+  void _pan(_Owner owner, bool rtl, String phase, Map<String, dynamic> data) {
+    if (_dismissed != null || !mounted) return;
+    double n(String key) => (data[key] as num?)?.toDouble() ?? 0;
+    switch (phase) {
+      case 'start':
+        setState(() => _dragging = true);
+      case 'update':
+        final moved = _offset + (_vertical ? n('dy') : n('dx'));
+        // Not past where it sits, the way it may not be swiped.
+        setState(() => _offset = _way(moved.sign, rtl) == null ? 0 : moved);
+      case 'end':
+        final way = _way(_offset.sign, rtl);
+        final extent = _extent(owner);
+        final speed = _vertical ? n('vy') : n('vx');
+        final far =
+            extent > 0 &&
+            _offset.abs() / extent > (widget.dismissThresholds[way] ?? 0.4);
+        // A fling the way the row has gone; one back is a change of mind.
+        final flung = speed.abs() > _fling && speed.sign == _offset.sign;
+        if (way != null && (far || flung)) {
+          unawaited(_leave(way, extent));
+        } else {
+          setState(() {
+            _dragging = false;
+            _offset = 0;
+          });
+        }
+    }
+  }
+
+  Future<void> _leave(DismissDirection way, double extent) async {
+    final sign = _offset.sign;
+    // Held where the finger left it while the app is asked.
+    setState(() => _dragging = false);
+    final confirm = widget.confirmDismiss;
+    if (confirm != null && await confirm(way) != true) {
+      if (mounted) setState(() => _offset = 0);
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _dismissed = way;
+      _offset = sign * extent;
+    });
+    // Told once the row has slid away, as Flutter tells it.
+    await Future<void>.delayed(widget.movementDuration);
+    if (mounted) widget.onDismissed?.call(way);
+  }
+
+  void _measured(double width, double height) {
+    final old = _size;
+    if (old != null &&
+        (old.width - width).abs() < 0.5 &&
+        (old.height - height).abs() < 0.5) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _size = Size(width, height));
+  }
 
   @override
-  WidgetNode _render(_Owner owner) {
-    final node = _renderChild(owner, child);
-    final fromEnd =
-        direction == DismissDirection.horizontal ||
-        direction == DismissDirection.endToStart;
-    final fromStart =
-        direction == DismissDirection.horizontal ||
-        direction == DismissDirection.startToEnd;
-    // A vertical dismissal has no platform gesture to stand in for it.
-    if (!fromEnd && !fromStart) return node;
-    return UIBuilder.swipeActions(
-      child: node,
-      actions: [
-        if (fromEnd)
-          _action(
-            owner,
-            secondaryBackground ?? background,
-            DismissDirection.endToStart,
-          ),
+  Widget build(BuildContext context) => _NodeWidget((owner) {
+    final rtl = owner._direction == TextDirection.rtl;
+    final row = _renderChild(owner, widget.child);
+    if (widget.direction == DismissDirection.none) return row;
+    // What shows behind the row is the background of the way it has gone.
+    final way = _way(_offset.sign, rtl);
+    final towardsStart =
+        way == DismissDirection.endToStart || way == DismissDirection.up;
+    final behind = way == null
+        ? null
+        : (towardsStart
+              ? widget.secondaryBackground ?? widget.background
+              : widget.background);
+    return UIBuilder.stack(
+      id: _idOf(widget.key),
+      children: [
+        // Always there, and empty at rest: a background that arrived with the
+        // first movement would move the row along among its siblings, and a
+        // renderer would make the row's view again with the finger still on
+        // the old one.
+        UIBuilder.positioned(
+          fill: true,
+          child: behind == null
+              ? UIBuilder.sizedBox()
+              : _renderChild(owner, behind, 'background'),
+        ),
+        UIBuilder.box(
+          transform: _offset == 0
+              ? null
+              : {_vertical ? 'dy' : 'dx': _offset},
+          // Under the finger it is where the finger is; let go, it slides.
+          animateMs: _dragging ? 0 : widget.movementDuration.inMilliseconds,
+          curve: 'easeOut',
+          panAxis: _vertical ? 'vertical' : 'horizontal',
+          onPan: (phase, data) => _pan(owner, rtl, phase, data),
+          onSize: _measured,
+          // As wide as the row it holds, which is as wide as it was.
+          expand: _vertical ? null : 'width',
+          child: row,
+        ),
       ],
-      leadingActions: [
-        if (fromStart)
-          _action(owner, background, DismissDirection.startToEnd),
-      ],
-      id: _idOf(key),
     );
-  }
+  });
 }

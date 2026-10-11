@@ -4090,6 +4090,16 @@ class NativeUIRenderer {
       self?.send(eventId: refreshId, data: [:])
     }
     list.setRefreshing(node["refreshing"] as? Bool ?? false)
+    // Where it is in pixels, for a node that asks, as a scroller says it.
+    if let scrolledId = node["scrollEventId"] as? String {
+      list.onReport = { [weak self] offset, maxExtent, viewport in
+        self?.send(
+          eventId: scrolledId,
+          data: ["offset": offset, "maxExtent": maxExtent, "viewport": viewport])
+      }
+    } else {
+      list.onReport = nil
+    }
   }
 
   /// Remembers where `list` is scrolled, and sends the rows it shows when they
@@ -6053,6 +6063,36 @@ private class LazyListView: UIScrollView {
 
   var onRefresh: (() -> Void)?
 
+  /// Called with the offset, how far it can go and the list's own height,
+  /// for the app: when the list comes to rest and at most every 100 ms on
+  /// the way - a message per frame is a rebuild per frame for an app that
+  /// listens.
+  var onReport: ((CGFloat, CGFloat, CGFloat) -> Void)?
+  private var reportedOffset: CGFloat = -1
+  private var reportedAt: CFTimeInterval = 0
+  private var settleWork: DispatchWorkItem?
+
+  private func report() {
+    guard let onReport, window != nil, bounds.height > 0 else { return }
+    let maxOffset = max(0, contentSize.height - bounds.height)
+    // A bounce past either end is not a position.
+    let offset = min(max(0, contentOffset.y), maxOffset)
+    if abs(offset - reportedOffset) < 0.5 { return }
+    reportedOffset = offset
+    reportedAt = CACurrentMediaTime()
+    onReport(offset, maxOffset, bounds.height)
+  }
+
+  func moved() {
+    guard onReport != nil else { return }
+    settleWork?.cancel()
+    if CACurrentMediaTime() - reportedAt >= 0.1 { report() }
+    // Nothing for a little longer than that: it has stopped.
+    let work = DispatchWorkItem { [weak self] in self?.report() }
+    settleWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+  }
+
   func setRefresh(enabled: Bool, tint: UIColor?) {
     if enabled {
       if refreshControl == nil {
@@ -6166,6 +6206,7 @@ private class LazyListView: UIScrollView {
 private class LazyListScrollDelegate: NSObject, UIScrollViewDelegate {
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
     (scrollView as? LazyListView)?.onViewportChange?()
+    (scrollView as? LazyListView)?.moved()
   }
 }
 

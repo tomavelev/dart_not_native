@@ -576,6 +576,37 @@ void main() {
       expect(refreshes, 1);
     });
 
+    testWidgets('says where it is in pixels, to a node that asks', (
+      tester,
+    ) async {
+      final reports = <Map<String, dynamic>>[];
+      renderer.onEvent('scrolled', reports.add);
+      await show(
+        tester,
+        UIBuilder.scaffold(body: withProps({'scrollEventId': 'scrolled'})),
+      );
+      await tester.pump();
+      expect(reports, isEmpty);
+
+      controller(tester).jumpTo(700);
+      await tester.pump();
+
+      expect(reports.last['offset'], 700);
+      expect(reports.last['viewport'], 600);
+      expect(reports.last['maxExtent'], 10000 * 56 - 600);
+      // And the rows, as before, for the window.
+      expect(ranges().last['first'], 12);
+    });
+
+    testWidgets('a list whose node does not ask sends nothing', (tester) async {
+      await show(tester, UIBuilder.scaffold(body: _lazyList()));
+
+      controller(tester).jumpTo(700);
+      await tester.pump();
+
+      expect(events.where((event) => event.containsKey('scrolled')), isEmpty);
+    });
+
     testWidgets('a list with no refresh has no indicator', (tester) async {
       await show(tester, UIBuilder.scaffold(body: _lazyList()));
 

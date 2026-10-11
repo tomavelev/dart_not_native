@@ -1278,7 +1278,7 @@ void main() {
       expect(dropped, isNull);
     });
 
-    test('Dismissible is a swipe action that asks, then dismisses', () async {
+    test('Dismissible slides away once it is asked and agrees', () async {
       final dismissed = <DismissDirection>[];
       final tester = _mount(
         (context, state) => Scaffold(
@@ -1288,17 +1288,26 @@ void main() {
             background: Container(color: Colors.red, child: const Text('Remove')),
             confirmDismiss: (_) async => true,
             onDismissed: dismissed.add,
+            movementDuration: Duration.zero,
             child: const Text('row'),
           ),
         ),
       );
-      final swipe = tester.get('row');
-      expect(swipe.type, 'SwipeActions');
-      final action = (swipe.props['actions'] as List).single as Map;
-      expect(action['label'], 'Remove');
-      expect(action['color'], '#f44336');
-      await tester.emit(action['eventId'] as String);
-      await Future<void>.delayed(Duration.zero);
+      // The row in front, in a box that follows the finger along the row.
+      WidgetNode front() => tester.get('row').children!.last;
+      expect(tester.get('row').type, 'Stack');
+      expect(front().props['panAxis'], 'horizontal');
+      expect(tester.hasText('Remove'), isFalse);
+
+      final pan = front().props['panEventId'] as String;
+      await tester.emit('${pan}_start', {'x': 300.0});
+      await tester.emit('${pan}_update', {'x': 100.0, 'dx': -200.0});
+      // Behind it now, what the app drew for the swipe.
+      expect(tester.hasText('Remove'), isTrue);
+      expect((front().props['transform'] as Map)['dx'], -200.0);
+      await tester.emit('${pan}_end', {'x': 100.0, 'vx': -900.0});
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
       expect(dismissed, [DismissDirection.endToStart]);
     });
   });

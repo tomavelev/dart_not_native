@@ -3360,13 +3360,51 @@ class _NodeLazyListState extends State<_NodeLazyList> {
               ),
             ),
     );
-    if (!refreshes) return list;
+    // Where it is in pixels, for a node that asks, as a scroller says it.
+    final reported = widget.props['scrollEventId'] is! String
+        ? list
+        : NotificationListener<ScrollNotification>(
+            onNotification: _onScrolled,
+            child: list,
+          );
+    if (!refreshes) return reported;
     return RefreshIndicator(
       key: _indicator,
       color: widget.renderer._primaryColor,
       onRefresh: _onRefresh,
-      child: list,
+      child: reported,
     );
+  }
+
+  final Stopwatch _sinceScrollReport = Stopwatch();
+  double? _reportedPixels;
+
+  /// Tells the app where the list is: when it comes to rest, and at most
+  /// every 100 ms on the way.
+  bool _onScrolled(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    final atRest = notification is ScrollEndNotification;
+    if (!atRest && notification is! ScrollUpdateNotification) return false;
+    if (!atRest &&
+        _sinceScrollReport.isRunning &&
+        _sinceScrollReport.elapsedMilliseconds < 100) {
+      return false;
+    }
+    final metrics = notification.metrics;
+    if (metrics.pixels == _reportedPixels) return false;
+    _reportedPixels = metrics.pixels;
+    _sinceScrollReport
+      ..reset()
+      ..start();
+    final eventId = widget.props['scrollEventId'];
+    if (eventId is String) {
+      widget.renderer.handleEvent(eventId, {
+        'offset': metrics.pixels,
+        'maxExtent': metrics.maxScrollExtent,
+        'viewport': metrics.viewportDimension,
+      });
+    }
+    return false;
   }
 }
 
