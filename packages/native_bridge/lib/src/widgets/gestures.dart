@@ -282,7 +282,8 @@ class _Dragged {
   final VoidCallback? onCompleted;
 }
 
-/// Where a drag ended. Accepted for Flutter's signature.
+/// How a drag ended: whether a target took it. The velocity and the offset
+/// are always zero.
 class DraggableDetails {
   const DraggableDetails({
     this.wasAccepted = false,
@@ -297,11 +298,15 @@ class DraggableDetails {
 /// Something that can be picked up and dropped on a [DragTarget].
 ///
 /// The platform does the dragging: it lifts a picture of [child] and carries
-/// a token, which the target turns back into [data]. So [feedback] and
-/// [childWhenDragging] are accepted and not drawn - the lifted picture is the
-/// child itself - and of the callbacks only [onDragCompleted] is called, when
-/// a target accepts the drop: a drag starting, or ending over nothing, is
-/// something the renderers do not report.
+/// a token, which the target turns back into [data]. So [feedback] is
+/// accepted and not drawn - the lifted picture is the child itself.
+///
+/// [onDragStarted] is called when it is picked up and [onDragEnd] when it is
+/// let go, with whether a target took it; [onDragCompleted] when one did and
+/// [onDraggableCanceled] when none did. While it is in the air
+/// [childWhenDragging] is drawn where it was. The velocity and the offset
+/// those callbacks are given are always zero: where a drag ended is not
+/// reported, only that it did.
 class Draggable<T extends Object> extends Widget {
   const Draggable({
     super.key,
@@ -337,7 +342,36 @@ class Draggable<T extends Object> extends Widget {
     if (owner._hidden == 0) {
       owner._dragData[token] = _Dragged(data, onDragCompleted);
     }
-    return UIBuilder.box(dragData: token, id: _idOf(key), child: node);
+    final away = childWhenDragging;
+    final listens =
+        away != null ||
+        onDragStarted != null ||
+        onDragEnd != null ||
+        onDraggableCanceled != null;
+    return UIBuilder.box(
+      dragData: token,
+      onDrag: listens ? (phase) => _dragged(owner, token, phase) : null,
+      id: _idOf(key),
+      // The box is the one the platform lifted a picture of; what it holds
+      // in the meantime is the app's to say.
+      child: away != null && owner._dragging.contains(token)
+          ? _renderChild(owner, away, 'away')
+          : node,
+    );
+  }
+
+  void _dragged(_Owner owner, String token, String phase) {
+    if (phase == 'start') {
+      if (!owner._dragging.add(token)) return;
+      owner._dropped.remove(token);
+      onDragStarted?.call();
+    } else {
+      if (!owner._dragging.remove(token)) return;
+      final accepted = owner._dropped.remove(token);
+      if (!accepted) onDraggableCanceled?.call(Velocity.zero, Offset.zero);
+      onDragEnd?.call(DraggableDetails(wasAccepted: accepted));
+    }
+    if (childWhenDragging != null) owner._requestRebuild();
   }
 }
 
@@ -422,6 +456,7 @@ class _DragTargetState<T extends Object> extends State<DragTarget<T>> {
     if (dragged == null || data is! T) return;
     final details = DragTargetDetails<T>(data: data, offset: Offset.zero);
     if (!(widget.onWillAcceptWithDetails?.call(details) ?? true)) return;
+    _owner?._dropped.add(token);
     widget.onAcceptWithDetails?.call(details);
     dragged.onCompleted?.call();
   }

@@ -533,6 +533,54 @@ void main() {
       expect(events.last.$2, {'data': 'card-7'});
     });
 
+    testWidgets('a box that asks hears its drag begin, and end after the drop', (
+      tester,
+    ) async {
+      ['drop', 'drag_start', 'drag_end'].forEach(listen);
+      await show(
+        tester,
+        UIBuilder.column(
+          children: [
+            box({
+              'width': 60,
+              'height': 60,
+              'color': '#ff0000',
+              'dragData': 'card-7',
+              'dragEventId': 'drag',
+            }),
+            UIBuilder.sizedBox(height: 100),
+            box({
+              'width': 200,
+              'height': 200,
+              'color': '#00ff00',
+              'dropEventId': 'drop',
+            }),
+          ],
+        ),
+      );
+      final source = tester.getCenter(find.byType(LongPressDraggable<String>));
+
+      // Dropped on the target.
+      var gesture = await tester.startGesture(source);
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      expect(events.map((e) => e.$1), ['drag_start']);
+      await gesture.moveTo(tester.getCenter(find.byType(DragTarget<String>)));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      expect(events.map((e) => e.$1), ['drag_start', 'drop', 'drag_end']);
+
+      // Let go over nothing.
+      events.clear();
+      gesture = await tester.startGesture(source);
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await gesture.moveBy(const Offset(300, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(events.map((e) => e.$1), ['drag_start', 'drag_end']);
+    });
+
     testWidgets('a mouse picks a box up at once', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;
       await show(tester, box({'width': 60, 'height': 60, 'dragData': 'x'}));

@@ -4660,6 +4660,7 @@ class NativeUIRenderer {
     style.panAxis = node["panAxis"] as? String
     style.ripple = node["ripple"] as? Bool ?? false
     style.dragData = node["dragData"] as? String
+    style.dragEventId = node["dragEventId"] as? String
     style.dropEventId = node["dropEventId"] as? String
     style.sizeEventId = node["sizeEventId"] as? String
     style.semanticLabel = node["semanticLabel"] as? String

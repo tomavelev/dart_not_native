@@ -100,6 +100,18 @@ Flutter, it now agrees, and these are the places existing code has to change:
   goldens compare structure, which is what this framework produces and what
   means the same thing on every machine.
 
+### A drag says when it begins and ends
+
+- `Draggable.onDragStarted`, `onDragEnd` and `onDraggableCanceled` are
+  called, and `childWhenDragging` is drawn where the piece was while it is
+  in the air. Only a drop a target accepted was heard before, so a board
+  could not mark the piece being moved or put back one let go over nothing.
+  The velocity and offset those callbacks are given are zero.
+- The protocol: `dragEventId` on a box with `dragData`, sending `_start`
+  when it is picked up and `_end` when it is let go - after any drop it
+  made. `UIBuilder.box` takes `onDrag`. All four renderers.
+- Dragged on an Android emulator and in Chrome. Not by hand on iOS.
+
 ### A windowed list says where it is
 
 - A `ScrollController` on a `ListView` with `itemExtent` follows the

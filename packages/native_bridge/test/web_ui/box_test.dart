@@ -538,6 +538,59 @@ void main() {
       expect(web.document.querySelector('.dnn-drag-ghost'), isNull);
     });
 
+    group('a box that asks to hear its own drag', () {
+      WidgetNode listening() => UIBuilder.column(
+        crossAxisAlignment: 'start',
+        children: [
+          placed({'dragData': 'card-7', 'dragEventId': 'drag'}, id: 'source'),
+          placed({'dropEventId': 'drop'}, id: 'target'),
+        ],
+      );
+
+      test('is told when it is picked up, and after the drop that it is over',
+          () async {
+        listen(['drag_start', 'drag_end', 'drop']);
+        await renderer.render(listening());
+        final (sx, sy) = middle('source');
+        final (tx, ty) = middle('target');
+
+        byId('source').dispatchEvent(pointer('pointerdown', sx, sy));
+        byId('source').dispatchEvent(pointer('pointermove', sx + 10, sy + 10));
+        expect(events.map((e) => e.$1), ['drag_start']);
+
+        web.document.dispatchEvent(pointer('pointermove', tx, ty));
+        web.document.dispatchEvent(pointer('pointerup', tx, ty));
+
+        expect(events.map((e) => e.$1), ['drag_start', 'drop', 'drag_end']);
+      });
+
+      test('is told it is over when it is let go over nothing', () async {
+        listen(['drag_start', 'drag_end', 'drop']);
+        await renderer.render(listening());
+        final (sx, sy) = middle('source');
+
+        byId('source').dispatchEvent(pointer('pointerdown', sx, sy));
+        byId('source').dispatchEvent(pointer('pointermove', sx + 10, sy + 10));
+        web.document.dispatchEvent(pointer('pointerup', sx + 12, sy + 12));
+
+        expect(events.map((e) => e.$1), ['drag_start', 'drag_end']);
+      });
+
+      test('and when the drag is cancelled', () async {
+        listen(['drag_start', 'drag_end', 'drop']);
+        await renderer.render(listening());
+        final (sx, sy) = middle('source');
+        final (tx, ty) = middle('target');
+
+        byId('source').dispatchEvent(pointer('pointerdown', sx, sy));
+        byId('source').dispatchEvent(pointer('pointermove', sx + 10, sy + 10));
+        web.document.dispatchEvent(pointer('pointermove', tx, ty));
+        web.document.dispatchEvent(pointer('pointercancel', tx, ty));
+
+        expect(events.map((e) => e.$1), ['drag_start', 'drag_end']);
+      });
+    });
+
     test('a finger picks up by holding, then drags the same way', () async {
       listen(['drop', 'drop_hover']);
       await renderer.render(board());

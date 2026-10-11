@@ -4121,6 +4121,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ..addEventListener('pointerup', drag.onUp)
       ..addEventListener('pointercancel', drag.onCancel);
     _moveDrag(x, y);
+    final dragId = state.props['dragEventId'];
+    if (dragId is String) handleEvent('${dragId}_start', const {});
   }
 
   void _onDragMove(web.PointerEvent event) {
@@ -4167,10 +4169,15 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ..pointer = null
       ..swallowClick = drop;
     final target = drag.over;
-    if (target == null) return;
-    _hover(target, false);
-    final eventId = _nodes[target]?.props['dropEventId'];
-    if (drop && eventId is String) handleEvent(eventId, {'data': drag.data});
+    if (target != null) {
+      _hover(target, false);
+      final eventId = _nodes[target]?.props['dropEventId'];
+      if (drop && eventId is String) handleEvent(eventId, {'data': drag.data});
+    }
+    // After the drop, so that the app knows what became of the drag by the
+    // time it hears that it is over.
+    final dragId = drag.state.props['dragEventId'];
+    if (dragId is String) handleEvent('${dragId}_end', const {});
   }
 
   /// Watches every element that has to know its own size: a box that reports

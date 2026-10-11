@@ -999,6 +999,12 @@ class _Owner {
   /// the wire holds a string, and a drop hands back the object it stood for.
   final Map<String, _Dragged> _dragData = {};
 
+  /// The tokens of the [Draggable]s in the air, and of those a target has
+  /// taken since they were picked up - which is how a drag's end knows
+  /// whether it was a drop.
+  final Set<String> _dragging = {};
+  final Set<String> _dropped = {};
+
   /// The dialogs and sheets open over the app, oldest first. Each is state: it
   /// is in the tree while it is open and drops out when it is dismissed.
   final List<_OverlayEntry> _overlays = [];

@@ -195,6 +195,8 @@ struct DnnBoxStyle {
   var panAxis: String?
   var ripple = false
   var dragData: String?
+  /// Told `_start` when the box is picked up and `_end` when it is let go.
+  var dragEventId: String?
   var dropEventId: String?
   var sizeEventId: String?
   var semanticLabel: String?
@@ -1007,6 +1009,29 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     // What a drop inside this app reads, without the provider's round trip.
     item.localObject = data
     return [item]
+  }
+
+  /// The box whose drag is in the air, and what its end sends. Held here for
+  /// as long as the drag lasts: the app may draw something else where the box
+  /// was while it is away, and a view that was taken out of the screen - and
+  /// let go of - would never hear its drag end.
+  private static var carried: (box: DnnBoxView, end: () -> Void)?
+
+  func dragInteraction(_ interaction: UIDragInteraction, sessionWillBegin session: UIDragSession)
+  {
+    guard let eventId = style.dragEventId, let onEvent else { return }
+    DnnBoxView.carried = (self, { onEvent(eventId + "_end", [:]) })
+    onEvent(eventId + "_start", [:])
+  }
+
+  /// However it ended - on a target or on nothing - and after any drop.
+  func dragInteraction(
+    _ interaction: UIDragInteraction, session: UIDragSession,
+    didEndWith operation: UIDropOperation
+  ) {
+    guard let carried = DnnBoxView.carried, carried.box === self else { return }
+    DnnBoxView.carried = nil
+    carried.end()
   }
 
   private func setHovering(_ over: Bool) {

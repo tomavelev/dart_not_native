@@ -1892,7 +1892,16 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       );
     }
     final dragData = _optString(p['dragData']);
-    if (dragData != null) box = _NodeDraggable(data: dragData, child: box);
+    if (dragData != null) {
+      final dragId = _optString(p['dragEventId']);
+      box = _NodeDraggable(
+        data: dragData,
+        onDrag: dragId == null
+            ? null
+            : (phase) => handleEvent('$dragId$phase', const {}),
+        child: box,
+      );
+    }
 
     final opacity = _double(p['opacity'])?.clamp(0.0, 1.0);
     if (opacity != null) {
@@ -3990,10 +3999,13 @@ class _NodeBoxState extends State<_NodeBox> {
 /// scroll the list the box is in; at once where it is a mouse, which has a
 /// wheel for that.
 class _NodeDraggable extends StatefulWidget {
-  const _NodeDraggable({required this.data, required this.child});
+  const _NodeDraggable({required this.data, required this.child, this.onDrag});
 
   final String data;
   final Widget child;
+
+  /// Told '_start' when the box is picked up and '_end' when it is let go.
+  final void Function(String phase)? onDrag;
 
   @override
   State<_NodeDraggable> createState() => _NodeDraggableState();
@@ -4030,11 +4042,15 @@ class _NodeDraggableState extends State<_NodeDraggable> {
           ? LongPressDraggable<String>(
               data: widget.data,
               feedback: feedback,
+              onDragStarted: () => widget.onDrag?.call('_start'),
+              onDragEnd: (_) => widget.onDrag?.call('_end'),
               child: widget.child,
             )
           : Draggable<String>(
               data: widget.data,
               feedback: feedback,
+              onDragStarted: () => widget.onDrag?.call('_start'),
+              onDragEnd: (_) => widget.onDrag?.call('_end'),
               child: widget.child,
             ),
     );

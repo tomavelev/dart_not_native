@@ -2108,10 +2108,10 @@ notice.
    every movement of the finger is a build. Swiped on an iOS simulator, an
    Android emulator and in Chrome with touch. Short of Flutter: the gap the
    row leaves does not close by itself (`resizeDuration`, `onResize`) and
-   `onUpdate` is not called. Still open here: a `Draggable`'s `feedback` and
-   `childWhenDragging` are not drawn and only `onDragCompleted` is called;
-   `GestureDetector`'s `onTapDown`/`onTapUp`/`onTap` fire together after the
-   tap (`gestures.dart`).
+   `onUpdate` is not called. Still open here: a `Draggable`'s `feedback`
+   is not drawn (§6.3 item 7 has what is), and `GestureDetector`'s
+   `onTapDown`/`onTapUp`/`onTap` fire together after the tap
+   (`gestures.dart`).
 9. ~~**`TabBarView` does not swipe**~~ It does since 2026-10-11: a swipe
    across the page moves to the tab beside it - far enough or flung, the
    other way when the screen reads from the right, and not at all under
@@ -2219,9 +2219,15 @@ event, and then the same work in four renderers.
    leaves the row open and the button behind it can be tapped. No flow
    holds a row open and taps the action - the inbox flow still only checks
    that the button exists.
-7. **Drag and drop reports only the drop.** No start, no end over nothing
-   (`Draggable`'s doc comment), so a board cannot highlight the piece being
-   moved or put it back.
+7. ~~**Drag and drop reports only the drop.**~~ A box that is picked up
+   says so, and says when it is let go - `<dragEventId>_start` and `_end`,
+   on all four renderers since 2026-10-11 - so `Draggable.onDragStarted`,
+   `onDragEnd` (with whether a target took it) and `onDraggableCanceled`
+   are called, and `childWhenDragging` is drawn where the piece was. Dragged
+   on an Android emulator and in Chrome; on iOS it builds and the device
+   lane is green, but no drag was made by hand - the simulator tools here
+   cannot hold and drag. Still open: where a drag ended and how fast are
+   not reported, and `feedback` is not drawn.
 8. ~~**A text field's look does not travel.**~~ It does since 2026-10-10:
    the colour, size and weight of `TextField.style`, and `InputDecoration`'s
    fill, its border (none, underline or box, with a colour, width and radius)
@@ -2361,8 +2367,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2209 tests
-  (1244 in the package, 388 for the example apps and goldens, 534 in the browser,
+  contracts, the plugin system and the design system are covered by 2220 tests
+  (1252 in the package, 388 for the example apps and goldens, 537 in the browser,
   43 in the bloc package,
   counted 2026-10-11), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

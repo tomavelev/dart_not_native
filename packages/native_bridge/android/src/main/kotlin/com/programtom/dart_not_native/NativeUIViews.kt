@@ -314,6 +314,8 @@ internal data class BoxEvents(
     val drop: String? = null,
     val size: String? = null,
     val dragData: String? = null,
+    /** Told `_start` when the box is picked up and `_end` when it is let go. */
+    val drag: String? = null,
     val ignorePointer: Boolean = false,
 ) {
     val handlesTouch: Boolean
@@ -356,7 +358,8 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
             isLongClickable = value.longPress != null && !value.ignorePointer
             isFocusable = isClickable
             detector.setIsLongpressEnabled(value.longPress != null || value.dragData != null)
-            setOnDragListener(if (value.drop == null) null else dropListener)
+            setOnDragListener(
+                if (value.drop == null && value.drag == null) null else dropListener)
             reportSize()
         }
 
@@ -1214,16 +1217,27 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         }
         // The string rides along as local state too: a drop in the same window
         // reads it from there without going through the clipboard machinery.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        val started = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             startDragAndDrop(clip, shadow, data, 0)
         } else {
             @Suppress("DEPRECATION")
             startDrag(clip, shadow, data, 0)
         }
+        if (started) {
+            carried = events.drag
+            events.drag?.let { host.send("${it}_start", emptyMap()) }
+        }
     }
 
     private val dropListener = OnDragListener { _, event ->
-        val eventId = events.drop ?: return@OnDragListener false
+        // The end of a drag reaches every view that answered its start: the
+        // box that was carried says so here, after any drop it made.
+        if (event.action == DragEvent.ACTION_DRAG_ENDED) {
+            carried?.let { host.send("${it}_end", emptyMap()) }
+            carried = null
+        }
+        val eventId = events.drop
+            ?: return@OnDragListener event.action == DragEvent.ACTION_DRAG_STARTED
         when (event.action) {
             // Answering true is what subscribes this view to the rest.
             DragEvent.ACTION_DRAG_STARTED -> true
@@ -1253,6 +1267,15 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
     companion object {
         /** No limit on an axis - a size no screen reaches. */
         const val UNBOUNDED = Int.MAX_VALUE / 4
+
+        /**
+         * The `dragEventId` of the box whose drag is in the air. Kept here
+         * rather than on the box: the app may draw something else where the
+         * box was while it is away, and the view that was picked up is then
+         * not the view that hears the drag end. Whichever box hears it first
+         * says so, once.
+         */
+        private var carried: String? = null
     }
 }
 

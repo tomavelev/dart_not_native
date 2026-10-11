@@ -1164,7 +1164,9 @@ class UIBuilder {
   /// **Drag and drop.** A box with [dragData] can be picked up (after a long
   /// press where the platform distinguishes) and a box with [onDrop] receives
   /// the string another box carried. `<dropEventId>_hover` fires with
-  /// `{over: bool}` as a drag enters and leaves.
+  /// `{over: bool}` as a drag enters and leaves. [onDrag] hears the box's own
+  /// drag begin and end - `<dragEventId>_start` when it is picked up and
+  /// `_end` when it is let go, wherever that is and after any drop it made.
   ///
   /// **Measuring.** [onSize] fires with `{width, height}` when the box is laid
   /// out and whenever that changes, which is how a screen learns how much room
@@ -1218,6 +1220,7 @@ class UIBuilder {
     String? panAxis,
     bool ripple = false,
     String? dragData,
+    void Function(String phase)? onDrag,
     void Function(String data)? onDrop,
     void Function(bool over)? onDropHover,
     void Function(double width, double height)? onSize,
@@ -1273,6 +1276,13 @@ class UIBuilder {
       'drop',
       onDrop == null ? null : (d) => onDrop('${d['data'] ?? ''}'),
     );
+    final drag = bind(
+      'drag',
+      dragData == null || onDrag == null
+          ? null
+          : (d) => onDrag('${d['phase']}'.substring(1)),
+      phases: const ['_start', '_end'],
+    );
     if (drop != null && onDropHover != null) {
       EventBindings.required.on(
         '${drop}_hover',
@@ -1315,6 +1325,7 @@ class UIBuilder {
         if (pan != null && panAxis != null) 'panAxis': panAxis,
         if (ripple) 'ripple': true,
         if (dragData != null) 'dragData': dragData,
+        if (drag != null) 'dragEventId': drag,
         if (drop != null) 'dropEventId': drop,
         if (size != null) 'sizeEventId': size,
         if (animateMs != null) 'animateMs': animateMs,

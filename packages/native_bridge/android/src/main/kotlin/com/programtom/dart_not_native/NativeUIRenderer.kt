@@ -5026,6 +5026,7 @@ class NativeUIRenderer(
         drop = node["dropEventId"] as? String,
         size = node["sizeEventId"] as? String,
         dragData = node["dragData"] as? String,
+        drag = node["dragEventId"] as? String,
         ignorePointer = node["ignorePointer"] == true,
     )
 
