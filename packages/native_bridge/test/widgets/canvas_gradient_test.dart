@@ -124,4 +124,44 @@ void main() {
 
     expect(paints.any((paint) => paint.containsKey('gradient')), isFalse);
   });
+
+  test('a sweep is its centre, where it starts, and stops as shares of a turn',
+      () {
+    final paints = _paints((canvas, size) {
+      const rect = Rect.fromLTWH(0, 0, 200, 100);
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..shader = const SweepGradient(
+            colors: [_red, _blue],
+            startAngle: 1,
+            endAngle: 1 + 3.141592653589793,
+          ).createShader(rect),
+      );
+    });
+
+    final gradient = paints.single['gradient'] as Map;
+    expect(gradient['type'], 'sweep');
+    expect(gradient['center'], [100.0, 50.0]);
+    expect(gradient['angle'], 1);
+    expect(gradient['colors'], ['#ff0000', '#0000ff']);
+    expect((gradient['stops'] as List)[0], 0);
+    expect((gradient['stops'] as List)[1], closeTo(0.5, 1e-9));
+  });
+
+  test('a sweep\'s own stops are stretched over its share of the turn', () {
+    final paints = _paints((canvas, size) {
+      const rect = Rect.fromLTWH(0, 0, 100, 100);
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..shader = const SweepGradient(
+            colors: [_red, _blue, _red],
+            stops: [0, 0.25, 1],
+          ).createShader(rect),
+      );
+    });
+
+    expect((paints.single['gradient'] as Map)['stops'], [0.0, 0.25, 1.0]);
+  });
 }

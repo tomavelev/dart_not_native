@@ -624,6 +624,42 @@ class NativeUIRenderer {
    pins that every node type appears in the dispatch - so changes here need a
    device or simulator to develop against.
    */
+  /// Moves from the page on screen to the one about to be drawn.
+  ///
+  /// A picture of the container as it is now is laid over it and fades away
+  /// over the transition's `ms`, so whatever is drawn underneath in the
+  /// meantime is uncovered rather than swapped in. A pushed page slides in
+  /// from the end of the screen while that happens; a popped one - the
+  /// picture - slides off towards it.
+  private func movePages(_ container: UIView, _ transition: [String: Any], rtl: Bool) {
+    let ms = (transition["ms"] as? NSNumber)?.doubleValue ?? 300
+    guard ms > 0, container.bounds.width > 0, let above = container.superview,
+      let leaving = container.snapshotView(afterScreenUpdates: false)
+    else { return }
+    leaving.frame = container.frame
+    leaving.isUserInteractionEnabled = false
+    above.insertSubview(leaving, aboveSubview: container)
+    let kind = transition["kind"] as? String
+    let travel = container.bounds.width * 0.25 * (rtl ? -1 : 1)
+    // The page is not drawn yet: this is called before the render, and the
+    // animation is set going once it has been.
+    DispatchQueue.main.async { [weak self] in
+      let page = self?.currentRoot
+      if kind == "push" { page?.transform = CGAffineTransform(translationX: travel, y: 0) }
+      UIView.animate(
+        withDuration: ms / 1000, delay: 0, options: [.curveEaseOut, .allowUserInteraction],
+        animations: {
+          leaving.alpha = 0
+          if kind == "pop" { leaving.transform = CGAffineTransform(translationX: travel, y: 0) }
+          if kind == "push" { page?.transform = .identity }
+        },
+        completion: { _ in
+          leaving.removeFromSuperview()
+          page?.transform = .identity
+        })
+    }
+  }
+
   private func renderTree(_ tree: [String: Any]) -> [String: Any]? {
     guard let container = rootContainer else {
       return ["error": "Error: container not initialized"]
@@ -643,6 +679,16 @@ class NativeUIRenderer {
     // change of direction rebuilds, for the reason a change of appearance does.
     let rtl = (next["textDirection"] as? String) == "rtl"
     next.removeValue(forKey: "textDirection")
+    // How the page was reached is about the screen too, and on one tree only.
+    let transition = next["pageTransition"] as? [String: Any]
+    next.removeValue(forKey: "pageTransition")
+    if transition != nil, var props = next["props"] as? [String: Any] {
+      props.removeValue(forKey: "pageTransition")
+      next["props"] = props
+    }
+    if let transition = transition, currentTree != nil {
+      movePages(container, transition, rtl: rtl)
+    }
     if isRTL != rtl {
       isRTL = rtl
       currentTree = nil
@@ -2660,6 +2706,12 @@ class NativeUIRenderer {
       default: return .scaleAspectFill
       }
     }()
+    // A tint: the picture's shape in one colour. The view is marked so that
+    // the picture, which arrives later, is shown as a template for it.
+    if let tint = (node["color"] as? String).flatMap({ UIColor(hex: $0) }) {
+      imageView.tintColor = tint
+      imageView.tag = tintedImageTag
+    }
     imageView.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(imageView)
 
@@ -2681,9 +2733,13 @@ class NativeUIRenderer {
     return container
   }
 
+  /// Marks an image view whose picture is drawn in the view's tint.
+  private let tintedImageTag = 0x646e_6e74
+
   /// Puts [image] in [view] and takes what stood in for it out of the way.
   private func show(_ image: UIImage, in view: UIImageView, hiding fallback: UIView) {
-    view.image = image
+    view.image =
+      view.tag == tintedImageTag ? image.withRenderingMode(.alwaysTemplate) : image
     fallback.isHidden = true
     if let host = fallback as? ImageFallbackHost {
       NSLayoutConstraint.deactivate(host.holds)
@@ -4313,8 +4369,12 @@ class NativeUIRenderer {
   private func renderSnackbar(_ node: [String: Any]) -> UIView {
     // Above the scaffold's bottom bar and floating button, not over them.
     let host = SnackbarHost()
+    // A bar fixed to the bottom sits on the bottom bar and takes no notice of
+    // the floating button.
+    let sitsOnBar = node["fixed"] as? Bool ?? false
     host.below = { [weak self] in
-      [self?.scaffoldBottomBar, self?.scaffoldFab].compactMap { $0 }
+      (sitsOnBar ? [self?.scaffoldBottomBar] : [self?.scaffoldBottomBar, self?.scaffoldFab])
+        .compactMap { $0 }
     }
     snackbarHost = host
 
@@ -4322,7 +4382,16 @@ class NativeUIRenderer {
     // The look the app stated, or the bar's own.
     bar.backgroundColor = color(node["backgroundColor"], fallback: inversePalette.surface)
     // No rounder than a stadium: half the bar's least height.
-    bar.layer.cornerRadius = min(number(node["borderRadius"]) ?? 4, 24)
+    let fixed = node["fixed"] as? Bool ?? false
+    // A fixed bar is square unless it was told otherwise.
+    bar.layer.cornerRadius = min(number(node["borderRadius"]) ?? (fixed ? 0 : 4), 24)
+    // How far it stands off the screen, as the shadow it casts.
+    if let elevation = number(node["elevation"]), elevation > 0 {
+      bar.layer.shadowColor = UIColor.black.cgColor
+      bar.layer.shadowOpacity = 0.3
+      bar.layer.shadowRadius = elevation
+      bar.layer.shadowOffset = CGSize(width: 0, height: elevation / 2)
+    }
     bar.translatesAutoresizingMaskIntoConstraints = false
     host.addSubview(bar)
 
@@ -4356,17 +4425,41 @@ class NativeUIRenderer {
     }
 
     pin(stack, to: bar)
-    let preferredWidth = bar.widthAnchor.constraint(equalTo: host.widthAnchor, constant: -32)
+    // As wide as the app said, where it said; the limits below still hold it
+    // off the edges of a screen narrower than that.
+    let preferredWidth =
+      number(node["width"]).map { bar.widthAnchor.constraint(equalToConstant: $0) }
+      ?? bar.widthAnchor.constraint(equalTo: host.widthAnchor, constant: -32)
     preferredWidth.priority = .defaultHigh
-    NSLayoutConstraint.activate([
+    // The room around it: none for a bar fixed to the bottom, the app's own
+    // for one that floats, and the bar's sixteen otherwise.
+    let stated = node["margin"] as? [Any]
+    let room: [CGFloat]? =
+      fixed
+      ? [0, 0, 0, 0]
+      : stated.flatMap { $0.count == 4 ? $0.map { CGFloat(number($0) ?? 0) } : nil }
+    var constraints = [
       stack.heightAnchor.constraint(greaterThanOrEqualToConstant: 48),
-      bar.centerXAnchor.constraint(equalTo: host.centerXAnchor),
-      bar.widthAnchor.constraint(lessThanOrEqualToConstant: 600),
-      bar.widthAnchor.constraint(lessThanOrEqualTo: host.widthAnchor, constant: -32),
-      preferredWidth,
       bar.bottomAnchor.constraint(
-        equalTo: host.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-    ])
+        equalTo: fixed ? host.bottomAnchor : host.safeAreaLayoutGuide.bottomAnchor,
+        constant: -(room?[3] ?? 16)),
+    ]
+    if let room = room, number(node["width"]) == nil {
+      // Edge to edge but for the room: physical sides, as a margin's are.
+      constraints += [
+        bar.leftAnchor.constraint(equalTo: host.leftAnchor, constant: room[0]),
+        bar.rightAnchor.constraint(equalTo: host.rightAnchor, constant: -room[2]),
+      ]
+    } else {
+      constraints += [
+        bar.centerXAnchor.constraint(equalTo: host.centerXAnchor),
+        bar.widthAnchor.constraint(lessThanOrEqualToConstant: 600),
+        bar.widthAnchor.constraint(lessThanOrEqualTo: host.widthAnchor, constant: -32),
+        preferredWidth,
+      ]
+    }
+    NSLayoutConstraint.activate(constraints)
+    host.gap = fixed ? 0 : 8
 
     trackSnackbar(node)
     return host
@@ -4883,7 +4976,7 @@ class NativeUIRenderer {
       return
     }
     scroll.appliedScrollVersion = version
-    scroll.jump(to: offset)
+    scroll.jump(to: offset, animated: node["scrollAnimated"] as? Bool ?? false)
   }
 
   private func patchScroll(_ view: UIView, _ node: [String: Any]) -> Bool {
@@ -5842,6 +5935,9 @@ private class PassthroughView: UIView {
 private class SnackbarHost: PassthroughView {
   var below: (() -> [UIView])?
 
+  /// How far above them the bar stops.
+  var gap: CGFloat = 8
+
   override func layoutSubviews() {
     super.layoutSubviews()
     guard let bar = subviews.first else { return }
@@ -5853,7 +5949,7 @@ private class SnackbarHost: PassthroughView {
     }
     // From the centre and the bounds, which a transform leaves alone.
     let bottom = bar.center.y + bar.bounds.height / 2
-    let lift = ceiling == CGFloat.greatestFiniteMagnitude ? 0 : max(0, bottom + 8 - ceiling)
+    let lift = ceiling == CGFloat.greatestFiniteMagnitude ? 0 : max(0, bottom + gap - ceiling)
     bar.transform = lift > 0 ? CGAffineTransform(translationX: 0, y: -lift) : .identity
   }
 

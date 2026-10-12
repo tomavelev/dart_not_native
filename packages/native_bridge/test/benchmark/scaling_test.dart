@@ -12,7 +12,6 @@
 /// no test.
 library;
 
-import 'package:dart_not_native/core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'bench.dart';

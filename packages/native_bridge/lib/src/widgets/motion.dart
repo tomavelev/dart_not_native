@@ -269,8 +269,8 @@ class AnimatedOpacity extends Widget {
 ///
 /// A first render sets the box; a later one that changes it moves there over
 /// [duration], along [curve]. What moves is what a renderer can move: size,
-/// colour, opacity and the transform. A change to padding, margin, alignment
-/// or a border lands at once.
+/// colour, opacity, the transform, padding, margin and where the child is
+/// aligned.
 ///
 /// ```dart
 /// AnimatedContainer(
@@ -484,9 +484,8 @@ class _AnimatedSlideState extends State<AnimatedSlide> {
   });
 }
 
-/// A [Padding] with a duration. The protocol does not animate insets, so the
-/// new padding lands at once; the widget is here so the code that uses it
-/// reads the same.
+/// A [Padding] that moves to its new insets over [duration] - Flutter's
+/// `AnimatedPadding`.
 class AnimatedPadding extends Widget {
   const AnimatedPadding({
     super.key,
@@ -520,8 +519,8 @@ class AnimatedPadding extends Widget {
   }
 }
 
-/// An [Align] with a duration. The protocol does not animate an alignment, so
-/// the child lands in its new place at once.
+/// An [Align] whose child slides to its new place over [duration] -
+/// Flutter's `AnimatedAlign`.
 class AnimatedAlign extends Widget {
   const AnimatedAlign({
     super.key,

@@ -253,11 +253,13 @@ void main() {
             textColor: '#fffde7',
             actionColor: '#ffeb3b',
             borderRadius: 12,
+            width: 280,
           ),
         ]),
       );
       final bar = web.document.getElementById('styled')! as web.HTMLElement;
       final action = bar.querySelector('button')! as web.HTMLElement;
+      expect(bar.style.width, contains('280px'));
 
       expect(bar.style.background, 'rgb(46, 125, 50)');
       expect(bar.style.color, 'rgb(255, 253, 231)');
@@ -268,6 +270,42 @@ void main() {
       final plain = web.document.getElementById('deleted')! as web.HTMLElement;
       expect(plain.style.background, isEmpty);
       expect(plain.style.borderRadius, isEmpty);
+      expect(plain.style.width, isEmpty);
+      expect(plain.style.boxShadow, isEmpty);
+      expect(plain.classList.contains('dnn-snackbar--fixed'), isFalse);
+
+      await renderer.render(
+        withOverlays([
+          UIBuilder.snackbar(
+            id: 'roomy',
+            message: 'Saved',
+            duration: Duration.zero,
+            margin: [40, 0, 24, 30],
+            elevation: 0,
+          ),
+        ]),
+      );
+      final roomy = web.document.getElementById('roomy')! as web.HTMLElement;
+      expect(roomy.style.left, '40px');
+      expect(roomy.style.right, '24px');
+      expect(roomy.style.marginBottom, '14px', reason: '30, less the 16 it has');
+      expect(roomy.style.boxShadow, 'none');
+
+      await renderer.render(
+        withOverlays([
+          UIBuilder.snackbar(
+            id: 'flush',
+            message: 'Saved',
+            duration: Duration.zero,
+            fixed: true,
+            elevation: 4,
+          ),
+        ]),
+      );
+      final flush = web.document.getElementById('flush')! as web.HTMLElement;
+      expect(flush.classList.contains('dnn-snackbar--fixed'), isTrue);
+      expect(flush.style.borderRadius, '0px');
+      expect(flush.style.boxShadow, contains('10px'));
     });
 
     test('are announced politely, and their action sends its event', () async {

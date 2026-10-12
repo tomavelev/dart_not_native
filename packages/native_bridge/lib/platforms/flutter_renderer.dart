@@ -117,6 +117,17 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   @override
   Future<RenderError?> render(WidgetNode tree) async {
     this.tree = tree;
+    // A tree that says it is another page turns the page here, where every
+    // tree passes once: the widgets are built from whichever tree is the
+    // last by the next frame, and that need not be the one that said so.
+    final transition = tree.props[RootProps.pageTransition];
+    if (transition is Map) {
+      _page++;
+      _pageKind = transition['kind'];
+      _pageTime = Duration(
+        milliseconds: (transition['ms'] as num?)?.toInt() ?? 300,
+      );
+    }
     // Text fields are reconciled here rather than when the widget builds: a
     // rebuild can be deferred to the next frame, and an app that changes a
     // field's value twice before then (typing, then a submit that clears it)
@@ -182,6 +193,12 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   /// before the first frame and for a tree no build produced.
   int? _shownBuild;
 
+  /// Which page is showing, counted from the trees that said they were a new
+  /// one ([RootProps.pageTransition]), and how the last of them was reached.
+  int _page = 0;
+  Object? _pageKind;
+  Duration _pageTime = const Duration(milliseconds: 300);
+
   @override
   void onEvent(String eventId, Function(Map<String, dynamic>) handler) {
     _handlers[eventId] = handler;
@@ -224,18 +241,27 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // inside a Flutter app whose own locale is Arabic. Everything Flutter
     // draws below - a row's order, an app bar's ends, a list tile, a text
     // field's icons, the back arrow - follows this one widget.
+    final rtl = tree.props[RootProps.textDirection] == 'rtl';
+    // The page's number is its key below: a new one is what makes the switch
+    // keep the widgets of the page before it and move from one to the other.
+    final page = _page;
+    final kind = _pageKind;
     return Directionality(
-      textDirection: tree.props[RootProps.textDirection] == 'rtl'
-          ? TextDirection.rtl
-          : TextDirection.ltr,
-      child: Builder(
-        builder: (context) {
-          final widget = buildNode(tree, context);
-          if (tree.type == 'Scaffold' || tree.type == 'NavigationStack') {
-            return widget;
-          }
-          return Material(type: MaterialType.transparency, child: widget);
-        },
+      textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+      child: _PageSwitch(
+        page: page,
+        kind: kind,
+        time: _pageTime,
+        rtl: rtl,
+        child: Builder(
+          builder: (context) {
+            final widget = buildNode(tree, context);
+            if (tree.type == 'Scaffold' || tree.type == 'NavigationStack') {
+              return widget;
+            }
+            return Material(type: MaterialType.transparency, child: widget);
+          },
+        ),
       ),
     );
   }
@@ -1011,6 +1037,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         : (context, child, frame, wasSynchronouslyLoaded) =>
               wasSynchronouslyLoaded || frame != null ? child : fallback;
 
+    final tint = _color(p['color']);
     final image =
         src.startsWith('http://') ||
             src.startsWith('https://') ||
@@ -1020,6 +1047,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             width: width,
             height: height,
             fit: fit,
+            color: tint,
+            colorBlendMode: tint == null ? null : BlendMode.srcIn,
             frameBuilder: whileLoading,
             errorBuilder: onError,
           )
@@ -1028,6 +1057,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             width: width,
             height: height,
             fit: fit,
+            color: tint,
+            colorBlendMode: tint == null ? null : BlendMode.srcIn,
             frameBuilder: whileLoading,
             errorBuilder: onError,
           );
@@ -1805,15 +1836,33 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     if (alignment != null && content != null) {
       // The factors keep a box with no size of its own hugging its child;
       // Align alone would grow to fill whatever it is offered.
-      content = Align(
-        alignment: alignment,
-        widthFactor: 1,
-        heightFactor: 1,
-        child: content,
-      );
+      content = duration == null
+          ? Align(
+              alignment: alignment,
+              widthFactor: 1,
+              heightFactor: 1,
+              child: content,
+            )
+          : AnimatedAlign(
+              alignment: alignment,
+              widthFactor: 1,
+              heightFactor: 1,
+              duration: duration,
+              curve: curve,
+              child: content,
+            );
     }
     final padding = _edges(p['padding']);
-    if (padding != null) content = Padding(padding: padding, child: content);
+    if (padding != null) {
+      content = duration == null
+          ? Padding(padding: padding, child: content)
+          : AnimatedPadding(
+              padding: padding,
+              duration: duration,
+              curve: curve,
+              child: content,
+            );
+    }
     // A Container with no child grows to fill its parent, and a box with none
     // hugs nothing instead.
     content ??= const SizedBox.shrink();
@@ -2978,14 +3027,24 @@ class _NodeSnackbarState extends State<_NodeSnackbar> {
           // Material has it: lifted by however far they reach past where the
           // snackbar would otherwise end.
           builder: (context, taken, child) {
-            final reach = math.max(taken.bar, taken.fab);
-            final own = 16 + MediaQuery.paddingOf(context).bottom;
+            // A fixed bar sits on the bottom bar and takes no notice of the
+            // floating button; a floating one clears both, by its margin.
+            final fixed = p['fixed'] == true;
+            final margin = fixed
+                ? EdgeInsets.zero
+                : FlutterUIRenderer._edges(p['margin']) ??
+                      const EdgeInsets.all(16);
+            final reach = fixed ? taken.bar : math.max(taken.bar, taken.fab);
+            final gap = fixed ? 0.0 : 8.0;
+            final own = margin.bottom + MediaQuery.paddingOf(context).bottom;
             return Padding(
               padding: EdgeInsets.fromLTRB(
+                margin.left,
                 16,
-                16,
-                16,
-                reach == 0 ? 16 : 16 + math.max(0, reach + 8 - own),
+                margin.right,
+                reach == 0
+                    ? margin.bottom
+                    : margin.bottom + math.max(0, reach + gap - own),
               ),
               child: child,
             );
@@ -2993,16 +3052,20 @@ class _NodeSnackbarState extends State<_NodeSnackbar> {
           child: Semantics(
             container: true,
             liveRegion: true,
-            child: Material(
+            child: _SnackbarWidth(
+              width: FlutterUIRenderer._double(p['width']),
+              child: Material(
               color: FlutterUIRenderer._color(p['backgroundColor']) ??
                   FlutterUIRenderer._color(inverse.surface) ??
                   const Color(0xff323232),
-              elevation: 6,
+              elevation: FlutterUIRenderer._double(p['elevation']) ?? 6,
               // As round as the app said - which, for a stadium, is as round
-              // as the bar is tall - or the bar's own four.
+              // as the bar is tall - or the bar's own four; a fixed bar is
+              // square unless it was told otherwise.
               borderRadius: BorderRadius.circular(
                 math.min(
-                  FlutterUIRenderer._double(p['borderRadius']) ?? 4,
+                  FlutterUIRenderer._double(p['borderRadius']) ??
+                      (p['fixed'] == true ? 0 : 4),
                   1000,
                 ),
               ),
@@ -3043,9 +3106,28 @@ class _NodeSnackbarState extends State<_NodeSnackbar> {
                 ),
               ),
             ),
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A snackbar as wide as the app said, where it said; as wide as it is given
+/// room to be otherwise.
+class _SnackbarWidth extends StatelessWidget {
+  const _SnackbarWidth({required this.width, required this.child});
+  final double? width;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = this.width;
+    if (width == null) return child;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: width),
+      child: child,
     );
   }
 }
@@ -3154,13 +3236,20 @@ class _LazyListController extends ScrollController {
   /// Moves the list to [offset]: where it starts, when it is not on screen
   /// yet, and a jump once the frame is laid out when it is - by then the rows
   /// that came with the ask are there, and the offset can be held to them.
-  void moveTo(double offset) {
+  void moveTo(double offset, {bool animated = false}) {
     _lastOffset = math.max(0, offset);
     if (!hasClients) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!hasClients) return;
       final position = positions.last;
-      jumpTo(offset.clamp(position.minScrollExtent, position.maxScrollExtent));
+      final held = offset
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if (animated) {
+        animateTo(held, duration: _travel, curve: Curves.easeInOut);
+      } else {
+        jumpTo(held);
+      }
     });
   }
 }
@@ -3268,7 +3357,10 @@ class _NodeLazyListState extends State<_NodeLazyList> {
       widget.props['scrollVersion'],
     )?.toInt();
     if (widget.renderer._takeScrollVersion(_listId, version)) {
-      _controller.moveTo(offset);
+      _controller.moveTo(
+        offset,
+        animated: widget.props['scrollAnimated'] == true,
+      );
     }
   }
 
@@ -4210,7 +4302,9 @@ class _CommandPainter extends CustomPainter {
   Paint _paint(Object? spec) {
     final paint = Paint()..isAntiAlias = true;
     if (spec is! Map) return paint..color = textColor;
+    final blur = FlutterUIRenderer._double(spec['blur']) ?? 0;
     return paint
+      ..maskFilter = blur > 0 ? MaskFilter.blur(BlurStyle.normal, blur) : null
       ..shader = _shader(spec['gradient'])
       ..color = FlutterUIRenderer._color(spec['color']) ?? textColor
       ..style = spec['style'] == 'stroke'
@@ -4253,6 +4347,17 @@ class _CommandPainter extends CustomPainter {
       final radius = FlutterUIRenderer._double(spec['radius']) ?? 0;
       if (radius <= 0) return null;
       return ui.Gradient.radial(point(spec['center']), radius, colors, stops);
+    }
+    if (spec['type'] == 'sweep') {
+      final angle = FlutterUIRenderer._double(spec['angle']) ?? 0;
+      return ui.Gradient.sweep(
+        point(spec['center']),
+        colors,
+        stops,
+        TileMode.clamp,
+        angle,
+        angle + math.pi * 2,
+      );
     }
     return ui.Gradient.linear(
       point(spec['from']),
@@ -4339,6 +4444,9 @@ class _CommandPainter extends CustomPainter {
         canvas.clipRRect(
           RRect.fromRectAndRadius(_rect(c, 1), Radius.circular(_n(c, 5))),
         );
+      case 'clipPath':
+        final segments = c.length > 1 ? c[1] : null;
+        if (segments is List) canvas.clipPath(_path(segments));
     }
   }
 
@@ -4506,9 +4614,14 @@ class _NodeScrollState extends State<_NodeScroll> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_controller.hasClients) return;
       final position = _controller.position;
-      _controller.jumpTo(
-        offset.clamp(position.minScrollExtent, position.maxScrollExtent),
-      );
+      final held = offset
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if (widget.props['scrollAnimated'] == true) {
+        _controller.animateTo(held, duration: _travel, curve: Curves.easeInOut);
+      } else {
+        _controller.jumpTo(held);
+      }
     });
   }
 
@@ -4765,5 +4878,105 @@ class _PickerRoute extends RawDialogRoute<Object?> {
   bool didPop(Object? result) {
     onResult(result);
     return false;
+  }
+}
+
+/// How long a scroller takes to travel to an offset it was asked to animate
+/// to: the pace Material keeps.
+const _travel = Duration(milliseconds: 300);
+
+/// One page at a time, and for the length of a transition the page before it
+/// as well: the old one fades away over the new, a pushed page slides in from
+/// the end of the screen and a popped one slides off towards it.
+///
+/// Not an `AnimatedSwitcher`, which gives a child that leaves the time it was
+/// given when it arrived: a page leaves in the time its own transition says.
+class _PageSwitch extends StatefulWidget {
+  const _PageSwitch({
+    required this.page,
+    required this.kind,
+    required this.time,
+    required this.rtl,
+    required this.child,
+  });
+  final int page;
+  final Object? kind;
+  final Duration time;
+  final bool rtl;
+  final Widget child;
+
+  @override
+  State<_PageSwitch> createState() => _PageSwitchState();
+}
+
+class _PageSwitchState extends State<_PageSwitch>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _run = AnimationController(
+    vsync: this,
+    value: 1,
+  );
+  late final Animation<double> _eased = CurvedAnimation(
+    parent: _run,
+    curve: Curves.easeOut,
+  );
+  Widget? _leaving;
+  int _leavingPage = 0;
+
+  @override
+  void didUpdateWidget(_PageSwitch oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.page == widget.page) return;
+    _leaving = oldWidget.child;
+    _leavingPage = oldWidget.page;
+    _run.duration = widget.time;
+    _run.forward(from: 0).whenCompleteOrCancel(() {
+      if (mounted && _run.isCompleted) setState(() => _leaving = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _run.dispose();
+    super.dispose();
+  }
+
+  Animation<Offset> _slide({required bool away}) {
+    final end = Offset(widget.rtl ? -0.25 : 0.25, 0);
+    return Tween<Offset>(
+      begin: away ? Offset.zero : end,
+      end: away ? end : Offset.zero,
+    ).animate(_eased);
+  }
+
+  static const _still = AlwaysStoppedAnimation<Offset>(Offset.zero);
+
+  @override
+  Widget build(BuildContext context) {
+    final leaving = _leaving;
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        // The same wrapping whether it is moving or not, so the page's
+        // widgets are the same ones once the transition is over.
+        SlideTransition(
+          key: ValueKey<int>(widget.page),
+          position: leaving != null && widget.kind == 'push'
+              ? _slide(away: false)
+              : _still,
+          child: widget.child,
+        ),
+        if (leaving != null)
+          IgnorePointer(
+            key: ValueKey<int>(_leavingPage),
+            child: SlideTransition(
+              position: widget.kind == 'pop' ? _slide(away: true) : _still,
+              child: FadeTransition(
+                opacity: ReverseAnimation(_eased),
+                child: leaving,
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }

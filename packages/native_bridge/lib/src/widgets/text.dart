@@ -888,8 +888,9 @@ class Image extends Widget {
   final double? width;
   final double? height;
 
-  /// Accepted and not applied: tinting an image is not something the node
-  /// carries.
+  /// A tint: the picture is drawn as its own shape filled with this colour,
+  /// which is Flutter's default way of blending the two (`BlendMode.srcIn`)
+  /// and the only one carried.
   final Color? color;
 
   /// How the picture fills its box. Left null it is fitted inside, whole,
@@ -930,6 +931,7 @@ class Image extends Widget {
     },
     width: width,
     height: height,
+    color: color?._hex,
     fit: switch (fit) {
       null || BoxFit.contain || BoxFit.fitWidth || BoxFit.fitHeight => 'contain',
       BoxFit.cover => 'cover',

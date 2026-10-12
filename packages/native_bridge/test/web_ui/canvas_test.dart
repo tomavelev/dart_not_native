@@ -317,6 +317,108 @@ void main() {
     expect(pixel(10, 10), [255, 0, 0, 255], reason: 'no translate left over');
   });
 
+  test('a sweep turns its colours about its centre', () async {
+    await renderer.render(
+      picture(
+        [
+          ['rect', 0, 0, 100, 80, 0],
+        ],
+        paints: [
+          {
+            'color': '#000000',
+            'gradient': {
+              'type': 'sweep',
+              'center': [50, 40],
+              'angle': 0,
+              'colors': ['#ff0000', '#0000ff'],
+              'stops': [0, 1],
+            },
+          },
+        ],
+      ),
+    );
+
+    // Clockwise from three o'clock: just below it the turn has barely begun,
+    // just above it the turn is nearly done.
+    final begun = pixel(90, 43);
+    final done = pixel(90, 37);
+    expect(begun[0], greaterThan(230), reason: 'red at the start');
+    expect(begun[2], lessThan(25));
+    expect(done[2], greaterThan(230), reason: 'blue at the end');
+    expect(done[0], lessThan(25));
+    // Half way round, at nine o'clock, it is half of each.
+    final half = pixel(10, 40);
+    expect(half[0], closeTo(128, 12));
+    expect(half[2], closeTo(128, 12));
+  });
+
+  test('a blurred paint spreads past the shape\'s edge and thins inside it',
+      () async {
+    await renderer.render(
+      picture(
+        [
+          ['rect', 30, 20, 40, 40, 0],
+          ['rect', 0, 70, 10, 10, 1],
+        ],
+        paints: [
+          {'color': '#ff0000', 'blur': 4},
+          {'color': '#ff0000'},
+        ],
+      ),
+    );
+
+    expect(pixel(50, 40)[3], greaterThan(240), reason: 'solid in the middle');
+    final outside = pixel(26, 40)[3];
+    expect(outside, greaterThan(10), reason: 'ink beyond the edge');
+    expect(outside, lessThan(200));
+    expect(pixel(5, 75), [255, 0, 0, 255], reason: 'the next paint is sharp');
+    expect(pixel(12, 75)[3], 0);
+  });
+
+  test('a path clips what is drawn after it', () async {
+    await renderer.render(
+      picture([
+        ['save'],
+        [
+          'clipPath',
+          [
+            ['M', 0, 0],
+            ['L', 60, 0],
+            ['L', 0, 60],
+            ['Z'],
+          ],
+        ],
+        ['rect', 0, 0, 100, 80, 0],
+        ['restore'],
+        ['rect', 90, 70, 10, 10, 0],
+      ]),
+    );
+
+    expect(pixel(10, 10), [255, 0, 0, 255], reason: 'inside the triangle');
+    expect(pixel(50, 50), [0, 0, 0, 0], reason: 'outside it');
+    expect(pixel(95, 75), [255, 0, 0, 255], reason: 'the clip was restored');
+  });
+
+  test('a path keeps drawing as it did once the walk is shared', () async {
+    await renderer.render(
+      picture([
+        [
+          'path',
+          [
+            ['M', 0, 0],
+            ['L', 60, 0],
+            ['L', 0, 60],
+            ['Z'],
+          ],
+          0,
+        ],
+      ]),
+    );
+
+    expect(pixel(10, 10), [255, 0, 0, 255]);
+    expect(pixel(50, 50), [0, 0, 0, 0]);
+  });
+
   test('text is drawn from its top-left corner', () async {
     await renderer.render(
       picture([

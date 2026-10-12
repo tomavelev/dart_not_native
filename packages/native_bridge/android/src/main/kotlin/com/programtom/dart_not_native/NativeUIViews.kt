@@ -469,6 +469,11 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         return b.copy(
             width = mixOrJump(a.width, b.width),
             height = mixOrJump(a.height, b.height),
+            padding = List(4) { mix(a.padding[it].toFloat(), b.padding[it].toFloat()).roundToInt() },
+            margin = List(4) { mix(a.margin[it].toFloat(), b.margin[it].toFloat()).roundToInt() },
+            // A child that was filling the box has no place to travel from.
+            alignX = mixOrJump(a.alignX, b.alignX),
+            alignY = mixOrJump(a.alignY, b.alignY),
             color = color,
             borderWidth = mix(a.borderWidth, b.borderWidth),
             borderColor = mixColor(a.borderColor, b.borderColor),
@@ -1458,6 +1463,10 @@ internal fun compileCanvas(
                 val path = Path().apply { addRoundRect(rect(1), radius, radius, Path.Direction.CW) }
                 ops += CanvasOp { it.clipPath(path) }
             }
+            "clipPath" -> {
+                val path = canvasPath(c.getOrNull(1) as? List<*> ?: emptyList<Any?>())
+                ops += CanvasOp { it.clipPath(path) }
+            }
         }
     }
     return ops
@@ -1480,6 +1489,12 @@ private fun canvasPaint(spec: Map<*, *>?): Paint = Paint(Paint.ANTI_ALIAS_FLAG).
         else -> Paint.Join.MITER
     }
     shader = canvasShader(spec?.get("gradient") as? Map<*, *>)
+    // A blur by its sigma; the platform takes a radius, which is the sigma
+    // by the root of three, near enough.
+    (spec?.get("blur") as? Number)?.toFloat()?.takeIf { it > 0f }?.let {
+        maskFilter = android.graphics.BlurMaskFilter(
+            it * 1.7320508f, android.graphics.BlurMaskFilter.Blur.NORMAL)
+    }
 }
 
 /** A paint's `gradient`, placed in the canvas's own coordinates. */
@@ -1498,6 +1513,18 @@ private fun canvasShader(spec: Map<*, *>?): Shader? {
         if (radius <= 0f) return null
         return RadialGradient(
             at("center", 0), at("center", 1), radius, colors, stops, Shader.TileMode.CLAMP)
+    }
+    if (spec["type"] == "sweep") {
+        // The platform's sweep starts at three o'clock; turned to start
+        // where this one does.
+        val angle = (spec["angle"] as? Number)?.toFloat() ?: 0f
+        return android.graphics.SweepGradient(
+            at("center", 0), at("center", 1), colors, stops
+        ).apply {
+            setLocalMatrix(android.graphics.Matrix().apply {
+                setRotate(degrees(angle), at("center", 0), at("center", 1))
+            })
+        }
     }
     return LinearGradient(
         at("from", 0), at("from", 1), at("to", 0), at("to", 1), colors, stops,
@@ -1858,10 +1885,26 @@ internal class ScrollMemory(private val view: ViewGroup, private val horizontal:
     private fun position() = if (horizontal) view.scrollX else view.scrollY
 
     private fun place(position: Int) {
+        if (smooth) {
+            // Travelled to, by the scroller's own animation; reported on the
+            // way like a drag, which is what it looks like.
+            smooth = false
+            val x = if (horizontal) position else 0
+            val y = if (horizontal) 0 else position
+            when (view) {
+                is android.widget.ScrollView -> { view.smoothScrollTo(x, y); return }
+                is android.widget.HorizontalScrollView -> { view.smoothScrollTo(x, y); return }
+                is androidx.core.widget.NestedScrollView -> { view.smoothScrollTo(x, y); return }
+                else -> Unit
+            }
+        }
         placing = true
         if (horizontal) view.scrollTo(position, 0) else view.scrollTo(0, position)
         placing = false
     }
+
+    /** Whether the next offset is travelled to rather than jumped to. */
+    var smooth = false
 
     /** Goes to [offset] now if there is a layout to go to it in, else at the next one. */
     fun jumpTo(offset: Int) {
@@ -2202,6 +2245,9 @@ internal class SnackbarHost(context: Context) :
     /** The room kept between the snackbar and what it is lifted above. */
     var gap = 0
 
+    /** Whether the bar stays above the floating button; a fixed one does not. */
+    var clearsFab = true
+
     private val at = IntArray(2)
 
     override fun onAttachedToWindow() {
@@ -2218,7 +2264,7 @@ internal class SnackbarHost(context: Context) :
         val bar = getChildAt(0) ?: return true
         val scaffold = (parent as? ViewGroup)?.let { scaffoldIn(it, 0) }
         var ceiling = Int.MAX_VALUE
-        for (below in listOf(scaffold?.bottomView, scaffold?.fabView)) {
+        for (below in listOf(scaffold?.bottomView, if (clearsFab) scaffold?.fabView else null)) {
             if (below == null || !below.isShown || below.height == 0) continue
             below.getLocationInWindow(at)
             ceiling = min(ceiling, at[1])

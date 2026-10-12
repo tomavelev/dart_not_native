@@ -79,4 +79,104 @@ void main() {
     expect(rounded['borderRadius'], 12);
     expect(stadium['borderRadius'], 999);
   });
+
+  test('a width is carried, and none is none', () async {
+    final narrow = await shown(
+      const SnackBar(content: Text('Saved'), width: 280),
+    );
+    final plain = await shown(const SnackBar(content: Text('Saved')));
+
+    expect(narrow['width'], 280);
+    expect(plain.containsKey('width'), isFalse);
+  });
+
+  test('a margin, a fixed bar and an elevation are carried', () async {
+    final floating = await shown(
+      const SnackBar(
+        content: Text('Saved'),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.fromLTRB(40, 0, 24, 30),
+        elevation: 0,
+      ),
+    );
+    final fixed = await shown(
+      const SnackBar(
+        content: Text('Saved'),
+        behavior: SnackBarBehavior.fixed,
+      ),
+    );
+
+    expect(floating['margin'], [40.0, 0.0, 24.0, 30.0]);
+    expect(floating['elevation'], 0);
+    expect(floating.containsKey('fixed'), isFalse);
+    expect(fixed['fixed'], isTrue);
+    expect(fixed.containsKey('margin'), isFalse);
+    expect(fixed.containsKey('elevation'), isFalse);
+  });
+
+  group('over a nested scaffold\'s floating button', () {
+    Future<Map<String, dynamic>> shownOverNested(
+      SnackBar bar, {
+      bool button = true,
+    }) async {
+      final app = AppTester.widget(
+        MaterialApp(
+          home: Scaffold(
+            body: Scaffold(
+              floatingActionButton: button
+                  ? FloatingActionButton(
+                      onPressed: () {},
+                      child: const Icon(Icons.add),
+                    )
+                  : null,
+              body: Builder(
+                builder: (context) => TextButton(
+                  key: const ValueKey('show'),
+                  onPressed: () =>
+                      ScaffoldMessenger.of(context).showSnackBar(bar),
+                  child: const Text('Show'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await app.tap('show');
+      return app.ofType('Snackbar').single.props;
+    }
+
+    test('the bar is told to stay above it', () async {
+      final props = await shownOverNested(const SnackBar(content: Text('Hi')));
+
+      expect(props['margin'], [16.0, 0.0, 16.0, 80.0]);
+    });
+
+    test('on top of a margin of its own', () async {
+      final props = await shownOverNested(
+        const SnackBar(
+          content: Text('Hi'),
+          margin: EdgeInsets.fromLTRB(40, 0, 24, 30),
+        ),
+      );
+
+      expect(props['margin'], [40.0, 0.0, 24.0, 94.0]);
+    });
+
+    test('a fixed bar takes no notice of a button', () async {
+      final props = await shownOverNested(
+        const SnackBar(content: Text('Hi'), behavior: SnackBarBehavior.fixed),
+      );
+
+      expect(props.containsKey('margin'), isFalse);
+    });
+
+    test('and with no button there is nothing to clear', () async {
+      final props = await shownOverNested(
+        const SnackBar(content: Text('Hi')),
+        button: false,
+      );
+
+      expect(props.containsKey('margin'), isFalse);
+    });
+  });
 }

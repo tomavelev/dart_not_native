@@ -73,6 +73,10 @@ class ScrollController extends ChangeNotifier {
   /// Whether the renderer has said where the scroller is.
   bool _reported = false;
 
+  /// Running while the scroller is taken to be moving: see
+  /// [ScrollEndNotification].
+  Timer? _restTimer;
+
   /// How far the renderer says the scroller can go, once it has said.
   double? _maxExtent;
 
@@ -112,23 +116,34 @@ class ScrollController extends ChangeNotifier {
   /// As [position], for code written against a controller with several.
   Iterable<ScrollPosition> get positions => hasClients ? [position] : const [];
 
+  /// Whether the offset last asked for is to be travelled to.
+  bool _animated = false;
+
   /// Scrolls to [value] at once.
   void jumpTo(double value) {
+    _animated = false;
+    _go(value);
+  }
+
+  void _go(double value) {
     _offset = math.max(0, value);
     _version++;
     notifyListeners();
     _owner?._requestRebuild();
   }
 
-  /// Scrolls to [offset]. The renderers are told where to go and not how, so
-  /// it arrives at once: [duration] and [curve] are accepted and not carried.
+  /// Scrolls to [offset], travelling there: the renderer's own smooth
+  /// scroll, at the pace the platform keeps. [duration] is how long the
+  /// returned future takes - the renderers are not told it - and [curve] is
+  /// not carried; a duration of zero is a [jumpTo].
   Future<void> animateTo(
     double offset, {
     required Duration duration,
     required Curve curve,
   }) {
-    jumpTo(offset);
-    return Future<void>.value();
+    _animated = duration > Duration.zero;
+    _go(offset);
+    return _animated ? Future<void>.delayed(duration) : Future<void>.value();
   }
 
   void _attach(_Owner owner, {double? contentExtent, required double viewport}) {
@@ -188,6 +203,183 @@ class ScrollPosition {
     required Duration duration,
     required Curve curve,
   }) => _controller.animateTo(to, duration: duration, curve: curve);
+}
+
+/// Something a widget says to the ones above it - Flutter's `Notification`.
+///
+/// [dispatch] hands it to each [NotificationListener] of its type above
+/// [BuildContext], nearest first, until one answers true.
+abstract class Notification {
+  const Notification();
+
+  void dispatch(BuildContext? target) {
+    if (target is! _Context) return;
+    _send(this, _listenersAbove(target._scope));
+  }
+}
+
+/// Answers true to keep a notification from the listeners further up.
+typedef NotificationListenerCallback<T extends Notification> =
+    bool Function(T notification);
+
+/// Hears the notifications of type [T] sent from below it - Flutter's
+/// `NotificationListener`.
+///
+/// ```dart
+/// NotificationListener<ScrollNotification>(
+///   onNotification: (scroll) {
+///     if (scroll.metrics.extentAfter < 200) loadMore();
+///     return false;
+///   },
+///   child: ListView(children: rows),
+/// )
+/// ```
+///
+/// A scroller sends [ScrollNotification]s as often as it reports where it
+/// is: when it comes to rest and about every 100 ms on the way (see
+/// [ScrollController]).
+class NotificationListener<T extends Notification> extends StatelessWidget {
+  const NotificationListener({
+    super.key,
+    required this.child,
+    this.onNotification,
+  });
+  final Widget child;
+  final NotificationListenerCallback<T>? onNotification;
+
+  bool _hear(Notification notification) =>
+      notification is T && (onNotification?.call(notification) ?? false);
+
+  @override
+  Widget build(BuildContext context) =>
+      _NotificationScope(listener: this, child: child);
+}
+
+class _NotificationScope extends InheritedWidget {
+  const _NotificationScope({required this.listener, required super.child});
+  final NotificationListener<Notification> listener;
+
+  @override
+  bool updateShouldNotify(_NotificationScope oldWidget) => false;
+}
+
+/// The listeners above [scope], nearest first.
+List<NotificationListener<Notification>> _listenersAbove(_Scope? scope) => [
+  for (var at = scope; at != null; at = at.parent)
+    if (at.inherited case final _NotificationScope found) found.listener,
+];
+
+void _send(
+  Notification notification,
+  List<NotificationListener<Notification>> listeners,
+) {
+  for (final listener in listeners) {
+    if (listener._hear(notification)) return;
+  }
+}
+
+/// Which way a scroller's offset grows.
+enum AxisDirection { up, right, down, left }
+
+/// Where a scroller is and how far it can go, at the moment of a
+/// [ScrollNotification].
+class ScrollMetrics {
+  const ScrollMetrics({
+    required this.pixels,
+    required this.minScrollExtent,
+    required this.maxScrollExtent,
+    required this.viewportDimension,
+    required this.axisDirection,
+  });
+  final double pixels;
+  final double minScrollExtent;
+  final double maxScrollExtent;
+  final double viewportDimension;
+  final AxisDirection axisDirection;
+
+  Axis get axis =>
+      axisDirection == AxisDirection.up || axisDirection == AxisDirection.down
+      ? Axis.vertical
+      : Axis.horizontal;
+  double get extentBefore => math.max(0, pixels - minScrollExtent);
+  double get extentAfter => math.max(0, maxScrollExtent - pixels);
+  double get extentInside => viewportDimension;
+  double get extentTotal => maxScrollExtent - minScrollExtent + viewportDimension;
+  bool get atEdge => pixels <= minScrollExtent || pixels >= maxScrollExtent;
+  bool get outOfRange => pixels < minScrollExtent || pixels > maxScrollExtent;
+  bool get hasPixels => true;
+  bool get hasContentDimensions => true;
+  bool get hasViewportDimension => true;
+}
+
+/// A scroller saying something about its scrolling. [depth] is always 0:
+/// a scroller's notifications are heard as its own wherever they are heard.
+abstract class ScrollNotification extends Notification {
+  const ScrollNotification({required this.metrics, this.context});
+  final ScrollMetrics metrics;
+  final BuildContext? context;
+  int get depth => 0;
+}
+
+/// A scroller that was at rest has moved.
+class ScrollStartNotification extends ScrollNotification {
+  const ScrollStartNotification({required super.metrics, super.context});
+}
+
+/// A scroller is somewhere else, [scrollDelta] further along than it last
+/// said.
+class ScrollUpdateNotification extends ScrollNotification {
+  const ScrollUpdateNotification({
+    required super.metrics,
+    super.context,
+    this.scrollDelta,
+  });
+  final double? scrollDelta;
+}
+
+/// A scroller has stopped: nothing was heard from it for a moment. No
+/// renderer says "at rest" in so many words, so it is the app's own clock.
+class ScrollEndNotification extends ScrollNotification {
+  const ScrollEndNotification({required super.metrics, super.context});
+}
+
+/// What a scroller's node is given to report through: [position] is told
+/// where the scroller is, and the listeners above the scroller - the ones
+/// there when this build drew it - are told that it moved.
+void Function(double, double?, double?) _reporting(
+  _Owner owner,
+  ScrollController position,
+  Axis axis,
+) {
+  final listeners = _listenersAbove(owner._scope);
+  if (listeners.isEmpty) return position._report;
+  return (offset, maxExtent, viewport) {
+    final before = position._offset;
+    position._report(offset, maxExtent, viewport);
+    final delta = position._offset - before;
+    if (delta == 0) return;
+    ScrollMetrics metrics() => ScrollMetrics(
+      pixels: position._offset,
+      minScrollExtent: 0,
+      maxScrollExtent: position.position.maxScrollExtent,
+      viewportDimension: position._viewport,
+      axisDirection: axis == Axis.vertical
+          ? AxisDirection.down
+          : AxisDirection.right,
+    );
+    if (position._restTimer == null) {
+      _send(ScrollStartNotification(metrics: metrics()), listeners);
+    }
+    _send(
+      ScrollUpdateNotification(metrics: metrics(), scrollDelta: delta),
+      listeners,
+    );
+    position._restTimer?.cancel();
+    position._restTimer = Timer(const Duration(milliseconds: 250), () {
+      position._restTimer = null;
+      _send(ScrollEndNotification(metrics: metrics()), listeners);
+    });
+  };
 }
 
 /// The refresh a [RefreshIndicator] is waiting to hand to a scroller.
@@ -288,7 +480,8 @@ WidgetNode _scroller(
     // the new one here rather than at the top.
     scrollOffset: position._offset,
     scrollVersion: position._version,
-    onScroll: position._report,
+    scrollAnimated: position._animated,
+    onScroll: _reporting(owner, position, vertical ? Axis.vertical : Axis.horizontal),
     id: id,
   );
 }
@@ -600,7 +793,8 @@ class ListView extends Widget {
           ),
           scrollOffset: position._wireOffset,
           scrollVersion: position._version,
-          onScroll: position._report,
+          scrollAnimated: position._animated,
+          onScroll: _reporting(owner, position, Axis.vertical),
           // Room inside the scroller, as Flutter's is: the rows scroll under
           // the edges rather than stopping short of them.
           padding: padding?._resolved._ltrb,

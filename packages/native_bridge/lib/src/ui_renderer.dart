@@ -111,6 +111,18 @@ abstract final class RootProps {
   /// [UIBuilder.withTextDirection] puts it on a tree; the widget layer's
   /// `MaterialApp` does so from the locale.
   static const String textDirection = 'textDirection';
+
+  /// Says that this tree is another page from the one before it, and how to
+  /// get there: `{'kind': 'push' | 'pop' | 'fade', 'ms': 300}`.
+  ///
+  /// It is on one tree only - the first that shows the new page - and a
+  /// renderer that sees it keeps a picture of the screen as it was, draws
+  /// the tree, and moves from the one to the other: the picture fades away
+  /// over `ms`; for a `push` the new page slides in from the end of the
+  /// screen as it does, and for a `pop` the picture slides off towards it.
+  /// A renderer that does nothing with it has shown the page at once, which
+  /// is what every renderer did before there was such a prop.
+  static const String pageTransition = 'pageTransition';
 }
 
 /// Event ids a renderer fires on its own account, with no node asking.
@@ -155,6 +167,26 @@ class UIBuilder {
   /// [RootProps.textDirection]. [direction] is 'rtl' or 'ltr'; left to right
   /// is what a tree with nothing stated means, so it is left out rather than
   /// written, and a tree that never mentions a direction is unchanged.
+  /// [root] with [transition] stated on it - see [RootProps.pageTransition] -
+  /// or without one when [transition] is null.
+  static WidgetNode withPageTransition(
+    WidgetNode root,
+    Map<String, dynamic>? transition,
+  ) {
+    if (transition == null && !root.props.containsKey(RootProps.pageTransition)) {
+      return root;
+    }
+    return WidgetNode(
+      type: root.type,
+      props: {
+        for (final entry in root.props.entries)
+          if (entry.key != RootProps.pageTransition) entry.key: entry.value,
+        RootProps.pageTransition: ?transition,
+      },
+      children: root.children,
+    );
+  }
+
   static WidgetNode withTextDirection(WidgetNode root, String? direction) {
     final stated = root.props[RootProps.textDirection];
     final wanted = direction == 'rtl' ? 'rtl' : null;
@@ -797,6 +829,7 @@ class UIBuilder {
     double? width,
     double? height,
     String fit = 'cover',
+    String? color,
     WidgetNode? fallback,
     String? id,
   }) => WidgetNode(
@@ -807,6 +840,9 @@ class UIBuilder {
       if (width != null) 'width': width,
       if (height != null) 'height': height,
       'fit': fit,
+      // A tint: the picture's shape, filled with this one colour - what an
+      // icon kept as an image is drawn with.
+      if (color != null) 'color': color,
       if (id != null) 'id': id,
     },
     children: fallback == null ? null : [fallback],
@@ -1423,6 +1459,7 @@ class UIBuilder {
     bool refreshing = false,
     double? scrollOffset,
     int? scrollVersion,
+    bool scrollAnimated = false,
     void Function(double offset, double? maxExtent, double? viewport)?
     onScroll,
     String? id,
@@ -1462,6 +1499,9 @@ class UIBuilder {
         // the same trick a text field's focusVersion uses.
         if (scrollOffset != null) 'scrollOffset': scrollOffset,
         if (scrollOffset != null) 'scrollVersion': scrollVersion ?? 0,
+        // Travel there instead of jumping: the renderer's own smooth scroll,
+        // at the pace the platform keeps.
+        if (scrollOffset != null && scrollAnimated) 'scrollAnimated': true,
         if (scrolled != null) 'scrollEventId': scrolled,
         if (id != null) 'id': id,
       },
@@ -1854,6 +1894,10 @@ class UIBuilder {
     String? textColor,
     String? actionColor,
     double? borderRadius,
+    double? width,
+    List<double>? margin,
+    bool fixed = false,
+    double? elevation,
     String? id,
   }) {
     if (onAction != null) {
@@ -1876,6 +1920,19 @@ class UIBuilder {
         if (textColor != null) 'textColor': textColor,
         if (actionColor != null) 'actionColor': actionColor,
         if (borderRadius != null) 'borderRadius': borderRadius,
+        // How wide the bar is, in the middle of the screen; never wider
+        // than the screen leaves room for. Unsaid, it is the renderer's own.
+        if (width != null) 'width': width,
+        // Room around a floating bar, `[left, top, right, bottom]`: the bar
+        // is as wide as that leaves, and that far above the bottom of the
+        // screen (and of whatever it has to clear). The top is not used.
+        if (margin != null) 'margin': margin,
+        // A bar fixed to the bottom of the screen: edge to edge, square, no
+        // room around it. Unsaid, the bar floats.
+        if (fixed) 'fixed': true,
+        // How far the bar stands off the screen, as the shadow it casts;
+        // zero is none. Unsaid, the renderer's own.
+        if (elevation != null) 'elevation': elevation,
         if (id != null) 'id': id,
       },
     );
@@ -1937,6 +1994,7 @@ class UIBuilder {
     int initialCount = 30,
     double? scrollOffset,
     int? scrollVersion,
+    bool scrollAnimated = false,
     List<double>? padding,
     void Function()? onRefresh,
     bool refreshing = false,
@@ -2016,6 +2074,9 @@ class UIBuilder {
         // As on a scroll node: jump to this offset when the version is new.
         if (scrollOffset != null) 'scrollOffset': scrollOffset,
         if (scrollOffset != null) 'scrollVersion': scrollVersion ?? 0,
+        // Travel there instead of jumping: the renderer's own smooth scroll,
+        // at the pace the platform keeps.
+        if (scrollOffset != null && scrollAnimated) 'scrollAnimated': true,
       },
       children: [
         for (var index = start; index < end; index++)

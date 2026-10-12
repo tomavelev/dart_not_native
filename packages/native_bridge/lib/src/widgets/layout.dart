@@ -444,18 +444,23 @@ class SizedBox extends Widget {
 /// Whether [child] takes all the width it is offered, which makes a box
 /// around it that wide too.
 ///
-/// A `Center` does, and a `Row` that was not asked to hug. Neither node can
+/// A `Center` does, an `Align` with no factor, and a `Row` that was not asked
+/// to hug. None of those nodes can
 /// say so itself - each is laid out in whatever it is given - so a box that
 /// hugged gave it the child's own size: a panel of a stated height came out
 /// as wide as its message, and a strip of weekday names as wide as the names.
 bool _takesOfferedWidth(Widget? child) =>
     (child is Center && child.widthFactor == null) ||
+    (child is Align && child.widthFactor == null) ||
+    (child is AnimatedAlign && child.widthFactor == null) ||
     (child is Row && child.mainAxisSize == MainAxisSize.max);
 
 /// The same along the height, which only a `Center` takes: a `Column` already
 /// says whether it fills.
 bool _takesOfferedHeight(Widget? child) =>
-    child is Center && child.heightFactor == null;
+    (child is Center && child.heightFactor == null) ||
+    (child is Align && child.heightFactor == null) ||
+    (child is AnimatedAlign && child.heightFactor == null);
 
 String? _expandOf(bool width, bool height) =>
     width ? (height ? 'both' : 'width') : (height ? 'height' : null);

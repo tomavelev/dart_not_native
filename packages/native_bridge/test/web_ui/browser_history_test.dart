@@ -4,6 +4,9 @@
 /// Run with: flutter test --platform chrome
 library;
 
+import 'dart:async';
+import 'dart:js_interop';
+
 import 'package:dart_not_native/core.dart' hide Router;
 import 'package:dart_not_native/routing/route.dart';
 import 'package:dart_not_native/web_ui/browser_history.dart';
@@ -20,9 +23,22 @@ Router router() => Router(
   ),
 );
 
-/// Waits for the browser to deliver a popstate for a history move.
-Future<void> settleHistory() =>
-    Future<void>.delayed(const Duration(milliseconds: 50));
+/// Waits for the browser to deliver the popstate of a history move.
+///
+/// For the event itself and not for a length of time: a browser busy with a
+/// whole suite's worth of pages has been seen to take longer than any fixed
+/// wait that is short enough to be worth having.
+Future<void> settleHistory() async {
+  final arrived = Completer<void>();
+  final listener = ((web.Event _) {
+    if (!arrived.isCompleted) arrived.complete();
+  }).toJS;
+  web.window.addEventListener('popstate', listener);
+  await arrived.future.timeout(const Duration(seconds: 3), onTimeout: () {});
+  web.window.removeEventListener('popstate', listener);
+  // And for whoever else was listening to act on it.
+  await Future<void>.delayed(const Duration(milliseconds: 20));
+}
 
 void main() {
   late BrowserHistoryAdapter adapter;

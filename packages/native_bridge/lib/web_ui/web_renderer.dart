@@ -161,7 +161,17 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   /// The returned future completes once the DOM shows [tree], so
   /// `await render(...)` still means "the DOM is up to date".
   @override
-  Future<RenderError?> render(WidgetNode tree) => _scheduler.schedule(tree);
+  Future<RenderError?> render(WidgetNode tree) {
+    // Trees are batched, and only the last of a batch is drawn. A page
+    // transition is said on one tree alone, so it is taken here, from every
+    // tree, and kept until one is drawn.
+    final transition = tree.props[RootProps.pageTransition];
+    if (transition is Map) _owedTransition = transition;
+    return _scheduler.schedule(tree);
+  }
+
+  /// A page transition some tree asked for and no drawn tree has shown yet.
+  Map<dynamic, dynamic>? _owedTransition;
 
   /// The node types this pass could not draw, filled in as the DOM is built.
   final Set<String> _unknownTypes = {};
@@ -171,10 +181,17 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       _unknownTypes.clear();
       final build = EventBindings.buildOf(tree);
       tree = _applyDirection(tree);
+      final transition = tree.props[RootProps.pageTransition] ?? _owedTransition;
+      _owedTransition = null;
+      tree = UIBuilder.withPageTransition(tree, null);
+      final leaving = transition is Map && animations && _currentTree != null
+          ? _pictureOfScreen()
+          : null;
       _syncChildren(rootElement, [
         tree,
       ], _currentTree == null ? const [] : [_currentTree!]);
       _currentTree = tree;
+      if (leaving != null) _movePages(leaving, transition as Map);
       // Only now: an element the patch above removed can still speak while
       // it goes (a focused field blurs), and that is the old tree's event.
       _shownBuild = build;
@@ -187,6 +204,83 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     } catch (e, st) {
       web.console.error('WebUIRenderer: $e\n$st'.toJS);
       return RenderError.failed('Render error: $e', cause: e, stackTrace: st);
+    }
+  }
+
+  /// A copy of what the root shows, laid over it: the page that is about to
+  /// be replaced, kept for the length of a page transition
+  /// ([RootProps.pageTransition]). Null when there is nothing to copy.
+  web.HTMLElement? _pictureOfScreen() {
+    final page = rootElement.firstElementChild;
+    if (page == null) return null;
+    final box = rootElement.getBoundingClientRect();
+    final copy = page.cloneNode(true) as web.Element;
+    // A copy starts at the top of everything that scrolls; put each scroller
+    // where the one it was copied from is.
+    final from = page.querySelectorAll('*');
+    final to = copy.querySelectorAll('*');
+    final scrolled = <(web.Element, double, double)>[];
+    for (var i = 0; i < from.length && i < to.length; i++) {
+      final source = from.item(i) as web.Element;
+      if (source.scrollTop != 0 || source.scrollLeft != 0) {
+        scrolled.add((to.item(i) as web.Element, source.scrollTop, source.scrollLeft));
+      }
+    }
+    // Ids are unique in a document, and the page they belong to is the live
+    // one.
+    for (var i = 0; i < to.length; i++) {
+      (to.item(i) as web.Element).removeAttribute('id');
+    }
+    final holder = (web.document.createElement('div') as web.HTMLElement)
+      ..className = 'dnn-page-leaving'
+      ..setAttribute('aria-hidden', 'true');
+    holder.style
+      ..position = 'fixed'
+      ..left = '${box.left}px'
+      ..top = '${box.top}px'
+      ..width = '${box.width}px'
+      ..height = '${box.height}px'
+      ..overflow = 'hidden'
+      ..pointerEvents = 'none'
+      ..zIndex = '2147483000';
+    holder.appendChild(copy);
+    web.document.body?.appendChild(holder);
+    for (final (element, top, left) in scrolled) {
+      element.scrollTop = top;
+      element.scrollLeft = left;
+    }
+    return holder;
+  }
+
+  /// Moves from [leaving], the picture of the old page, to the page now in
+  /// the root, the way [transition] says.
+  void _movePages(web.HTMLElement leaving, Map<dynamic, dynamic> transition) {
+    final ms = (_num(transition['ms']) ?? 300).toDouble();
+    final kind = transition['kind'];
+    // Towards the end of the screen: the right, where it reads left to right.
+    final end = _rtl ? '-25%' : '25%';
+    final timing = {'duration': ms, 'easing': 'ease-out'}.jsify()!;
+    final gone = leaving.animate(
+      [
+        {'opacity': 1, 'transform': 'translateX(0)'},
+        {
+          'opacity': 0,
+          'transform': kind == 'pop' ? 'translateX($end)' : 'translateX(0)',
+        },
+      ].jsify() as JSObject,
+      timing,
+    );
+    void remove() => leaving.remove();
+    gone.onfinish = ((web.Event _) => remove()).toJS;
+    gone.oncancel = ((web.Event _) => remove()).toJS;
+    if (kind == 'push') {
+      rootElement.firstElementChild?.animate(
+        [
+          {'transform': 'translateX($end)'},
+          {'transform': 'translateX(0)'},
+        ].jsify() as JSObject,
+        timing,
+      );
     }
   }
 
@@ -1341,11 +1435,13 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       if (width != null) _style(image, 'width', '${width}px');
       if (height != null) _style(image, 'height', '${height}px');
       _style(image, 'object-fit', _objectFit(_str(p['fit'], 'cover')));
+      _tint(image, p);
       return image;
     }
 
     image.alt = _str(p['alt']);
     _style(image, 'object-fit', _objectFit(_str(p['fit'], 'cover')));
+    _tint(image, p);
     final frame = _el('span', 'dnn-image-frame')
       // The frame is the image as far as a screen reader goes, whichever of
       // the two is showing inside it.
@@ -1370,6 +1466,32 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ..appendChild(fallback)
       ..appendChild(image);
     return frame;
+  }
+
+  /// Draws [image] as its own shape in the node's `color`, when it has one.
+  ///
+  /// The picture is used twice: as a mask over a fill of the colour, laid
+  /// out the way `object-fit` lays the picture out, and as the element's own
+  /// content - which is what gives the element its size, and is moved out of
+  /// sight so that only the fill shows.
+  void _tint(web.HTMLImageElement image, Map<String, dynamic> p) {
+    final color = _optStr(p['color']);
+    if (color == null) return;
+    final src = _str(p['src']).replaceAll('"', '%22');
+    final size = switch (_str(p['fit'], 'cover')) {
+      'contain' || 'scaleDown' => 'contain',
+      'fill' => '100% 100%',
+      'none' => 'auto',
+      _ => 'cover',
+    };
+    for (final prefix in const ['-webkit-', '']) {
+      _style(image, '${prefix}mask-image', 'url("$src")');
+      _style(image, '${prefix}mask-size', size);
+      _style(image, '${prefix}mask-position', 'center');
+      _style(image, '${prefix}mask-repeat', 'no-repeat');
+    }
+    _style(image, 'background-color', cssColor(color));
+    _style(image, 'object-position', '-100000px 0');
   }
 
   static String _objectFit(String fit) => switch (fit) {
@@ -1714,6 +1836,34 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     if (ink != null) _style(bar, 'color', cssColor(ink));
     final radius = _num(p['borderRadius']);
     if (radius != null) _style(bar, 'border-radius', '${radius}px');
+    final width = _num(p['width']);
+    if (width != null) {
+      _style(bar, 'width', 'min(${width}px, calc(100vw - 32px))');
+    }
+    final margin = _edges(p['margin']);
+    if (p['fixed'] == true) {
+      // The stylesheet's part: where the bottom is depends on what the
+      // scaffold has there.
+      bar.classList.add('dnn-snackbar--fixed');
+      if (radius == null) _style(bar, 'border-radius', '0');
+    } else if (margin != null) {
+      // The stylesheet puts the bar 16 above whatever it has to clear, so
+      // the margin below is said as the difference from that.
+      _style(bar, 'left', '${margin.$1}px');
+      _style(bar, 'right', '${margin.$3}px');
+      _style(bar, 'margin', '0 0 ${margin.$4 - 16}px');
+      if (width == null) _style(bar, 'width', 'auto');
+    }
+    final elevation = _num(p['elevation']);
+    if (elevation != null) {
+      _style(
+        bar,
+        'box-shadow',
+        elevation <= 0
+            ? 'none'
+            : '0 ${elevation / 2}px ${elevation * 2.5}px rgba(0, 0, 0, 0.3)',
+      );
+    }
 
     final label = _optStr(p['actionLabel']);
     final actionId = p['actionEventId'];
@@ -2994,8 +3144,29 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     put('padding', _edgesCss(_edges(p['padding'])));
     put('margin', _edgesCss(margin));
     final alignment = _pair(p['alignment']);
+    // An alignment is not something a browser moves between: the child is
+    // in one place and then in another. So when a box that animates is given
+    // a new one, the child is put where it now belongs and slid there from
+    // where it was.
+    final moved = !fresh && animations ? _num(p['animateMs']) : null;
+    final child = moved != null && moved > 0 ? box.firstElementChild : null;
+    final was = child?.getBoundingClientRect();
     put('justify-items', alignment == null ? null : _gridAlignX(alignment.$1));
     put('align-items', alignment == null ? null : _gridAlign(alignment.$2));
+    if (child != null && was != null) {
+      final now = child.getBoundingClientRect();
+      final dx = was.left - now.left;
+      final dy = was.top - now.top;
+      if (dx.abs() >= 0.5 || dy.abs() >= 0.5) {
+        child.animate(
+          [
+            {'transform': 'translate(${dx}px, ${dy}px)'},
+            {'transform': 'translate(0, 0)'},
+          ].jsify() as JSObject,
+          {'duration': moved!.toDouble(), 'easing': _timing(p)}.jsify()!,
+        );
+      }
+    }
 
     // Paint.
     final color = _optStr(p['color']);
@@ -3694,13 +3865,18 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       if (!viewport.isConnected) return;
       // A reversed scroller counts from its far end, in negative numbers.
       final position = reverse ? -offset : offset;
-      if (horizontal) {
-        // So does one that reads from the right: it starts at its right-hand
-        // end, and `scrollLeft` runs negative from there. Reversed as well,
-        // the two turn it back.
-        viewport.scrollLeft = _rtl ? -position : position;
+      // So does a horizontal one that reads from the right: it starts at its
+      // right-hand end, and `scrollLeft` runs negative from there. Reversed
+      // as well, the two turn it back.
+      final along = horizontal && _rtl ? -position : position;
+      if (p['scrollAnimated'] == true && animations) {
+        viewport.scrollTo(
+          {horizontal ? 'left' : 'top': along, 'behavior': 'smooth'}.jsify()!,
+        );
+      } else if (horizontal) {
+        viewport.scrollLeft = along;
       } else {
-        viewport.scrollTop = position;
+        viewport.scrollTop = along;
       }
     });
   }
@@ -5100,6 +5276,13 @@ JSAny? _canvasGradient(web.CanvasRenderingContext2D context, Object? spec) {
     if (radius is! num || radius <= 0) return null;
     final x = n(spec['center'], 0), y = n(spec['center'], 1);
     gradient = context.createRadialGradient(x, y, 0, x, y, radius);
+  } else if (spec['type'] == 'sweep') {
+    final angle = spec['angle'];
+    gradient = context.createConicGradient(
+      angle is num ? angle.toDouble() : 0,
+      n(spec['center'], 0),
+      n(spec['center'], 1),
+    );
   } else {
     gradient = context.createLinearGradient(
       n(spec['from'], 0),
@@ -5152,6 +5335,14 @@ void _replayCanvasCommands(
     final css =
         _canvasGradient(context, paint?['gradient']) ??
         cssColor(color is String ? color : ink).toJS;
+    // A blur is a filter on the surface, counted in its own pixels: the
+    // sigma is scaled by however much the surface is.
+    final blur = paint?['blur'];
+    final blurred = blur is num && blur > 0;
+    if (blurred) {
+      final scale = context.getTransform().a.abs();
+      context.filter = 'blur(${blur * (scale > 0 ? scale : 1)}px)';
+    }
     if (stroke || paint?['style'] == 'stroke') {
       final width = paint?['strokeWidth'];
       context
@@ -5174,6 +5365,7 @@ void _replayCanvasCommands(
         ..fillStyle = css
         ..fill();
     }
+    if (blurred) context.filter = 'none';
   }
 
   void oval(double l, double t, double w, double h) {
@@ -5209,6 +5401,41 @@ void _replayCanvasCommands(
       start + sweep,
       sweep < 0,
     );
+  }
+
+  /// Starts a path and walks the segments a command carries at index 1.
+  void trace(List<dynamic> c) {
+    context.beginPath();
+    final segments = c.length > 1 && c[1] is List ? c[1] as List : const [];
+    for (final segment in segments) {
+      if (segment is! List || segment.isEmpty) continue;
+      final s = segment;
+      switch (s[0]) {
+        case 'M':
+          context.moveTo(n(s, 1), n(s, 2));
+        case 'L':
+          context.lineTo(n(s, 1), n(s, 2));
+        case 'Q':
+          context.quadraticCurveTo(n(s, 1), n(s, 2), n(s, 3), n(s, 4));
+        case 'C':
+          context.bezierCurveTo(
+            n(s, 1),
+            n(s, 2),
+            n(s, 3),
+            n(s, 4),
+            n(s, 5),
+            n(s, 6),
+          );
+        case 'A':
+          arc(n(s, 1), n(s, 2), n(s, 3), n(s, 4), n(s, 5), n(s, 6));
+        case 'R':
+          context.rect(n(s, 1), n(s, 2), n(s, 3), n(s, 4));
+        case 'O':
+          oval(n(s, 1), n(s, 2), n(s, 3), n(s, 4));
+        case 'Z':
+          context.closePath();
+      }
+    }
   }
 
   void text(List<dynamic> c) {
@@ -5306,37 +5533,7 @@ void _replayCanvasCommands(
         if (useCentre) context.closePath();
         draw(paintAt(c, 8));
       case 'path':
-        context.beginPath();
-        final segments = c.length > 1 && c[1] is List ? c[1] as List : const [];
-        for (final segment in segments) {
-          if (segment is! List || segment.isEmpty) continue;
-          final s = segment;
-          switch (s[0]) {
-            case 'M':
-              context.moveTo(n(s, 1), n(s, 2));
-            case 'L':
-              context.lineTo(n(s, 1), n(s, 2));
-            case 'Q':
-              context.quadraticCurveTo(n(s, 1), n(s, 2), n(s, 3), n(s, 4));
-            case 'C':
-              context.bezierCurveTo(
-                n(s, 1),
-                n(s, 2),
-                n(s, 3),
-                n(s, 4),
-                n(s, 5),
-                n(s, 6),
-              );
-            case 'A':
-              arc(n(s, 1), n(s, 2), n(s, 3), n(s, 4), n(s, 5), n(s, 6));
-            case 'R':
-              context.rect(n(s, 1), n(s, 2), n(s, 3), n(s, 4));
-            case 'O':
-              oval(n(s, 1), n(s, 2), n(s, 3), n(s, 4));
-            case 'Z':
-              context.closePath();
-          }
-        }
+        trace(c);
         draw(paintAt(c, 2));
       case 'text':
         text(c);
@@ -5363,6 +5560,9 @@ void _replayCanvasCommands(
       case 'clipRRect':
         context.beginPath();
         roundedRect(n(c, 1), n(c, 2), n(c, 3), n(c, 4), n(c, 5));
+        context.clip();
+      case 'clipPath':
+        trace(c);
         context.clip();
     }
   }

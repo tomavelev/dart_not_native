@@ -167,8 +167,10 @@ void main() {
         ),
       );
 
-      final stack = tester.widget<Stack>(find.byType(Stack).first);
-      expect(stack.fit, StackFit.expand);
+      // The overlay's own stack, not the one a page transition is drawn in.
+      final stack = tester
+          .widgetList<Stack>(find.byType(Stack))
+          .firstWhere((stack) => stack.fit == StackFit.expand);
       expect(stack.children, hasLength(3));
       expect(find.byType(Scaffold), findsOneWidget);
       expect(find.text('first'), findsOneWidget);
@@ -412,11 +414,25 @@ void main() {
               textColor: '#fffde7',
               actionColor: '#ffeb3b',
               borderRadius: 12,
+              width: 280,
             ),
           ],
         ),
       );
 
+      expect(
+        tester
+            .getSize(
+              find
+                  .ancestor(
+                    of: find.text('Saved'),
+                    matching: find.byType(Material),
+                  )
+                  .first,
+            )
+            .width,
+        280,
+      );
       final bar = tester.widget<Material>(
         find.ancestor(of: find.text('Saved'), matching: find.byType(Material)).first,
       );
@@ -434,6 +450,54 @@ void main() {
             .resolve({}),
         const Color(0xffffeb3b),
       );
+    });
+
+    testWidgets('a margin places it, and a fixed bar runs edge to edge', (
+      tester,
+    ) async {
+      Finder bar() => find
+          .ancestor(of: find.text('Saved'), matching: find.byType(Material))
+          .first;
+      final screenWidth = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+
+      await show(
+        tester,
+        UIBuilder.overlay(
+          child: screen(),
+          overlays: [
+            UIBuilder.snackbar(
+              message: 'Saved',
+              id: 'roomy',
+              duration: Duration.zero,
+              margin: [40, 0, 24, 30],
+              elevation: 0,
+            ),
+          ],
+        ),
+      );
+      final roomy = tester.getRect(bar());
+      expect(roomy.left, 40);
+      expect(roomy.right, screenWidth - 24);
+      expect(tester.widget<Material>(bar()).elevation, 0);
+
+      await show(
+        tester,
+        UIBuilder.overlay(
+          child: screen(),
+          overlays: [
+            UIBuilder.snackbar(
+              message: 'Saved',
+              id: 'flush',
+              duration: Duration.zero,
+              fixed: true,
+            ),
+          ],
+        ),
+      );
+      final flush = tester.getRect(bar());
+      expect(flush.left, 0);
+      expect(flush.right, screenWidth);
+      expect(tester.widget<Material>(bar()).borderRadius, BorderRadius.zero);
     });
 
     WidgetNode snackbarOver(WidgetNode scaffold) => UIBuilder.overlay(

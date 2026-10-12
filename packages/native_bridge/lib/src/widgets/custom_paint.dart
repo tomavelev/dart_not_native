@@ -39,14 +39,34 @@ enum ClipOp { difference, intersect }
 /// each renderer fills with its platform's default rule.
 enum PathFillType { nonZero, evenOdd }
 
+/// How a blur treats the shape it blurs. Every one is drawn as [normal]:
+/// blurred inside and out.
+enum BlurStyle { normal, solid, outer, inner }
+
+/// A blur for a [Paint] - a glow, a soft shadow.
+///
+/// [sigma] is the blur's standard deviation in logical pixels, as in
+/// Flutter; the edge spreads about twice that far.
+class MaskFilter {
+  const MaskFilter.blur(this.style, double sigma) : _sigma = sigma;
+  final BlurStyle style;
+  final double _sigma;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MaskFilter && other.style == style && other._sigma == _sigma;
+  @override
+  int get hashCode => Object.hash(style, _sigma);
+}
+
 /// How a shape is drawn: its colour, and whether it is filled or stroked.
 ///
 /// What travels is [color], [style], [strokeWidth], [strokeCap],
-/// [strokeJoin], and a [shader] that is a gradient
-/// (`LinearGradient(...).createShader(rect)`, or a `RadialGradient`'s).
-/// [maskFilter], [colorFilter], [blendMode] and [isAntiAlias] can be set, so
-/// a painter written for Flutter compiles, and are not carried: a shape
-/// painted with a blur is drawn without one.
+/// [strokeJoin], a [shader] that is a gradient
+/// (`LinearGradient(...).createShader(rect)`, a `RadialGradient`'s or a
+/// `SweepGradient`'s) and a [maskFilter] that is a blur. [colorFilter],
+/// [blendMode] and [isAntiAlias] can be set, so a painter written for
+/// Flutter compiles, and are not carried.
 class Paint {
   Color color = const Color(0xFF000000);
   PaintingStyle style = PaintingStyle.fill;
@@ -64,7 +84,8 @@ class Paint {
   /// [Gradient.createShader] returns. Anything else is ignored.
   Object? shader;
 
-  /// Ignored - see the class doc.
+  /// A blur over what this paint draws: `MaskFilter.blur(BlurStyle.normal,
+  /// sigma)`. Anything else is ignored.
   Object? maskFilter;
 
   /// Ignored - see the class doc.
@@ -82,9 +103,11 @@ class Paint {
   Map<String, dynamic> _json({bool? stroke}) {
     final stroked = stroke ?? style == PaintingStyle.stroke;
     final shader = this.shader;
+    final blur = maskFilter;
     return {
       'color': color._hex,
       if (shader is Shader) 'gradient': shader._json,
+      if (blur is MaskFilter && blur._sigma > 0) 'blur': blur._sigma,
       if (stroked) 'style': 'stroke',
       if (stroked) 'strokeWidth': strokeWidth <= 0 ? 1.0 : strokeWidth,
       if (stroked && strokeCap != StrokeCap.butt) 'cap': strokeCap.name,
@@ -95,10 +118,9 @@ class Paint {
 
 /// An outline built up from lines, curves and shapes, for [Canvas.drawPath].
 ///
-/// Recorded as the protocol's path segments. Two things are approximated:
-/// [addRRect] adds the rounded rectangle's plain rectangle (the segment list
-/// has no rounded one - use [Canvas.drawRRect] for the real shape), and
-/// [arcToPoint] draws a straight line to its end point.
+/// Recorded as the protocol's path segments. The segment list has no rounded
+/// rectangle and no arc given by its end point, so [addRRect] and
+/// [arcToPoint] are written as the curves that draw them.
 class Path {
   final List<List<Object?>> _segments = [];
 
@@ -212,16 +234,87 @@ class Path {
   void addArc(Rect oval, double startAngle, double sweepAngle) =>
       arcTo(oval, startAngle, sweepAngle, true);
 
-  /// Flutter draws an elliptical arc to [arcEnd]; the segment list has no
-  /// arc given by its end point, so this is a straight line there. A painter
-  /// that needs the curve can use [arcTo] with the oval's rectangle.
+  /// An arc of an ellipse with [radius], turned by [rotation] degrees, from
+  /// where the path is to [arcEnd] - the long way round when [largeArc].
+  ///
+  /// Drawn as cubic curves, a quarter turn or less each. With no radius it is
+  /// a straight line, and radii too small to reach [arcEnd] are grown until
+  /// they do - both as an SVG arc, which this is.
   void arcToPoint(
     Offset arcEnd, {
     Radius radius = Radius.zero,
     double rotation = 0,
     bool largeArc = false,
     bool clockwise = true,
-  }) => lineTo(arcEnd.dx, arcEnd.dy);
+  }) {
+    final x0 = _x, y0 = _y;
+    final x1 = arcEnd.dx, y1 = arcEnd.dy;
+    var rx = radius.x.abs(), ry = radius.y.abs();
+    if (rx == 0 || ry == 0 || (x0 == x1 && y0 == y1)) {
+      lineTo(x1, y1);
+      return;
+    }
+    final phi = rotation * math.pi / 180;
+    final cosPhi = math.cos(phi), sinPhi = math.sin(phi);
+    // The end points seen from half way between them, with the ellipse's
+    // axes as the axes.
+    final hx = (x0 - x1) / 2, hy = (y0 - y1) / 2;
+    final px = cosPhi * hx + sinPhi * hy;
+    final py = -sinPhi * hx + cosPhi * hy;
+    final reach = px * px / (rx * rx) + py * py / (ry * ry);
+    if (reach > 1) {
+      final grow = math.sqrt(reach);
+      rx *= grow;
+      ry *= grow;
+    }
+    final top = rx * rx * ry * ry - rx * rx * py * py - ry * ry * px * px;
+    final bottom = rx * rx * py * py + ry * ry * px * px;
+    var k = bottom == 0 ? 0.0 : math.sqrt(math.max(0, top / bottom));
+    if (largeArc == clockwise) k = -k;
+    final cxp = k * rx * py / ry;
+    final cyp = -k * ry * px / rx;
+    final cx = cosPhi * cxp - sinPhi * cyp + (x0 + x1) / 2;
+    final cy = sinPhi * cxp + cosPhi * cyp + (y0 + y1) / 2;
+    final start = math.atan2((py - cyp) / ry, (px - cxp) / rx);
+    var sweep = math.atan2((-py - cyp) / ry, (-px - cxp) / rx) - start;
+    if (clockwise && sweep < 0) sweep += 2 * math.pi;
+    if (!clockwise && sweep > 0) sweep -= 2 * math.pi;
+
+    final pieces = math.max(1, (sweep.abs() / (math.pi / 2)).ceil());
+    final step = sweep / pieces;
+    // How far a control point sits along the tangent, for a piece this wide.
+    final handle = 4 / 3 * math.tan(step / 4);
+    (double, double) at(double angle, double tangent) {
+      final ex = rx * (math.cos(angle) - tangent * math.sin(angle));
+      final ey = ry * (math.sin(angle) + tangent * math.cos(angle));
+      return (cx + cosPhi * ex - sinPhi * ey, cy + sinPhi * ex + cosPhi * ey);
+    }
+
+    for (var i = 0; i < pieces; i++) {
+      final from = start + step * i;
+      final to = from + step;
+      final (c1x, c1y) = at(from, handle);
+      final (c2x, c2y) = at(to, -handle);
+      // The last piece ends on the point asked for, not a rounding of it.
+      final (ex, ey) = i == pieces - 1 ? (x1, y1) : at(to, 0);
+      cubicTo(c1x, c1y, c2x, c2y, ex, ey);
+    }
+  }
+
+  /// [arcToPoint], with the end given from where the path is.
+  void relativeArcToPoint(
+    Offset arcEndDelta, {
+    Radius radius = Radius.zero,
+    double rotation = 0,
+    bool largeArc = false,
+    bool clockwise = true,
+  }) => arcToPoint(
+    Offset(_x + arcEndDelta.dx, _y + arcEndDelta.dy),
+    radius: radius,
+    rotation: rotation,
+    largeArc: largeArc,
+    clockwise: clockwise,
+  );
 
   void addRect(Rect rect) {
     _segments.add(['R', rect.left, rect.top, rect.width, rect.height]);
@@ -237,11 +330,38 @@ class Path {
     _seen(oval.right, oval.bottom);
   }
 
-  /// Adds the rectangle [rrect] rounds - without the rounding; see the class
-  /// doc.
-  void addRRect(RRect rrect) => addRect(
-    Rect.fromLTWH(rrect.left, rrect.top, rrect.width, rrect.height),
-  );
+  /// Adds [rrect] with its corners, each a quarter of its own ellipse. Radii
+  /// that would overlap along a side are shrunk together until they fit.
+  void addRRect(RRect rrect) {
+    final l = rrect.left, t = rrect.top;
+    final r = l + rrect.width, b = t + rrect.height;
+    var fit = 1.0;
+    void within(double first, double second, double room) {
+      final wanted = first + second;
+      if (wanted > room && wanted > 0) fit = math.min(fit, room / wanted);
+    }
+
+    within(rrect.tlRadiusX, rrect.trRadiusX, rrect.width);
+    within(rrect.blRadiusX, rrect.brRadiusX, rrect.width);
+    within(rrect.tlRadiusY, rrect.blRadiusY, rrect.height);
+    within(rrect.trRadiusY, rrect.brRadiusY, rrect.height);
+    final tlx = rrect.tlRadiusX * fit, tly = rrect.tlRadiusY * fit;
+    final trx = rrect.trRadiusX * fit, try_ = rrect.trRadiusY * fit;
+    final brx = rrect.brRadiusX * fit, bry = rrect.brRadiusY * fit;
+    final blx = rrect.blRadiusX * fit, bly = rrect.blRadiusY * fit;
+    // How much of a radius a control point keeps for a quarter turn.
+    const c = 1 - 0.5522847498;
+    moveTo(l + tlx, t);
+    lineTo(r - trx, t);
+    cubicTo(r - trx * c, t, r, t + try_ * c, r, t + try_);
+    lineTo(r, b - bry);
+    cubicTo(r, b - bry * c, r - brx * c, b, r - brx, b);
+    lineTo(l + blx, b);
+    cubicTo(l + blx * c, b, l, b - bly * c, l, b - bly);
+    lineTo(l, t + tly);
+    cubicTo(l, t + tly * c, l + tlx * c, t, l + tlx, t);
+    close();
+  }
 
   /// Straight lines through [points], closed back to the first when [close].
   void addPolygon(List<Offset> points, bool close) {
@@ -311,7 +431,7 @@ class Path {
 /// is drawn in Dart. What Flutter's canvas has and this one leaves out is
 /// what the command list has no word for: `drawImage`, `drawParagraph`,
 /// `drawVertices`, `drawShadow`, `drawDRRect`, and a free-form `transform`.
-/// [clipPath] is accepted and does nothing; [saveLayer] is a plain [save].
+/// [saveLayer] is a plain [save].
 class Canvas {
   Canvas._(this._size);
 
@@ -332,7 +452,7 @@ class Canvas {
     final json = paint._json(stroke: stroke);
     final key =
         '${json['color']}|${json['style']}|${json['strokeWidth']}|'
-        '${json['cap']}|${json['join']}|${json['gradient']}';
+        '${json['cap']}|${json['join']}|${json['gradient']}|${json['blur']}';
     return _paintIndex.putIfAbsent(key, () {
       _paints.add(json);
       return _paints.length - 1;
@@ -496,9 +616,11 @@ class Canvas {
     rrect.tlRadiusX,
   ]);
 
-  /// Accepted and ignored: the command list clips to rectangles only, so what
-  /// follows is drawn unclipped.
-  void clipPath(Path path, {bool doAntiAlias = true}) {}
+  /// Keeps what follows inside [path], until the matching [restore].
+  void clipPath(Path path, {bool doAntiAlias = true}) => _commands.add([
+    'clipPath',
+    [for (final segment in path._segments) List<Object?>.of(segment)],
+  ]);
 }
 
 /// Draws a picture for a [CustomPaint] - Flutter's `CustomPainter`.

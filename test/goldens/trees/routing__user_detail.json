@@ -1,7 +1,11 @@
 {
   "type": "Scaffold",
   "props": {
-    "bodyScrolls": false
+    "bodyScrolls": false,
+    "pageTransition": {
+      "kind": "push",
+      "ms": 300
+    }
   },
   "children": [
     {

@@ -801,6 +801,12 @@ abstract class PageRoute<T> extends ModalRoute<T> {
   /// In Flutter, a page that slides up and shows a close button. Here it is a
   /// page like any other.
   final bool fullscreenDialog;
+
+  /// How long the page takes to arrive, and to leave. A renderer moves from
+  /// the old page to the new one over this ([RootProps.pageTransition]);
+  /// zero shows the page at once.
+  Duration get transitionDuration => const Duration(milliseconds: 300);
+  Duration get reverseTransitionDuration => transitionDuration;
 }
 
 /// A route that blocks what is beneath it - every route here.
@@ -823,8 +829,9 @@ abstract class ModalRoute<T> extends Route<T> {
   bool get canPop => !isFirst;
 
   /// What Flutter wraps the page in to animate it on and off the screen.
-  /// Pages here are shown without a transition, so this is never called; it
-  /// is declared so that a route written to override it compiles as it is.
+  /// The transition here is the renderer's ([RootProps.pageTransition]), so
+  /// this is never called; it is declared so that a route written to
+  /// override it compiles as it is.
   Widget buildTransitions(
     BuildContext context,
     Animation<double> animation,
@@ -863,8 +870,8 @@ class CupertinoPageRoute<T> extends MaterialPageRoute<T> {
   });
 }
 
-/// Builds a route's page. The two animations are always complete: pages do
-/// not transition.
+/// Builds a route's page. The two animations stand still - the first
+/// complete, the second not begun: the transition is the renderer's.
 typedef RoutePageBuilder =
     Widget Function(
       BuildContext context,
@@ -881,8 +888,10 @@ typedef RouteTransitionsBuilder =
       Widget child,
     );
 
-/// A page with a transition of its own, in Flutter. The page is shown without
-/// one here: [transitionsBuilder] and the durations are accepted and unused.
+/// A page with a transition of its own, in Flutter. Here the transition is
+/// the renderer's, as for every page; [transitionDuration] and
+/// [reverseTransitionDuration] say how long it takes - zero for a page that
+/// is simply there - and [transitionsBuilder] is accepted and never called.
 class PageRouteBuilder<T> extends PageRoute<T> {
   PageRouteBuilder({
     super.settings,
@@ -898,7 +907,9 @@ class PageRouteBuilder<T> extends PageRoute<T> {
   });
   final RoutePageBuilder pageBuilder;
   final RouteTransitionsBuilder? transitionsBuilder;
+  @override
   final Duration transitionDuration;
+  @override
   final Duration reverseTransitionDuration;
   final bool opaque;
   final bool barrierDismissible;
@@ -1450,6 +1461,62 @@ class NavigatorState extends State<Navigator> {
     _routes.clear();
   }
 
+  /// The page the last build showed, and how many were under it.
+  Route<dynamic>? _shownTop;
+  int _shownDepth = 0;
+
+  /// The named route the last build showed, and how long the way there was.
+  Object? _shownEntry;
+  int _shownTrail = 0;
+
+  /// Tells the renderer when the page on top is not the one it drew last:
+  /// pushed if the stack grew, popped if it shrank, swapped otherwise.
+  void _noteTransition(_Owner owner, List<Route<dynamic>> pages) {
+    final top = pages.lastOrNull;
+    final before = _shownTop;
+    final depth = _shownDepth;
+    _shownTop = top;
+    _shownDepth = pages.length;
+    // A named route is the first page showing something else: the page is
+    // the same route, and what tells one from another is the router's entry.
+    final router = _host.routerNav;
+    final entry = router?.router.state.current;
+    final entryBefore = _shownEntry;
+    final trail = router?.history.length ?? 0;
+    final trailBefore = _shownTrail;
+    _shownEntry = entry;
+    _shownTrail = trail;
+    if (before != null &&
+        identical(before, top) &&
+        top is _BaseRoute &&
+        entryBefore != null &&
+        !identical(entryBefore, entry)) {
+      owner._pageTransition = {
+        'kind': trail > trailBefore
+            ? 'push'
+            : (router?.router.state.canGoForward ?? false) || trail < trailBefore
+            ? 'pop'
+            : 'fade',
+        'ms': 300,
+      };
+      return;
+    }
+    if (before == null || top == null || identical(before, top)) return;
+    final pushed = pages.length > depth;
+    final popped = pages.length < depth;
+    // The page that moves is the one whose time it is: arriving, the new
+    // one's; leaving, the old one's way back.
+    final time = popped
+        ? (before is PageRoute ? before.reverseTransitionDuration : null)
+        : (top is PageRoute ? top.transitionDuration : null);
+    final ms = (time ?? const Duration(milliseconds: 300)).inMilliseconds;
+    if (ms <= 0) return;
+    owner._pageTransition = {
+      'kind': pushed ? 'push' : popped ? 'pop' : 'fade',
+      'ms': ms,
+    };
+  }
+
   Widget _page(Route<dynamic> route) => _RouteScope(
     route: route,
     child: Builder(builder: route._buildPage),
@@ -1460,6 +1527,7 @@ class NavigatorState extends State<Navigator> {
     owner._navigators.add(this);
     _base.child = widget.child;
     final pages = [if (!_baseReplaced) _base, ..._routes];
+    if (owner._hidden == 0) _noteTransition(owner, pages);
     WidgetNode? shown;
     for (final (index, route) in pages.indexed) {
       // Each page has its own keys: the same screen twice on the stack is
@@ -1484,6 +1552,23 @@ class NavigatorState extends State<Navigator> {
 /// `/users/:id`).
 typedef RouteWidgetBuilder =
     Widget Function(BuildContext context, Map<String, dynamic> params);
+
+/// For a router: says that the page the build in progress shows is another
+/// one from the last, and how it was reached - `'push'`, `'pop'` or `'fade'`
+/// ([RootProps.pageTransition]) - so the renderer moves from the one to the
+/// other. A [Navigator] says so for its own pages; a [RouterConfig] that
+/// swaps what it builds calls this from its `build`, once, on the first
+/// build of the new page. Outside a build it does nothing.
+void announcePageTransition(
+  BuildContext context,
+  String kind, {
+  Duration duration = const Duration(milliseconds: 300),
+}) {
+  if (context is! _Context || duration <= Duration.zero) return;
+  final owner = context._owner;
+  if (!owner._building || owner._hidden > 0) return;
+  owner._pageTransition ??= {'kind': kind, 'ms': duration.inMilliseconds};
+}
 
 /// What decides the page a `MaterialApp.router` shows.
 ///
@@ -2353,6 +2438,11 @@ class _ScaffoldFrame extends Widget {
   WidgetNode _renderNested(_Owner owner) {
     final bar = appBar;
     final bottom = _bottomBar(owner);
+    // A renderer keeps a snackbar clear of the button of the scaffold it
+    // knows about. This one's is a box in a stack, so the snackbar is told.
+    if (floatingActionButton != null && owner._hidden == 0) {
+      owner._nestedFab = true;
+    }
     final node = UIBuilder.column(
       crossAxisAlignment: 'stretch',
       mainAxisSize: 'max',

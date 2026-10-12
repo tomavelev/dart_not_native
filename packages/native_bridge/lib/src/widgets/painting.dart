@@ -2441,6 +2441,63 @@ class RadialGradient extends Gradient {
   }
 }
 
+/// A gradient round [center], from [startAngle] to [endAngle] - radians,
+/// clockwise from three o'clock.
+///
+/// On a canvas (`paint.shader = gradient.createShader(rect)`) it is drawn as
+/// it is: the colours turn about the centre, and beyond [endAngle] the last
+/// one holds until the turn comes round to the first. A box has no word for
+/// a sweep, so as a [BoxDecoration]'s gradient it is drawn as a linear one of
+/// the same colours.
+class SweepGradient extends Gradient {
+  const SweepGradient({
+    this.center = Alignment.center,
+    this.startAngle = 0.0,
+    this.endAngle = math.pi * 2,
+    required super.colors,
+    super.stops,
+    this.tileMode = TileMode.clamp,
+  });
+
+  final AlignmentGeometry center;
+  final double startAngle;
+  final double endAngle;
+  final TileMode tileMode;
+
+  @override
+  Map<String, dynamic> get _json => {
+    'type': 'linear',
+    'colors': _hexes,
+    if (stops != null) 'stops': stops,
+    'begin': const [-1.0, 0.0],
+    'end': const [1.0, 0.0],
+  };
+
+  @override
+  Shader createShader(Rect rect, {TextDirection? textDirection}) {
+    final middle = center.resolve(textDirection).withinRect(rect);
+    // Said as fractions of a whole turn from the start angle, which is what
+    // every renderer's own sweep takes; the stretch between the two angles
+    // is worked out once, here.
+    final share = ((endAngle - startAngle) / (math.pi * 2)).clamp(0.0, 1.0);
+    final count = colors.length;
+    final given = stops;
+    return Shader._({
+      'type': 'sweep',
+      'center': [middle.dx, middle.dy],
+      'angle': startAngle,
+      'colors': _hexes,
+      'stops': [
+        for (var i = 0; i < count; i++)
+          (given != null && i < given.length
+                  ? given[i]
+                  : (count == 1 ? 0.0 : i / (count - 1))) *
+              share,
+      ],
+    });
+  }
+}
+
 /// How a box is painted. [BoxDecoration] is the one the facade draws.
 abstract class Decoration {
   const Decoration();

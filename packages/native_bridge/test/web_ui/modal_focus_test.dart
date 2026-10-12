@@ -53,7 +53,7 @@ void main() {
     await renderer.render(screen(overlays: [dialog()]));
 
     expect(
-      (web.document.activeElement as web.Element?)?.getAttribute('role'),
+      web.document.activeElement?.getAttribute('role'),
       'dialog',
     );
   });

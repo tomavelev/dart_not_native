@@ -737,6 +737,17 @@ body:has(.dnn-modal) { overflow: hidden; }
 .dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar):has(> .dnn-scaffold > .dnn-fab) > .dnn-snackbar {
   bottom: calc(88px + var(--dnn-bottombar-height, 0px));
 }
+/* A bar fixed to the bottom: edge to edge, on the bottom bar when there is one. */
+.dnn-overlay > .dnn-snackbar.dnn-snackbar--fixed {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  margin: 0;
+}
+.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar) > .dnn-snackbar.dnn-snackbar--fixed {
+  bottom: var(--dnn-bottombar-height, 0px);
+}
 .dnn-snackbar__message { flex: 1; }
 .dnn-snackbar__action {
   font: inherit;

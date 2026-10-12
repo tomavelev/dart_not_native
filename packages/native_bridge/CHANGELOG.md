@@ -133,14 +133,84 @@ Flutter, it now agrees, and these are the places existing code has to change:
 
 - `SnackBar.backgroundColor` and `shape`, the colour of its content's text
   and `SnackBarAction.textColor` are drawn, on all four renderers. They
-  were accepted and sent nowhere. `margin`, `width`, `behavior` and
-  `elevation` still are.
+  were accepted and sent nowhere. So are `width` (a narrower bar, in the
+  middle), `margin`, `elevation` and `behavior`: a fixed bar runs edge to
+  edge along the bottom, square, on the bottom bar when there is one.
+- A floating bar stays above a floating button that belongs to a scaffold
+  nested in another's body, which no renderer knows is there.
 
 ### Disabled buttons on the web
 
 - Under MDL a disabled outlined or text button is its faded words, not a
   grey block; under Materialize a disabled tonal button keeps a fill.
   A text button is written in the app's primary under both.
+
+### Pages arrive and leave
+
+- **A page transition.** A renderer moves from the old page to the new
+  one: the old page, kept as a picture, fades away; a pushed page slides in
+  from the end of the screen and a popped one slides off towards it. For
+  pages pushed on a `Navigator` and for named routes, on all four
+  renderers. A page was simply replaced before.
+- It is the renderer's transition and the only one:
+  `PageRouteBuilder.transitionsBuilder` is still never called. Its
+  `transitionDuration` and `reverseTransitionDuration` are how long the
+  move takes, and zero is a page that is simply there.
+- Protocol: `RootProps.pageTransition`, `{'kind': 'push' | 'pop' | 'fade',
+  'ms': 300}`, on the first tree that shows the new page
+  (`UIBuilder.withPageTransition`). A renderer that ignores it shows the
+  page at once.
+
+- The in-repo `GoRouter`'s pages transition too. Any `RouterConfig` can
+  say so for its own: `announcePageTransition(context, 'push')` from the
+  build that first shows the new page.
+- A transition said on a tree that was batched away before it was drawn is
+  still shown, in the browser and the Flutter host.
+
+### Padding and alignment move
+
+- `AnimatedPadding`, `AnimatedAlign` and an `AnimatedContainer`'s padding,
+  margin and alignment travel over their duration. They already did on iOS
+  and, for the insets, in the browser; they now do on Android, in the
+  Flutter host and, for an alignment, in the browser.
+
+### Scroll notifications
+
+- `Notification`, `NotificationListener`, `ScrollNotification` and its
+  start, update and end, with `ScrollMetrics`. A scroller tells the
+  listeners above it as often as it reports its offset - at rest and about
+  every 100 ms on the way - and the end is a quarter of a second without a
+  report. `Notification.dispatch(context)` sends one of an app's own.
+
+### More of a canvas
+
+- `Canvas.clipPath` clips, on all four renderers (a `clipPath` command). It
+  was accepted and did nothing.
+- `Path.addRRect` is the rounded rectangle, each corner its own radius, and
+  `Path.arcToPoint` (and `relativeArcToPoint`) the arc. They were the plain
+  rectangle and a straight line.
+
+- A `SweepGradient` on a canvas, and `MaskFilter.blur` on a paint, on all
+  four renderers (a paint's `gradient` of type `sweep`, and its `blur`).
+  iOS draws a blur over a gradient sharp.
+
+### `animateTo` travels
+
+- `ScrollController.animateTo` scrolls there smoothly - the renderer's own
+  scroll, at the platform's pace - and its future takes the duration asked
+  for. It used to jump. A windowed list on iOS still does.
+
+### A box around an `Align` is as wide as it is offered
+
+- A `Container` with no width of its own around an `Align` (or an
+  `AnimatedAlign`) fills the width it is given, as Flutter's does. In the
+  browser it hugged the child, so the alignment had no room to show.
+
+### A tinted image
+
+- `Image.color` draws the picture as its own shape in that colour, on all
+  four renderers (`UIBuilder.image(color:)`). Flutter's default blend,
+  `srcIn`, is the one carried.
 
 ### `AnimatedSwitcher` and `AnimatedCrossFade` fade
 

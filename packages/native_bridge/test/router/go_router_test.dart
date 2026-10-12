@@ -759,6 +759,25 @@ void main() {
       expect(m.text('page'), 'home /');
     });
 
+    test('each move tells the renderer how the page was reached', () {
+      final m = _Mounted(router());
+      Object? move() => m.root.props['pageTransition'];
+      expect(move(), isNull, reason: 'the first page is simply there');
+
+      m.router.push('/form');
+      expect(move(), {'kind': 'push', 'ms': 300});
+
+      m.router.pop();
+      expect(move(), {'kind': 'pop', 'ms': 300});
+
+      m.router.go('/form');
+      expect(m.text('page'), 'form /form');
+      expect(move(), isNotNull);
+
+      m.router.go('/form');
+      expect(move(), isNull, reason: 'going where it is already is no move');
+    });
+
     test('popping with nothing to pop is an error', () {
       final m = _Mounted(router());
       expect(() => m.router.pop(), throwsA(isA<GoError>()));

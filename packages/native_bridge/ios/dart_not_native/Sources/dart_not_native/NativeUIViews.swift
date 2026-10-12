@@ -1084,15 +1084,27 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
 
 // MARK: - Canvas
 
+extension CGAffineTransform {
+  /// The transform without its move: what it does to a distance.
+  fileprivate var linear: CGAffineTransform {
+    CGAffineTransform(a: a, b: b, c: c, d: d, tx: 0, ty: 0)
+  }
+}
+
 /// One entry of a canvas's `paints`.
 /// A paint's gradient, placed in the canvas's own coordinates: two points
-/// for a linear one, a centre and a radius for a radial one.
+/// for a linear one, a centre and a radius for a radial one, a centre and
+/// the angle it starts at for a sweep.
 struct DnnPaintGradient {
   let gradient: CGGradient
   let radial: Bool
   let from: CGPoint
   let to: CGPoint
   let radius: CGFloat
+
+  /// A sweep's colours and where each sits in a whole turn; nil for the
+  /// other two kinds. Core Graphics draws no sweep, so it is drawn here.
+  let sweep: (colors: [UIColor], stops: [CGFloat], angle: CGFloat)?
 
   init?(_ raw: Any?) {
     guard let spec = raw as? [String: Any],
@@ -1119,7 +1131,14 @@ struct DnnPaintGradient {
     else { return nil }
     gradient = made
     radial = spec["type"] as? String == "radial"
-    if radial {
+    sweep =
+      spec["type"] as? String == "sweep"
+      ? (colors, stops ?? [], dnnNumber(spec["angle"]) ?? 0) : nil
+    if sweep != nil {
+      radius = 0
+      from = point("center")
+      to = from
+    } else if radial {
       radius = dnnNumber(spec["radius"]) ?? 0
       guard radius > 0 else { return nil }
       from = point("center")
@@ -1135,7 +1154,9 @@ struct DnnPaintGradient {
   /// beyond its ends.
   func draw(in context: CGContext) {
     let beyond: CGGradientDrawingOptions = [.drawsBeforeStartLocation, .drawsAfterEndLocation]
-    if radial {
+    if let sweep = sweep {
+      drawSweep(sweep.colors, sweep.stops, from: sweep.angle, in: context)
+    } else if radial {
       context.drawRadialGradient(
         gradient, startCenter: from, startRadius: 0, endCenter: from, endRadius: radius,
         options: beyond)
@@ -1145,7 +1166,58 @@ struct DnnPaintGradient {
   }
 }
 
+extension DnnPaintGradient {
+  /// A sweep as thin wedges about the centre, each the colour the turn has
+  /// reached - half a degree wide, which is past what an eye picks out.
+  fileprivate func drawSweep(
+    _ colors: [UIColor], _ stops: [CGFloat], from angle: CGFloat, in context: CGContext
+  ) {
+    let clip = context.boundingBoxOfClipPath
+    guard !clip.isEmpty, !clip.isInfinite else { return }
+    // Far enough to pass every corner of what is being filled.
+    let reach =
+      [
+        CGPoint(x: clip.minX, y: clip.minY), CGPoint(x: clip.maxX, y: clip.minY),
+        CGPoint(x: clip.minX, y: clip.maxY), CGPoint(x: clip.maxX, y: clip.maxY),
+      ].map { hypot($0.x - from.x, $0.y - from.y) }.max() ?? 0
+    guard reach > 0 else { return }
+    let parts = colors.map { color -> [CGFloat] in
+      var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+      color.getRed(&r, green: &g, blue: &b, alpha: &a)
+      return [r, g, b, a]
+    }
+    func colour(at turn: CGFloat) -> CGColor {
+      var index = 0
+      while index < stops.count - 1 && turn > stops[index + 1] { index += 1 }
+      let next = min(index + 1, parts.count - 1)
+      let span = stops[next] - stops[index]
+      let t = span > 0 ? min(max((turn - stops[index]) / span, 0), 1) : (turn < stops[index] ? 0 : 1)
+      let mixed = (0..<4).map { parts[index][$0] + (parts[next][$0] - parts[index][$0]) * t }
+      return UIColor(red: mixed[0], green: mixed[1], blue: mixed[2], alpha: mixed[3]).cgColor
+    }
+    let wedges = 720
+    let step = 2 * CGFloat.pi / CGFloat(wedges)
+    context.saveGState()
+    // Wedges that meet edge to edge show a hair of what is behind when they
+    // are smoothed; each is drawn hard and a touch wider than its share.
+    context.setShouldAntialias(false)
+    for wedge in 0..<wedges {
+      let start = angle + CGFloat(wedge) * step
+      let end = start + step * 1.5
+      context.move(to: from)
+      context.addLine(to: CGPoint(x: from.x + reach * cos(start), y: from.y + reach * sin(start)))
+      context.addLine(to: CGPoint(x: from.x + reach * cos(end), y: from.y + reach * sin(end)))
+      context.closePath()
+      context.setFillColor(colour(at: (CGFloat(wedge) + 0.5) / CGFloat(wedges)))
+      context.fillPath()
+    }
+    context.restoreGState()
+  }
+}
+
 struct DnnPaint {
+  /// A blur's sigma; zero for none.
+  var blur: CGFloat = 0
   var gradient: DnnPaintGradient?
   var color = UIColor.black
   var stroke = false
@@ -1191,6 +1263,7 @@ final class DnnCanvasDrawingView: UIView {
       guard let map = raw as? [String: Any] else { return paint }
       paint.color = dnnColor(map["color"]) ?? .black
       paint.gradient = DnnPaintGradient(map["gradient"])
+      paint.blur = max(0, dnnNumber(map["blur"]) ?? 0)
       paint.stroke = (map["style"] as? String) == "stroke"
       paint.width = dnnNumber(map["strokeWidth"]) ?? 0
       switch map["cap"] as? String {
@@ -1278,12 +1351,42 @@ final class DnnCanvasDrawingView: UIView {
       context.clip()
       gradient.draw(in: context)
       context.restoreGState()
+    } else if paint.blur > 0 {
+      // Core Graphics blurs nothing but a shadow. So the shape is drawn far
+      // off to one side, where it cannot be seen, and its shadow - in the
+      // shape's own colour - is thrown back to where the shape belongs.
+      let far: CGFloat = 20000
+      let scale = max(contentScaleFactor, 1)
+      // A shadow's offset is counted on the screen, whatever the commands
+      // have turned or scaled; the shape is moved by what that comes to in
+      // the space it is drawn in.
+      let away = CGSize(width: -far * scale, height: 0).applying(
+        context.userSpaceToDeviceSpaceTransform.inverted().linear)
+      let outline = stroked ? strokedCopy(path, paint) : path
+      context.beginPath()
+      context.saveGState()
+      context.setShadow(
+        offset: CGSize(width: far, height: 0), blur: paint.blur * 2,
+        color: paint.color.cgColor)
+      context.translateBy(x: away.width, y: away.height)
+      context.addPath(outline)
+      context.setFillColor(paint.color.cgColor)
+      context.fillPath()
+      context.restoreGState()
     } else if stroked {
       context.strokePath()
     } else {
       context.setFillColor(paint.color.cgColor)
       context.fillPath()
     }
+  }
+
+  /// The outline of [path] stroked the way [paint] says, as a shape to fill.
+  private func strokedCopy(_ path: CGPath, _ paint: DnnPaint) -> CGPath {
+    let hairline = 1 / max(contentScaleFactor, 1)
+    return path.copy(
+      strokingWithWidth: paint.width > 0 ? paint.width : hairline, lineCap: paint.cap,
+      lineJoin: paint.join, miterLimit: 10)
   }
 
   private func segmentPath(_ segments: [Any]) -> CGPath {
@@ -1434,6 +1537,16 @@ final class DnnCanvasDrawingView: UIView {
       case "clipRRect":
         context.addPath(roundedRect(self.rect(command, 1), num(command, 5)))
         context.clip()
+      case "clipPath":
+        let outline = segmentPath(item(command, 1) as? [Any] ?? [])
+        // Clipping to no path at all is an error to Core Graphics; what it
+        // means is that nothing is left to draw in.
+        if outline.isEmpty {
+          context.clip(to: .zero)
+        } else {
+          context.addPath(outline)
+          context.clip()
+        }
       default:
         break
       }
@@ -1808,13 +1921,14 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
     NSLayoutConstraint.activate(next)
   }
 
-  private func setOffset(_ value: CGFloat) {
+  private func setOffset(_ value: CGFloat, animated: Bool = false) {
     let target = horizontal ? CGPoint(x: value, y: 0) : CGPoint(x: 0, y: value)
-    if contentOffset != target { contentOffset = target }
+    if contentOffset != target { setContentOffset(target, animated: animated) }
   }
 
-  /// Scrolls to [offset] now, or as soon as there is content to scroll.
-  func jump(to offset: CGFloat) {
+  /// Scrolls to [offset] now, or as soon as there is content to scroll -
+  /// travelling there when [animated], if there is somewhere to travel from.
+  func jump(to offset: CGFloat, animated: Bool = false) {
     if settled {
       let viewport = horizontal ? bounds.width : bounds.height
       let extent = horizontal ? contentSize.width : contentSize.height
@@ -1822,7 +1936,7 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
       // Reversed, an offset counts from the far end - as it does on the
       // other renderers, and as `onReport` says it.
       let held = min(max(0, offset), maxOffset)
-      setOffset(reverse ? maxOffset - held : held)
+      setOffset(reverse ? maxOffset - held : held, animated: animated)
     } else {
       pendingJump = offset
     }

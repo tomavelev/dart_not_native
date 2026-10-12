@@ -434,8 +434,8 @@ whose API is Flutter's, or put it in a `FlutterSlot`.
 
 **Q: What looks different from the Flutter version of my app?**
 A: The controls are the platform's own, so they look like the platform. Beyond
-that there is a list: no page transitions, `Dismissible` reveals an action
-instead of sliding away, a snackbar's look is the platform's, and more - the table in
+that there is a list: a page transition is the renderer's own slide and fade
+and not one the app designs, there is no `AnimationController`, and more - the table in
 INTEGRATION.md §8.9.
 
 **Q: How does offline-first work?**
@@ -455,7 +455,7 @@ separate from the renderers, optional, and documented in
 - ✅ Three production apps migrated and run on an Android emulator
 - ✅ Storage, including secure storage on web with key rotation
 - ⏳ iOS: compile the current Swift, then run it
-- ⏳ Explicit animation and page transitions
+- ⏳ Explicit animation (`AnimationController`) and page transitions an app designs
 - ⏳ Publishing to pub.dev; CI for apps that consume the framework
 - ⏳ Offline-first sync, as a package of its own
 

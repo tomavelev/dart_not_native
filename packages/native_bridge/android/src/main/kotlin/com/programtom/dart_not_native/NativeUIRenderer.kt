@@ -299,6 +299,59 @@ class NativeUIRenderer(
      * declaration, so the flag is raised here rather than making every app
      * edit a manifest to get what it already said it wanted.
      */
+    /**
+     * Moves from the page on screen to the one about to be drawn.
+     *
+     * A picture of [root] as it is now is laid over it and fades away over
+     * the transition's `ms`, so whatever is drawn underneath in the meantime
+     * is uncovered rather than swapped in. A pushed page slides in from the
+     * end of the screen while that happens; a popped one - the picture -
+     * slides off towards it.
+     */
+    private fun movePages(root: ViewGroup, transition: Map<*, *>, rtl: Boolean) {
+        val width = root.width
+        val height = root.height
+        if (width <= 0 || height <= 0) return
+        val ms = (transition["ms"] as? Number)?.toLong() ?: 300L
+        if (ms <= 0) return
+        val picture = try {
+            android.graphics.Bitmap.createBitmap(
+                width, height, android.graphics.Bitmap.Config.ARGB_8888
+            )
+        } catch (e: OutOfMemoryError) {
+            return
+        }
+        root.draw(android.graphics.Canvas(picture))
+        val leaving = android.graphics.drawable.BitmapDrawable(root.resources, picture)
+        leaving.setBounds(0, 0, width, height)
+        root.overlay.add(leaving)
+        val kind = transition["kind"]
+        val travel = width * 0.25f * (if (rtl) -1 else 1)
+        val run = android.animation.ValueAnimator.ofFloat(0f, 1f)
+        run.duration = ms
+        run.interpolator = android.view.animation.DecelerateInterpolator()
+        run.addUpdateListener { step ->
+            val done = step.animatedValue as Float
+            leaving.alpha = (255 * (1 - done)).toInt()
+            if (kind == "pop") {
+                val shift = (travel * done).toInt()
+                leaving.setBounds(shift, 0, shift + width, height)
+            }
+            // Whichever view is the page by now: the one a rebuild made, or
+            // the old one a patch kept.
+            if (kind == "push") currentRoot?.translationX = travel * (1 - done)
+            root.invalidate()
+        }
+        run.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                root.overlay.remove(leaving)
+                currentRoot?.translationX = 0f
+                picture.recycle()
+            }
+        })
+        run.start()
+    }
+
     private fun applyDirection(root: View, tree: Map<*, *>): Boolean {
         val rtl = tree["textDirection"] == "rtl"
         if (rtl) {
@@ -1015,7 +1068,18 @@ class NativeUIRenderer(
         if (tree == null) return mapOf("error" to "Error: tree is null")
         val root = rootContainer
             ?: return mapOf("error" to "Error: container not initialized")
-        val next = normalized(tree)
+        var next = normalized(tree)
+        // How the page was reached rides on the first tree that shows it and
+        // is taken off here: it is about the screen, and a root that differs
+        // only by it has not changed.
+        val transition = next["pageTransition"] as? Map<*, *>
+        if (next.containsKey("pageTransition")) {
+            val props = (next["props"] as? Map<*, *>).orEmpty() - "pageTransition"
+            next = next - "pageTransition" + ("props" to props)
+        }
+        if (transition != null && currentTree != null) {
+            movePages(root, transition, next["textDirection"] == "rtl")
+        }
 
         return try {
             unknownTypes.clear()
@@ -1338,7 +1402,14 @@ class NativeUIRenderer(
             scrollVersions["lazy:$listId"] = version
             val target = px(newNode["scrollOffset"])
             lazyScroll[listId] = target
-            scroll.post { scroll.scrollTo(0, target) }
+            val travel = newNode["scrollAnimated"] == true
+            scroll.post {
+                if (travel && scroll is android.widget.ScrollView) {
+                    scroll.smoothScrollTo(0, target)
+                } else {
+                    scroll.scrollTo(0, target)
+                }
+            }
         }
         return true
     }
@@ -2807,6 +2878,10 @@ class NativeUIRenderer(
                 "none" -> ImageView.ScaleType.CENTER
                 "scaleDown" -> ImageView.ScaleType.CENTER_INSIDE
                 else -> ImageView.ScaleType.CENTER_CROP
+            }
+            // A tint: the picture's shape in one colour.
+            parseColorOrNull(node["color"])?.let {
+                setColorFilter(it, android.graphics.PorterDuff.Mode.SRC_IN)
             }
         }
         container.addView(image, FrameLayout.LayoutParams(
@@ -4770,11 +4845,13 @@ class NativeUIRenderer(
             background = GradientDrawable().apply {
                 // The look the app stated, or the bar's own.
                 setColor(color(node["backgroundColor"], inversePalette.surface))
+                // A fixed bar is square unless it was told otherwise.
                 cornerRadius = (node["borderRadius"] as? Number)?.toFloat()
                     ?.let { it * activity.resources.displayMetrics.density }
-                    ?: dp(4).toFloat()
+                    ?: if (node["fixed"] == true) 0f else dp(4).toFloat()
             }
-            elevation = dp(6).toFloat()
+            elevation = (node["elevation"] as? Number)?.let { px(it).toFloat() }
+                ?: dp(6).toFloat()
             // Taps on the bar itself do not fall through to the screen below.
             isClickable = true
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
@@ -4802,23 +4879,43 @@ class NativeUIRenderer(
             }, linear(width = ViewGroup.LayoutParams.WRAP_CONTENT))
         }
 
+        // As wide as the app said, in the middle; the margins below still
+        // hold it off the edges of a screen narrower than that.
+        val stated = (node["width"] as? Number)?.let { px(it) }
         val params = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
+            stated ?: ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
         )
         bar.layoutParams = params
+        // The room around it: none for a bar fixed to the bottom, the app's
+        // own for one that floats, and the bar's sixteen otherwise.
+        val fixed = node["fixed"] == true
+        val room = when {
+            fixed -> listOf(0, 0, 0, 0)
+            node["margin"] != null -> edges(node["margin"])
+            else -> dp(16).let { listOf(it, 0, it, it) }
+        }
         onSystemBars(bar) { bars ->
-            params.setMargins(
-                dp(16) + bars.left, 0,
-                dp(16) + bars.right, dp(16) + bars.bottom
-            )
+            if (fixed) {
+                // To the very edge, with the system's own bar under its
+                // words rather than under the bar.
+                params.setMargins(0, 0, 0, 0)
+                bar.setPaddingRelative(dp(16), dp(6), dp(8), dp(6) + bars.bottom)
+            } else {
+                params.setMargins(
+                    room[0] + bars.left, 0,
+                    room[2] + bars.right, room[3] + bars.bottom
+                )
+            }
             bar.layoutParams = params
         }
-        // Above the scaffold's bottom bar and floating button, not over them.
+        // Above the scaffold's bottom bar and floating button, not over them;
+        // a fixed bar sits on what is there.
         return SnackbarHost(activity).apply {
             layoutParams = matchParent()
-            gap = dp(8)
+            gap = if (fixed) 0 else dp(8)
+            clearsFab = !fixed
             addView(bar)
         }
     }
@@ -5231,6 +5328,8 @@ class NativeUIRenderer(
             scrollVersions[key] = version
         }
         val target = px(node["scrollOffset"])
+        // Only a scroller already on screen has somewhere to travel from.
+        memory.smooth = live && node["scrollAnimated"] == true
         if (live) memory.jumpTo(target) else memory.pending = target
     }
 

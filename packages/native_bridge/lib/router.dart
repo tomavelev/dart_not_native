@@ -821,6 +821,19 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
   void _commit(List<_Entry> stack, _Mirror mirror, {bool notify = true}) {
     final previous = _stack;
     _stack = stack;
+    // Another page on top is a move the renderer can show; said at the build
+    // that draws it.
+    final was = previous.lastOrNull;
+    final now = stack.lastOrNull;
+    if (was != null &&
+        now != null &&
+        (was.list.location != now.list.location || was.pushId != now.pushId)) {
+      _move = stack.length > previous.length
+          ? 'push'
+          : stack.length < previous.length
+          ? 'pop'
+          : 'fade';
+    }
     for (final entry in previous) {
       if (entry.pushId == null) continue;
       if (stack.any((kept) => kept.pushId == entry.pushId)) continue;
@@ -1015,11 +1028,19 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
       child: Builder(
         builder: (context) {
           _attach(context);
+          final move = _move;
+          if (move != null && _ready) {
+            _move = null;
+            announcePageTransition(context, move);
+          }
           return _ready ? _buildTop() : const SizedBox();
         },
       ),
     ),
   );
+
+  /// How the page on top was reached, until a build has said so.
+  String? _move;
 
   void _attach(BuildContext context) {
     _context = context;
