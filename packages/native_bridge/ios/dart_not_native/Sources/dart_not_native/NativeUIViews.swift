@@ -2174,6 +2174,119 @@ final class DnnRootContainerView: UIView {
     for hole in holes where hole.contains(point) { return nil }
     return super.hitTest(point, with: event)
   }
+
+  // MARK: Hardware keys
+
+  /// A hardware key went down (true) or came up, under the name a browser's
+  /// `KeyboardEvent.key` gives it.
+  var onKey: ((String, Bool) -> Void)?
+
+  private var keyObservers: [NSObjectProtocol] = []
+
+  // UIKit hands a key to the first responder and on up from there. With no
+  // field being typed in there is none, and the key goes to the view
+  // controller without passing this view - so the container asks to be the
+  // one whenever nothing else is. It is not a text input, so no keyboard
+  // comes up for it.
+  override var canBecomeFirstResponder: Bool { true }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    for token in keyObservers { NotificationCenter.default.removeObserver(token) }
+    keyObservers = []
+    guard window != nil else { return }
+    // A field that is done with the keyboard leaves it with nobody.
+    let names: [NSNotification.Name] = [
+      UITextField.textDidEndEditingNotification,
+      UITextView.textDidEndEditingNotification,
+      UIApplication.didBecomeActiveNotification,
+    ]
+    for name in names {
+      let token = NotificationCenter.default.addObserver(
+        forName: name, object: nil, queue: .main
+      ) { [weak self] _ in
+        // After the turn: a field handing over to the next has not yet.
+        DispatchQueue.main.async { self?.takeKeys() }
+      }
+      keyObservers.append(token)
+    }
+    takeKeys()
+  }
+
+  deinit {
+    for token in keyObservers { NotificationCenter.default.removeObserver(token) }
+  }
+
+  /// Becomes the first responder when the window has none.
+  private func takeKeys() {
+    guard let window, !isFirstResponder, Self.firstResponder(in: window) == nil else { return }
+    becomeFirstResponder()
+  }
+
+  private static func firstResponder(in view: UIView) -> UIView? {
+    if view.isFirstResponder { return view }
+    for child in view.subviews {
+      if let found = firstResponder(in: child) { return found }
+    }
+    return nil
+  }
+
+  override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    report(presses, down: true)
+    super.pressesBegan(presses, with: event)
+  }
+
+  override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    report(presses, down: false)
+    super.pressesEnded(presses, with: event)
+  }
+
+  override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    report(presses, down: false)
+    super.pressesCancelled(presses, with: event)
+  }
+
+  private func report(_ presses: Set<UIPress>, down: Bool) {
+    guard let onKey, #available(iOS 13.4, *) else { return }
+    for press in presses {
+      guard let key = press.key, let name = Self.keyName(key) else { continue }
+      onKey(name, down)
+    }
+  }
+
+  @available(iOS 13.4, *)
+  private static func keyName(_ key: UIKey) -> String? {
+    switch key.keyCode {
+    case .keyboardUpArrow: return "ArrowUp"
+    case .keyboardDownArrow: return "ArrowDown"
+    case .keyboardLeftArrow: return "ArrowLeft"
+    case .keyboardRightArrow: return "ArrowRight"
+    case .keyboardReturnOrEnter, .keypadEnter: return "Enter"
+    case .keyboardSpacebar: return " "
+    case .keyboardDeleteOrBackspace: return "Backspace"
+    case .keyboardDeleteForward: return "Delete"
+    case .keyboardEscape: return "Escape"
+    case .keyboardTab: return "Tab"
+    case .keyboardLeftShift, .keyboardRightShift: return "Shift"
+    case .keyboardLeftControl, .keyboardRightControl: return "Control"
+    case .keyboardLeftAlt, .keyboardRightAlt: return "Alt"
+    case .keyboardLeftGUI, .keyboardRightGUI: return "Meta"
+    case .keyboardPageUp: return "PageUp"
+    case .keyboardPageDown: return "PageDown"
+    case .keyboardHome: return "Home"
+    case .keyboardEnd: return "End"
+    default: break
+    }
+    let code = key.keyCode.rawValue
+    let f1 = UIKeyboardHIDUsage.keyboardF1.rawValue
+    if code >= f1 && code <= UIKeyboardHIDUsage.keyboardF12.rawValue {
+      return "F\(code - f1 + 1)"
+    }
+    // What the key types, shift and all; a key that types nothing has a
+    // name of UIKit's own here, which is not one a browser would give.
+    let typed = key.characters
+    return typed.isEmpty || typed.hasPrefix("UIKeyInput") ? nil : typed
+  }
 }
 
 // MARK: - App bar

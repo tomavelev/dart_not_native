@@ -934,7 +934,9 @@ class _BaseRoute extends ModalRoute<Object?> {
   /// app with `MaterialApp(routes:)`; `/` otherwise.
   @override
   RouteSettings get settings {
-    final entry = _navigator?._owner?.routerNav?.router.state.current;
+    final owner = _navigator?._owner;
+    // A named page kept beneath the one on screen is still its own route.
+    final entry = owner?._namedEntry ?? owner?.routerNav?.router.state.current;
     if (entry == null) return super.settings;
     return RouteSettings(name: entry.path, arguments: _namedArguments[entry]);
   }
@@ -1264,7 +1266,9 @@ class NavigatorState extends State<Navigator> {
   /// back gesture follow. So a named route asked for while a pushed page is
   /// on screen is pushed over it as a page, where it can be seen, and the
   /// future completes with what it is popped with; one asked for from a named
-  /// route moves the history, and the future completes with null once it has.
+  /// route moves the history, and the future completes when that page is
+  /// popped, with what it was popped with - null when it was the platform's
+  /// back gesture or the browser's button that did it.
   Future<T?> pushNamed<T extends Object?>(
     String routeName, {
     Object? arguments,
@@ -1274,8 +1278,37 @@ class NavigatorState extends State<Navigator> {
       final route = _namedRoute<T>(routeName, arguments);
       if (route != null) return push<T>(route);
     }
-    await _navigateNamed(routeName, arguments);
-    return null;
+    return _whenNamedPopped<T>(await _navigateNamed(routeName, arguments));
+  }
+
+  /// What the named page [entry] is popped with, once it is.
+  Future<T?> _whenNamedPopped<T extends Object?>(RouteEntry? entry) async {
+    if (entry == null) return null;
+    final popped = _namedWaiting[entry] ??= Completer<Object?>();
+    return (await popped.future) as T?;
+  }
+
+  /// The named pages somebody is waiting to hear the end of, and the one
+  /// that was just popped by name with what it was popped with.
+  final Map<RouteEntry, Completer<Object?>> _namedWaiting = {};
+  RouteEntry? _poppedEntry;
+  Object? _poppedResult;
+
+  /// Answers whoever pushed a named page that is no longer on the way to the
+  /// one on screen.
+  void _settleNamed() {
+    if (_namedWaiting.isEmpty) return;
+    final state = _host.routerNav?.router.state;
+    final live = state == null
+        ? const <RouteEntry>[]
+        : state.history.sublist(0, state.index + 1);
+    _namedWaiting.removeWhere((entry, popped) {
+      if (live.any((kept) => identical(kept, entry))) return false;
+      popped.complete(identical(entry, _poppedEntry) ? _poppedResult : null);
+      return true;
+    });
+    _poppedEntry = null;
+    _poppedResult = null;
   }
 
   /// Shows the named route in place of the page on screen, whose future
@@ -1298,15 +1331,20 @@ class NavigatorState extends State<Navigator> {
       // The one pushed page goes, and the named history gains the route.
       _complete(_routes.removeLast(), result);
       _host._requestRebuild();
-      await _navigateNamed(routeName, arguments);
-      return null;
+      return _whenNamedPopped<T>(await _navigateNamed(routeName, arguments));
     }
-    nav.router.replaceWith(
-      routeName,
-      params: arguments is Map<String, dynamic> ? arguments : null,
+    _poppedEntry = nav.router.state.current;
+    _poppedResult = result;
+    return _whenNamedPopped<T>(
+      await _moveNamed(arguments, (nav) async {
+        final replaced = nav.router.state.current;
+        nav.router.replaceWith(
+          routeName,
+          params: arguments is Map<String, dynamic> ? arguments : null,
+        );
+        return !identical(nav.router.state.current, replaced);
+      }),
     );
-    _rememberArguments(arguments);
-    return null;
   }
 
   /// Shows the named route after removing every page until [predicate] is
@@ -1333,13 +1371,16 @@ class NavigatorState extends State<Navigator> {
       }
       return push<T>(route);
     }
-    final navigated = await nav.router.navigateAndRemoveUntil(
-      newRouteName,
-      (entry) => predicate(_HistoryRoute(entry)),
-      params: arguments is Map<String, dynamic> ? arguments : null,
+    return _whenNamedPopped<T>(
+      await _moveNamed(
+        arguments,
+        (nav) => nav.router.navigateAndRemoveUntil(
+          newRouteName,
+          (entry) => predicate(_HistoryRoute(entry)),
+          params: arguments is Map<String, dynamic> ? arguments : null,
+        ),
+      ),
     );
-    if (navigated) _rememberArguments(arguments);
-    return null;
   }
 
   /// Pops the page on screen and shows the named route.
@@ -1352,17 +1393,41 @@ class NavigatorState extends State<Navigator> {
     return pushNamed<T>(routeName, arguments: arguments);
   }
 
-  Future<void> _navigateNamed(String routeName, Object? arguments) async {
-    final navigated = await _host.routerNav?.navigate(
-      routeName,
-      params: arguments is Map<String, dynamic> ? arguments : null,
-    );
-    if (navigated ?? false) _rememberArguments(arguments);
-  }
+  /// Moves the named history to [routeName] and answers the entry it made,
+  /// or null when it did not move.
+  Future<RouteEntry?> _navigateNamed(String routeName, Object? arguments) =>
+      _moveNamed(
+        arguments,
+        (nav) => nav.navigate(
+          routeName,
+          params: arguments is Map<String, dynamic> ? arguments : null,
+        ),
+      );
 
-  void _rememberArguments(Object? arguments) {
-    final entry = _host.routerNav?.router.state.current;
-    if (entry != null) _namedArguments[entry] = arguments;
+  /// Runs [move] on the named history and answers the entry it arrived at,
+  /// or null when it did not move. The entry has its [arguments] from the
+  /// moment it exists: the page is built as the history changes, and reads
+  /// them in that first build.
+  Future<RouteEntry?> _moveNamed(
+    Object? arguments,
+    Future<bool> Function(NavigationApp nav) move,
+  ) async {
+    final nav = _host.routerNav;
+    if (nav == null) return null;
+    RouteEntry? made;
+    void note(RouterEvent event) {
+      made = event.to;
+      _namedArguments[event.to] = arguments;
+    }
+
+    // First among the listeners: the one that rebuilds comes after.
+    nav.router.listeners.insert(0, note);
+    try {
+      if (!await move(nav)) return null;
+    } finally {
+      nav.router.listeners.remove(note);
+    }
+    return made;
   }
 
   /// The named route [name] of the [MaterialApp] above as a page to push, or
@@ -1403,6 +1468,8 @@ class NavigatorState extends State<Navigator> {
       router.pop<T>(result);
       return;
     }
+    _poppedEntry = host.routerNav?.router.state.current;
+    _poppedResult = result;
     host.routerNav?.goBack();
   }
 
@@ -1459,13 +1526,19 @@ class NavigatorState extends State<Navigator> {
       _complete(route, null);
     }
     _routes.clear();
+    for (final popped in _namedWaiting.values) {
+      popped.complete(null);
+    }
+    _namedWaiting.clear();
   }
 
   /// The page the last build showed, and how many were under it.
   Route<dynamic>? _shownTop;
   int _shownDepth = 0;
 
-  /// The named route the last build showed, and how long the way there was.
+  /// The named route the last build showed, and how far along the way it
+  /// was - its place, not the length: a push after going back cuts off what
+  /// was ahead and leaves the way as long as it was.
   Object? _shownEntry;
   int _shownTrail = 0;
 
@@ -1482,7 +1555,7 @@ class NavigatorState extends State<Navigator> {
     final router = _host.routerNav;
     final entry = router?.router.state.current;
     final entryBefore = _shownEntry;
-    final trail = router?.history.length ?? 0;
+    final trail = router?.router.state.index ?? 0;
     final trailBefore = _shownTrail;
     _shownEntry = entry;
     _shownTrail = trail;
@@ -1494,7 +1567,7 @@ class NavigatorState extends State<Navigator> {
       owner._pageTransition = {
         'kind': trail > trailBefore
             ? 'push'
-            : (router?.router.state.canGoForward ?? false) || trail < trailBefore
+            : trail < trailBefore
             ? 'pop'
             : 'fade',
         'ms': 300,
@@ -1525,6 +1598,7 @@ class NavigatorState extends State<Navigator> {
   @override
   Widget build(BuildContext context) => _NodeWidget((owner) {
     owner._navigators.add(this);
+    _settleNamed();
     _base.child = widget.child;
     final pages = [if (!_baseReplaced) _base, ..._routes];
     if (owner._hidden == 0) _noteTransition(owner, pages);
@@ -1713,6 +1787,10 @@ class _MaterialAppState extends State<MaterialApp> {
   NavigationApp? _nav;
   _Owner? _renderOwner;
 
+  /// A number for each entry of the named history, to keep its page by.
+  final Expando<int> _entryIds = Expando<int>('named page');
+  int _entries = 0;
+
   /// What the delegates loaded, and the locale and delegates they loaded it
   /// for. Kept while a newer load is under way, so a change of language shows
   /// the old strings until the new ones are there rather than none.
@@ -1864,8 +1942,34 @@ class _MaterialAppState extends State<MaterialApp> {
     if (nav != null) {
       owner.routerNav = nav;
       _renderOwner = owner;
-      // The current route's node, built inside this build's binding scope.
-      first = _NodeWidget((_) => nav.router.buildCurrentRoute());
+      // The current route's node, built inside this build's binding scope -
+      // and under it the ones on the way there, built only to keep what
+      // they hold: a page that is gone back to is as it was left.
+      first = _NodeWidget((owner) {
+        final state = nav.router.state;
+        final outer = owner._namedEntry;
+        WidgetNode? shown;
+        try {
+          for (var i = 0; i <= state.index; i++) {
+            final entry = state.history[i];
+            final id = 'named#${_entryIds[entry] ??= ++_entries}';
+            final page = _NodeWidget((_) => entry.route.builder(entry.params));
+            owner._namedEntry = entry;
+            // Its own keys and its own place: the same route twice on the
+            // way is two pages.
+            owner._withKeyScope(id, () {
+              if (i == state.index) {
+                shown = owner.inSlot(id, () => page._render(owner));
+              } else {
+                owner._offstage(id, page);
+              }
+            });
+          }
+        } finally {
+          owner._namedEntry = outer;
+        }
+        return shown ?? UIBuilder.sizedBox();
+      });
     } else if (router != null) {
       owner._router = router;
       first = Builder(builder: router.build);
@@ -2442,6 +2546,16 @@ class _ScaffoldFrame extends Widget {
     // knows about. This one's is a box in a stack, so the snackbar is told.
     if (floatingActionButton != null && owner._hidden == 0) {
       owner._nestedFab = true;
+    }
+    // Nor does one know this scaffold's bottom bar, which nothing measures:
+    // a navigation bar is as tall as it says or as Material makes it, and
+    // anything else is taken to be a bar of the usual height.
+    final under = bottomNavigationBar;
+    if (under != null && owner._hidden == 0) {
+      owner._nestedBar = switch (under) {
+        NavigationBar(:final height) => height ?? 80,
+        _ => 56,
+      };
     }
     final node = UIBuilder.column(
       crossAxisAlignment: 'stretch',

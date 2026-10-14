@@ -352,6 +352,131 @@ class NativeUIRenderer(
         run.start()
     }
 
+    /** The boxes that have a hero's name (`hero`), by view. */
+    private val heroViews = java.util.WeakHashMap<View, String>()
+
+    /** Every hero's name in [node] and below it. */
+    private fun heroNames(node: Map<*, *>, into: MutableSet<String>): Set<String> {
+        (node["hero"] as? String)?.let { into.add(it) }
+        childNodes(node).forEach { heroNames(it, into) }
+        return into
+    }
+
+    /** Where [view] is drawn in [root], or null when it is not on screen. */
+    private fun placeIn(root: View, view: View): android.graphics.Rect? {
+        if (!view.isAttachedToWindow || !view.isShown) return null
+        if (view.width <= 0 || view.height <= 0) return null
+        val at = IntArray(2)
+        val origin = IntArray(2)
+        view.getLocationInWindow(at)
+        root.getLocationInWindow(origin)
+        val x = at[0] - origin[0]
+        val y = at[1] - origin[1]
+        return android.graphics.Rect(x, y, x + view.width, y + view.height)
+    }
+
+    /** The heroes on screen with one of [names], and where each stands. */
+    private fun heroPlaces(
+        root: View,
+        names: Set<String>,
+    ): Map<View, Pair<String, android.graphics.Rect>> {
+        if (names.isEmpty() || heroViews.isEmpty()) return emptyMap()
+        val found = LinkedHashMap<View, Pair<String, android.graphics.Rect>>()
+        val taken = HashSet<String>()
+        for ((view, name) in heroViews.entries.toList()) {
+            if (view == null || name !in names || name in taken) continue
+            val place = placeIn(root, view) ?: continue
+            taken.add(name)
+            found[view] = name to place
+        }
+        return found
+    }
+
+    /**
+     * Flies the heroes of the page about to be drawn.
+     *
+     * [from] is where the old page's stood. Once the new page has been laid
+     * out, each of its heroes with the same name is drawn once into a picture
+     * that travels from the old place to the hero's own, stretched from the
+     * one size to the other, over [ms]; the hero itself is out of sight until
+     * the picture lands.
+     */
+    private fun flyHeroes(
+        root: ViewGroup,
+        from: Map<View, Pair<String, android.graphics.Rect>>,
+        ms: Long,
+    ) {
+        if (ms <= 0) return
+        val starts = from.values.associate { it.first to it.second }
+        val observer = root.viewTreeObserver
+        observer.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (root.viewTreeObserver.isAlive) {
+                    root.viewTreeObserver.removeOnPreDrawListener(this)
+                }
+                // A pushed page has already been set to one side to slide in
+                // from; where its heroes stand is where they will come to rest.
+                val slid = (currentRoot?.translationX ?: 0f).toInt()
+                val flown = HashSet<String>()
+                for ((view, name) in heroViews.entries.toList()) {
+                    val start = starts[name] ?: continue
+                    if (view == null || name in flown) continue
+                    val end = placeIn(root, view) ?: continue
+                    end.offset(-slid, 0)
+                    // The same view in the same place: it never left.
+                    if (view in from.keys && end == start) continue
+                    flown.add(name)
+                    flyHero(root, view, start, end, ms)
+                }
+                return true
+            }
+        })
+    }
+
+    private fun flyHero(
+        root: ViewGroup,
+        hero: View,
+        start: android.graphics.Rect,
+        end: android.graphics.Rect,
+        ms: Long,
+    ) {
+        val picture = try {
+            android.graphics.Bitmap.createBitmap(
+                hero.width, hero.height, android.graphics.Bitmap.Config.ARGB_8888
+            )
+        } catch (e: OutOfMemoryError) {
+            return
+        }
+        hero.draw(android.graphics.Canvas(picture))
+        val flight = android.graphics.drawable.BitmapDrawable(root.resources, picture)
+        flight.bounds = start
+        root.overlay.add(flight)
+        val shown = hero.alpha
+        hero.alpha = 0f
+        val run = android.animation.ValueAnimator.ofFloat(0f, 1f)
+        run.duration = ms
+        run.interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)
+        fun between(a: Int, b: Int, t: Float) = (a + (b - a) * t).toInt()
+        run.addUpdateListener { step ->
+            val t = step.animatedValue as Float
+            flight.setBounds(
+                between(start.left, end.left, t),
+                between(start.top, end.top, t),
+                between(start.right, end.right, t),
+                between(start.bottom, end.bottom, t),
+            )
+            root.invalidate()
+        }
+        run.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                root.overlay.remove(flight)
+                hero.alpha = shown
+                picture.recycle()
+            }
+        })
+        run.start()
+    }
+
     private fun applyDirection(root: View, tree: Map<*, *>): Boolean {
         val rtl = tree["textDirection"] == "rtl"
         if (rtl) {
@@ -864,8 +989,17 @@ class NativeUIRenderer(
         window.callback = wrapper
     }
 
+    /** The last key reported: when, which, and whether it went down. */
+    private var lastKey = Triple(-1L, -1, -1)
+
     private fun reportKey(event: KeyEvent) {
         if (event.isSystem) return
+        // A key the Flutter view did not want is sent round again by the
+        // engine, and passes the window's callback a second time: the same
+        // key at the same instant is the same press.
+        val stamp = Triple(event.eventTime, event.keyCode, event.action)
+        if (stamp == lastKey) return
+        lastKey = stamp
         val down = when (event.action) {
             KeyEvent.ACTION_DOWN -> true
             KeyEvent.ACTION_UP -> false
@@ -1078,7 +1212,18 @@ class NativeUIRenderer(
             next = next - "pageTransition" + ("props" to props)
         }
         if (transition != null && currentTree != null) {
+            // The heroes both pages have are left out of the picture of the
+            // old one, and fly once the new one is laid out.
+            val heroes = heroPlaces(root, heroNames(next, HashSet()))
+            val hidden = heroes.keys.map { it to it.alpha }
+            hidden.forEach { (view, _) -> view.alpha = 0f }
             movePages(root, transition, next["textDirection"] == "rtl")
+            // A patch may keep these very views: they are only out of sight
+            // for the picture.
+            hidden.forEach { (view, alpha) -> view.alpha = alpha }
+            if (heroes.isNotEmpty()) {
+                flyHeroes(root, heroes, (transition["ms"] as? Number)?.toLong() ?: 300L)
+            }
         }
 
         return try {
@@ -2889,7 +3034,19 @@ class NativeUIRenderer(
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
-        loadImage(node["src"] as? String, into = image, hiding = fallback, limit = imageLimit(node))
+        // An image that asked is told how its load ended.
+        val eventId = node["eventId"] as? String
+        loadImage(
+            node["src"] as? String,
+            into = image,
+            hiding = fallback,
+            limit = imageLimit(node),
+            told = eventId?.let { id ->
+                { loaded: Boolean ->
+                    sendEvent(id, mapOf("state" to if (loaded) "loaded" else "failed"))
+                }
+            },
+        )
         return container
     }
 
@@ -2965,7 +3122,8 @@ class NativeUIRenderer(
      * The platform's own `HttpResponseCache` sits under every
      * `HttpURLConnection` in the process and honours what the server said
      * about freshness - `Cache-Control`, `ETag`, `Expires` - so an image that
-     * is still good is read from disk and one that is stale is revalidated.
+     * is still good is read from disk and one that is stale is revalidated -
+     * or, when the server cannot be reached, shown as it is (`loadImage`).
      * It is process-wide and there can be one: if the app installed its own,
      * that one is used and left alone. Called on a loader thread, since
      * opening it reads the disk.
@@ -2998,16 +3156,27 @@ class NativeUIRenderer(
      * in the APK under `flutter_assets/` - and failing that a drawable of the
      * same base name. All of it off the main thread, decoded no larger than
      * [limit] on its longest side; the view is filled back on the main thread,
-     * and a failure simply leaves [hiding] - the fallback - showing.
+     * and a failure simply leaves [hiding] - the fallback - showing. [told]
+     * hears which it was, once.
      *
      * An image already in memory is shown before this returns, so a rebuild
      * goes straight from picture to picture with no fallback in between.
      */
-    private fun loadImage(src: String?, into: ImageView, hiding: View, limit: Int) {
-        if (src.isNullOrEmpty()) return
+    private fun loadImage(
+        src: String?,
+        into: ImageView,
+        hiding: View,
+        limit: Int,
+        told: ((Boolean) -> Unit)? = null,
+    ) {
+        if (src.isNullOrEmpty()) {
+            told?.invoke(false)
+            return
+        }
         fun show(bitmap: Bitmap) {
             into.setImageBitmap(bitmap)
             hiding.visibility = View.GONE
+            told?.invoke(true)
         }
         val key = "$limit $src"
         imageCache.get(key)?.let {
@@ -3030,6 +3199,9 @@ class NativeUIRenderer(
                     into.setImageResource(id)
                     hiding.visibility = View.GONE
                 }
+                told?.invoke(id != 0)
+            } else {
+                told?.invoke(false)
             }
         }
         // Somebody is already fetching this one: wait for theirs.
@@ -3046,15 +3218,31 @@ class NativeUIRenderer(
                         installHttpCache()
                         // Read once into memory: the decode below opens its
                         // source twice, and a URL should be fetched once.
-                        val connection = java.net.URL(src).openConnection()
-                            as java.net.HttpURLConnection
+                        fun fetch(fromDiskOnly: Boolean): ByteArray {
+                            val connection = java.net.URL(src).openConnection()
+                                as java.net.HttpURLConnection
+                            return try {
+                                connection.connectTimeout = 10_000
+                                connection.readTimeout = 10_000
+                                connection.useCaches = true
+                                if (fromDiskOnly) {
+                                    connection.setRequestProperty(
+                                        "Cache-Control",
+                                        "only-if-cached, max-stale=${Int.MAX_VALUE}",
+                                    )
+                                }
+                                connection.inputStream.use { it.readBytes() }
+                            } finally {
+                                connection.disconnect()
+                            }
+                        }
+                        // With no way to the server, a copy that has outlived
+                        // its cache headers is still the picture: an old one
+                        // is better than none.
                         val bytes = try {
-                            connection.connectTimeout = 10_000
-                            connection.readTimeout = 10_000
-                            connection.useCaches = true
-                            connection.inputStream.use { it.readBytes() }
-                        } finally {
-                            connection.disconnect()
+                            fetch(fromDiskOnly = false)
+                        } catch (e: java.io.IOException) {
+                            fetch(fromDiskOnly = true)
                         }
                         decodeSampled(limit) { bytes.inputStream() }
                     }
@@ -4124,7 +4312,21 @@ class NativeUIRenderer(
             layoutParams = matchWidth()
             alpha = ((node["opacity"] as? Number)?.toFloat() ?: 1f).coerceIn(0f, 1f)
             firstChild(node)?.let { child ->
-                renderWidget(child)?.let { addView(it, matchWidth()) }
+                renderWidget(child)?.let {
+                    // A child that states its size keeps it - an image of a
+                    // given width and height is that size faded or not, and
+                    // holds its place before its picture has arrived.
+                    val own = it.layoutParams
+                    addView(
+                        it,
+                        FrameLayout.LayoutParams(
+                            own?.width?.takeIf { w -> w > 0 }
+                                ?: ViewGroup.LayoutParams.MATCH_PARENT,
+                            own?.height?.takeIf { h -> h > 0 }
+                                ?: ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ),
+                    )
+                }
             }
         }
 
@@ -4980,6 +5182,8 @@ class NativeUIRenderer(
      * opacity or transform travels over the node's `animateMs`.
      */
     private fun configureBox(box: BoxLayout, node: Map<*, *>, animate: Boolean) {
+        val hero = node["hero"] as? String
+        if (hero != null) heroViews[box] = hero else heroViews.remove(box)
         val style = boxStyle(node)
         val before = box.style
         val existing = box.layoutParams

@@ -114,6 +114,78 @@ void main() {
     expect(fixed.containsKey('elevation'), isFalse);
   });
 
+  group('over a nested scaffold\'s bottom bar', () {
+    Future<Map<String, dynamic>> shownOver(
+      Widget bottom, {
+      bool button = false,
+      SnackBar bar = const SnackBar(content: Text('Hi')),
+    }) async {
+      final app = AppTester.widget(
+        MaterialApp(
+          home: Scaffold(
+            body: Scaffold(
+              bottomNavigationBar: bottom,
+              floatingActionButton: button
+                  ? FloatingActionButton(
+                      onPressed: () {},
+                      child: const Icon(Icons.add),
+                    )
+                  : null,
+              body: Builder(
+                builder: (context) => TextButton(
+                  key: const ValueKey('show'),
+                  onPressed: () =>
+                      ScaffoldMessenger.of(context).showSnackBar(bar),
+                  child: const Text('Show'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await app.tap('show');
+      return app.ofType('Snackbar').single.props;
+    }
+
+    const destinations = [
+      NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
+      NavigationDestination(icon: Icon(Icons.search), label: 'Find'),
+    ];
+
+    test('the bar is told to stay above a navigation bar', () async {
+      final props = await shownOver(
+        const NavigationBar(destinations: destinations),
+      );
+
+      expect(props['margin'], [16.0, 0.0, 16.0, 96.0]);
+    });
+
+    test('at the height the navigation bar says it has', () async {
+      final props = await shownOver(
+        const NavigationBar(destinations: destinations, height: 64),
+      );
+
+      expect(props['margin'], [16.0, 0.0, 16.0, 80.0]);
+    });
+
+    test('any other bar is taken to be the usual height', () async {
+      final props = await shownOver(
+        const SizedBox(height: 56, child: Text('a bar of the app\'s own')),
+      );
+
+      expect(props['margin'], [16.0, 0.0, 16.0, 72.0]);
+    });
+
+    test('and above the button as well when there are both', () async {
+      final props = await shownOver(
+        const NavigationBar(destinations: destinations),
+        button: true,
+      );
+
+      expect(props['margin'], [16.0, 0.0, 16.0, 160.0]);
+    });
+  });
+
   group('over a nested scaffold\'s floating button', () {
     Future<Map<String, dynamic>> shownOverNested(
       SnackBar bar, {

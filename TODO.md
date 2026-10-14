@@ -2096,8 +2096,8 @@ notice.
    listeners follow the reader: enough for a "back to top" button or loading
    more near the end, not for moving something in step with the drag.
    `animateTo` travels since 2026-10-12 - the renderer's own smooth scroll,
-   at the platform's pace and not the duration asked for; on iOS a windowed
-   list still jumps (`scrolling.dart`). Scroll notifications are
+   at the platform's pace and not the duration asked for - and in a windowed
+   list on iOS too since 2026-10-13 (`scrolling.dart`). Scroll notifications are
    sent since 2026-10-11 - `NotificationListener<ScrollNotification>` hears a
    start, updates and an end - as often as the offset is reported, and the
    end is a quarter of a second of quiet rather than something a renderer
@@ -2112,11 +2112,15 @@ notice.
    scale is the controller's) and `CustomScrollView` with `SliverList`,
    `SliverGrid`, `SliverToBoxAdapter`, `SliverPadding`, `SliverAppBar`,
    `SliverPersistentHeader`, `SliverFillRemaining` and a few more (a sliver
-   is the boxes it would lay out: nothing is lazy, and a pinned or floating
-   bar scrolls away). Seen on an iOS simulator, an Android emulator and in
+   is the boxes it would lay out: nothing is lazy, nothing collapses and a
+   floating bar scrolls away; a bar or header pinned at the very top is held
+   above the scroller since 2026-10-13). Seen on an iOS simulator, an Android emulator and in
    Chrome; rows reordered by hand on Android and in Chrome. (`Hero`, `MouseRegion` and
-   `PopupMenuButton` were on this list until 2026-10-04; the first two are
-   now there in name, the third opens a dialog. `PopScope` was on it until
+   `PopupMenuButton` were on this list until 2026-10-04; `MouseRegion` is
+   there in name, the third opens a dialog, and a `Hero` flies since
+   2026-10-13 - the arriving page's, stretched in a straight line from the
+   old one's place to its own, on all four renderers; seen on an iOS
+   simulator, an Android emulator, in Chrome and in the Flutter host. `PopScope` was on it until
    2026-10-10 and is Flutter's now, for a page of a `Navigator`, of
    `GoRouter` or of the named routes alike. `WillPopScope` followed the
    same day, over it; on an app's first screen its "yes" cannot close the
@@ -2179,11 +2183,13 @@ notice.
     carried: `dart:ui`'s own `Gradient.linear`, tile modes other than
     clamp, blur styles other than normal, blend modes and `saveLayer`
     paints.
-13. **An image's wait is never seen.** `Image.frameBuilder` and
-    `loadingBuilder` are called since 2026-10-10, once per build and as for
-    an image already there (frame 0, no progress), so what they wrap the
-    image in is drawn; the progress and the frames stay in the renderer.
-    `errorBuilder` is called once, up front. `color` tints the picture since
+13. ~~**An image's wait is never seen.**~~ It is since 2026-10-13: the
+    renderer says how a load ended, so `loadingBuilder`'s widget stands in
+    while a picture loads, `errorBuilder` is called only after a failure and
+    `frameBuilder` hears the first frame - seen on an iOS simulator, an
+    Android emulator and in Chrome. What is left: the progress is never a
+    number (the bytes are counted in the renderer), and while loading the
+    builder's `child` is an empty box. `color` tints the picture since
     2026-10-11, as `BlendMode.srcIn`; `colorBlendMode` is not carried
     (`text.dart`).
 14. **Focus is text fields only.** ~~Every `KeyboardListener` on screen
@@ -2345,7 +2351,8 @@ real apps on an Android emulator" has each. What is left:
    Since 2026-10-12 the widget layer tells it: a floating bar is given the
    room of a button (56) and a gap above its own margin when a nested
    scaffold drew one. A button of another size is cleared by that much all
-   the same, and a nested bottom bar is still not known.
+   the same, and a nested bottom bar is cleared since 2026-10-13, at the height such a
+   bar usually is rather than a measured one.
 3. ~~**`ElevatedButton` is drawn as a filled primary button**~~ Under
    Material 3 it is the surface, raised, with the primary for its label
    (2026-10-10) - a new `elevated` variant that all four renderers draw.
@@ -2365,10 +2372,15 @@ real apps on an Android emulator" has each. What is left:
    to `runApp(appTheme:)`, like the colours - a `MaterialApp(theme:)` alone
    does not reach the renderer. Text fields, chips, dialogs and the pickers
    keep their Material 3 look.
-6. **Not verified on any device:** `dnn:key` hardware keys, how
-   pull-to-refresh feels under a finger, the Material date and time pickers
-   (no migrated app opens one), a tap on an ad inside a `FlutterSlot`, a slot
-   inside a scroller, and the image disk cache offline or at expiry.
+6. **Not verified on any device:** how pull-to-refresh feels under a finger
+   and a tap on an ad inside a `FlutterSlot`. Seen on an iOS simulator and
+   an Android emulator on 2026-10-13: `dnn:key` hardware keys (iOS sent none
+   until then, Android sent each twice), the date and time pickers, a slot
+   inside a scroller, and the image disk cache offline - fresh, and expired,
+   where a stale copy is now shown rather than nothing.
+7. **A stand-in's size differs.** What an image shows in its place - an
+   `errorBuilder`'s widget - fills the image's width and height on iOS and
+   only its width on Android and the web.
 
 All of the above was an emulator. §6.5 item 8 is the phone.
 
@@ -2417,10 +2429,10 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2381 tests
-  (1387 in the package, 388 for the example apps and goldens, 563 in the browser,
+  contracts, the plugin system and the design system are covered by 2437 tests
+  (1431 in the package, 388 for the example apps and goldens, 575 in the browser,
   43 in the bloc package,
-  counted 2026-10-11), plus 20 integration tests that run on a real Android and
+  counted 2026-10-13), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native
   renderers drawing the whole node vocabulary and every example app. (Four of
   the eighteen - the free-form tree and the two pickers, added 2026-10-09, and

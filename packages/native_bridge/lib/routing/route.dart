@@ -114,6 +114,9 @@ class NavigationState {
   /// Current route
   RouteEntry get current => history[_currentIndex];
 
+  /// How far along [history] the current entry is.
+  int get index => _currentIndex;
+
   /// Can navigate back?
   bool get canGoBack => _currentIndex > 0;
 

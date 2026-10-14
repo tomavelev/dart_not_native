@@ -93,8 +93,8 @@ with them.
   bugs the green run had not shown, fixed since. None of the three migrated
   apps has run on it, and a `FlutterSlot` has only drawn its fallback.
   Assume a real screen will find more.
-- **Animation you drive yourself.** No `AnimationController`, no page
-  transitions; a `Hero` compiles and does not fly. Implicit animations of size, colour, opacity and
+- **Animation you drive yourself.** No `AnimationController`. Pages slide
+  and fade and a `Hero` flies, the renderer's way. Implicit animations of size, colour, opacity and
   transform are done by the renderer; a `Ticker` is a 16 ms timer.
 - **Published packages.** Apps depend on the repository by path or git.
 - **CI that boots a device.** The lanes compile and run the Dart suites; the

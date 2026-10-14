@@ -142,6 +142,20 @@ void main() {
       expect(transition(), {'kind': 'pop', 'ms': 300});
     });
 
+    test('pushed again after going back says push again', () async {
+      // Going back keeps the page ahead; pushing cuts it off, so the way is
+      // as long as it was and only the place along it has moved.
+      Navigator.of(page).pushNamed('/two');
+      await pumpEventQueue();
+      Navigator.of(page).pop();
+      await pumpEventQueue();
+      Navigator.of(page).pushNamed('/two');
+      await pumpEventQueue();
+
+      expect(tester.hasText('two'), isTrue);
+      expect(transition(), {'kind': 'push', 'ms': 300});
+    });
+
     test('a rebuild of the same named page says nothing', () async {
       Navigator.of(page).pushNamed('/two');
       await pumpEventQueue();

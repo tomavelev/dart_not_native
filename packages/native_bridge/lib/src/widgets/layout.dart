@@ -1516,11 +1516,19 @@ class Tooltip extends Widget {
   }
 }
 
-/// Marks a widget that flies between two pages, in Flutter.
+/// A widget that flies between two pages.
 ///
-/// Pages here are shown without a transition, so there is no flight: the
-/// [child] is drawn where it stands on each page. Everything else is accepted
-/// so a screen written with heroes compiles and reads as it did.
+/// When a page is pushed or popped and both the page left and the page
+/// arrived at have a hero with the same [tag], the renderer flies the one on
+/// the new page from where the old one stood to its own place, over the
+/// length of the page transition - changing size on the way - and shows
+/// neither of the two meanwhile.
+///
+/// The flight is the renderer's: it is always the arriving page's hero that
+/// flies, along a straight line, so [createRectTween], [flightShuttleBuilder]
+/// and [placeholderBuilder] are accepted and not called, and a hero does not
+/// follow a back swipe ([transitionOnUserGestures]). The [tag] is told to
+/// the renderer as its `toString()`, so two tags that print alike are one.
 class Hero extends StatelessWidget {
   const Hero({
     super.key,
@@ -1541,7 +1549,13 @@ class Hero extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => child;
+  Widget build(BuildContext context) => _NodeWidget(
+    (owner) => UIBuilder.box(
+      hero: '$tag',
+      id: _idOf(key),
+      child: _renderChild(owner, child),
+    ),
+  );
 }
 
 /// The pointer a mouse shows over a [MouseRegion].

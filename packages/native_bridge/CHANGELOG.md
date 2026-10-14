@@ -145,6 +145,114 @@ Flutter, it now agrees, and these are the places existing code has to change:
   grey block; under Materialize a disabled tonal button keeps a fill.
   A text button is written in the app's primary under both.
 
+### A `Hero` flies
+
+A `Hero` was its child and nothing else. Now, when a page is pushed or popped
+and both pages have a hero with the same tag, the arriving page's hero flies
+from where the old one stood to its own place - a picture of it, stretched
+from the one size to the other over the length of the page transition - and
+neither of the two is seen meanwhile. On all four renderers; seen on an iOS
+simulator, an Android emulator, in Chrome and in the Flutter host. It is a box
+with a `hero` prop, and the flight is the renderer's: always the arriving
+hero, along a straight line. `createRectTween`, `flightShuttleBuilder` and
+`placeholderBuilder` are accepted and not called.
+
+### An image's wait and its failure are seen (breaking)
+
+An image with a `loadingBuilder`, an `errorBuilder` or a `frameBuilder` is now
+told by the renderer how its load ended (`eventId` on the `Image` node:
+`{state: 'loaded'}` or `{state: 'failed'}`), and the builders follow it as
+they do in Flutter:
+
+- `loadingBuilder` is called with an `ImageChunkEvent` while a remote image
+  is on its way, and what it returns - a spinner - is drawn in the image's
+  place until the picture arrives; then it is called with null. The event
+  never says how far: the bytes are counted by the renderer and not reported.
+  Its third parameter is `ImageChunkEvent?`, which was `Object?`.
+- `errorBuilder` is called when the load has failed, and not before. It used
+  to be called up front and its widget shown while loading as well, so a
+  screen of pictures flashed its error widgets first; that is what changes
+  for existing code.
+- `frameBuilder` is called with no frame and then with frame 0, so a fade-in
+  written the usual way fades in.
+
+Seen on an iOS simulator, an Android emulator and in Chrome with a slow
+server and a missing picture; the Flutter host by its tests. While loading,
+the `child` a `loadingBuilder` is handed is an empty box - the image has to
+be in the tree to be fetched - so its widget stands in the image's place, not
+around it.
+
+### A named route keeps the page beneath it (breaking)
+
+`MaterialApp(routes:)` showed one named page at a time: pushing `/detail`
+took the list page away, and going back built it again from nothing - scroll
+position, a typed field, a counter, all gone. The pages on the way to the
+one on screen are now kept, as pushed pages are, and come back as they were
+left. With it:
+
+- **`pushNamed` completes when the page is popped**, with what it was popped
+  with, as in Flutter - it used to complete at once with null, so code after
+  `await Navigator.pushNamed(...)` ran while the page was still open. The
+  same for `pushReplacementNamed` and `pushNamedAndRemoveUntil`. The
+  platform's back gesture and the browser's button answer null.
+- **A named page has its `arguments` in its first build.** They arrived after
+  it, so `ModalRoute.of(context)!.settings.arguments` read null the first
+  time.
+- The same route twice on the way is two pages, each with its own state.
+
+### Hardware keys on iOS, and once each on Android
+
+The iOS renderer never sent `dnn:key`: a `KeyboardListener` heard nothing
+there. It does now - the container takes the keys when no field has them -
+and Android, which reported every key twice (the engine sends round again a
+key the Flutter view did not want), reports it once. Pressed on a simulator
+and an emulator.
+
+### An old picture is better than none
+
+Android and iOS keep remote images on disk for as long as the server's cache
+headers allow, and showed nothing for one that had outlived them when the
+server could not be reached. They now show the copy they have. Checked on
+both with a server that was stopped between two launches of the app.
+
+### A pinned bar stays
+
+A `SliverAppBar(pinned: true)` scrolled away with everything else. First
+among the slivers of a `CustomScrollView`, its toolbar and `bottom` are now
+held above the scroll view, and what is left of a tall bar - the
+`flexibleSpace`, less a toolbar's height - scrolls away beneath them. A
+`SliverPersistentHeader(pinned: true)` is held the same way when it is first,
+or follows only other pinned ones. Built in the widget layer, so the same on
+every renderer; nothing collapses, a title does not move up into the toolbar,
+and a header pinned further down the list still scrolls away.
+
+### Smaller things
+
+- A floating snackbar stays above the bottom bar of a scaffold nested in
+  another's body, as it already did above its floating button. The bar's
+  height is not measured: a `NavigationBar` is as tall as it says or 80, and
+  anything else is taken to be 56.
+- `ScrollController.animateTo` travels in a windowed list on iOS, which
+  jumped. Seen on a simulator.
+
+### Found by looking
+
+Looking at the last round's work on screens turned these up:
+
+- A named route pushed again after going back faded in, where it should
+  slide: the move was told from how long the way was, and that push leaves
+  it as long as it was.
+- In the Flutter host a pushed page arrived over black, where the leaving
+  page thinned out with nothing behind it.
+- On Android a child with a stated size - an image - lost it inside an
+  `AnimatedOpacity`, and took no room until its picture arrived.
+
+Also seen for the first time, and working: right-to-left page transitions on
+iOS and in Chrome, a `GoRouter` transition on both devices, the date and time
+pickers, `FocusNode.requestFocus()`, a `FlutterSlot` inside a scroller, and
+the Flutter host's sweep gradient, blur, clip, tint, floating snackbar and
+travelling scroll.
+
 ### Pages arrive and leave
 
 - **A page transition.** A renderer moves from the old page to the new

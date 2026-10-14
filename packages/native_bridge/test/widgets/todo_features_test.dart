@@ -274,48 +274,8 @@ void main() {
   group('Image', () {
     const picture = NetworkImage('https://example.invalid/a.png');
 
-    test('frameBuilder is called as for an image already there', () {
-      final calls = <String>[];
-      tester = AppTester.widget(
-        Scaffold(
-          body: Image(
-            image: picture,
-            frameBuilder: (context, child, frame, sync) {
-              calls.add('$frame $sync');
-              return Container(key: const ValueKey('frame'), child: child);
-            },
-          ),
-        ),
-      );
-
-      expect(calls, ['0 true']);
-      expect(tester.find('frame'), isNotNull);
-      expect(tester.ofType('Image'), hasLength(1));
-    });
-
-    test('loadingBuilder is called with no progress, around the frame', () {
-      final order = <String>[];
-      tester = AppTester.widget(
-        Scaffold(
-          body: Image(
-            image: picture,
-            frameBuilder: (context, child, frame, sync) {
-              order.add('frame');
-              return child;
-            },
-            loadingBuilder: (context, child, progress) {
-              order.add('loading $progress');
-              return Container(key: const ValueKey('loaded'), child: child);
-            },
-          ),
-        ),
-      );
-
-      expect(order, ['frame', 'loading null']);
-      expect(tester.find('loaded'), isNotNull);
-      expect(tester.ofType('Image'), hasLength(1));
-    });
-
+    // What the builders are called with, and when, is in
+    // `image_builders_test.dart`.
     test('with neither, the image is as it was', () {
       tester = AppTester.widget(
         const Scaffold(body: Image(image: picture, semanticLabel: 'A')),

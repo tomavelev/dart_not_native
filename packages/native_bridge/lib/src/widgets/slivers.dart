@@ -8,8 +8,9 @@ part of '../../widgets.dart';
 // sliver is the boxes it would have laid out, and a CustomScrollView is a
 // list of them. What that keeps is the structure an app was written in; what
 // it gives up is laziness (every child of every sliver is built) and
-// anything that depends on how far the view has scrolled: a pinned or
-// floating app bar scrolls away with the rest.
+// anything that depends on how far the view has scrolled: a floating app
+// bar scrolls away with the rest, and nothing collapses. A bar or header
+// pinned at the very top is the exception - it is held above the scroller.
 // ---------------------------------------------------------------------------
 
 /// A sliver: something a [CustomScrollView] lays out among its others.
@@ -66,14 +67,48 @@ class CustomScrollView extends StatelessWidget {
   final Clip clipBehavior;
 
   @override
-  Widget build(BuildContext context) => ListView(
-    scrollDirection: scrollDirection,
-    reverse: reverse,
-    controller: controller,
-    physics: physics,
-    shrinkWrap: shrinkWrap,
-    children: [for (final sliver in slivers) ..._boxesOf(context, sliver)],
-  );
+  Widget build(BuildContext context) {
+    // What is pinned at the very top is held there by not being in the
+    // scroller at all: it stands above it. That needs a height to share
+    // out, and only says the right thing for a view that scrolls down.
+    var top =
+        scrollDirection == Axis.vertical &&
+        !reverse &&
+        !shrinkWrap &&
+        !_ownerOf(context)._unboundedHeight;
+    final held = <Widget>[];
+    final scrolled = <Widget>[];
+    for (final sliver in slivers) {
+      if (top && sliver is SliverAppBar && sliver.pinned) {
+        final (bar, space) = sliver._pinnedParts(context);
+        held.add(bar);
+        if (space != null) {
+          scrolled.add(space);
+          top = false;
+        }
+        continue;
+      }
+      if (top && sliver is SliverPersistentHeader && sliver.pinned) {
+        held.addAll(sliver._boxes(context));
+        continue;
+      }
+      top = false;
+      scrolled.addAll(_boxesOf(context, sliver));
+    }
+    final view = ListView(
+      scrollDirection: scrollDirection,
+      reverse: reverse,
+      controller: controller,
+      physics: physics,
+      shrinkWrap: shrinkWrap,
+      children: scrolled,
+    );
+    if (held.isEmpty) return view;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [...held, Expanded(child: view)],
+    );
+  }
 }
 
 /// Where a sliver's children come from.
@@ -392,8 +427,10 @@ abstract class SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate);
 }
 
-/// A header at its full height. It is not held at the top as the view
-/// scrolls: [pinned] and [floating] are accepted and not carried.
+/// A header at its full height. [pinned], it is held above the scroll view
+/// when it is the first sliver, or follows only other pinned ones with
+/// nothing that scrolls between; anywhere else it scrolls away, as a
+/// [floating] one always does.
 class SliverPersistentHeader extends _Sliver {
   const SliverPersistentHeader({
     super.key,
@@ -468,10 +505,14 @@ class FlexibleSpaceBar extends StatelessWidget {
 /// An app bar among the slivers.
 ///
 /// Drawn at its full height - [expandedHeight], or a toolbar's - with its
-/// [flexibleSpace] behind the toolbar. It scrolls away with the content:
-/// [pinned], [floating], [snap] and [stretch] are accepted and not carried,
-/// and it does not collapse. An app that needs the bar to stay puts an
-/// `AppBar` on its `Scaffold` instead.
+/// [flexibleSpace] behind the toolbar, and it does not collapse.
+///
+/// [pinned], and first among the slivers, its toolbar and [bottom] are held
+/// above the scroll view and what is left of the tall part - the
+/// [flexibleSpace], less a toolbar's height - scrolls away beneath them: the
+/// bar ends up as a collapsed one would, without the title moving up into
+/// it. Not first, or not pinned, it scrolls away with the content;
+/// [floating], [snap] and [stretch] are accepted and not carried.
 class SliverAppBar extends _Sliver {
   const SliverAppBar({
     super.key,
@@ -516,7 +557,16 @@ class SliverAppBar extends _Sliver {
   final bool stretch;
 
   @override
-  List<Widget> _boxes(BuildContext context) {
+  List<Widget> _boxes(BuildContext context) => _parts(context);
+
+  /// The bar as two: what stays - the toolbar and [bottom] - and what
+  /// scrolls away under it, when the bar is taller than its toolbar.
+  (Widget, Widget?) _pinnedParts(BuildContext context) {
+    final parts = _parts(context, pinnedOnly: true);
+    return (parts.first, parts.length > 1 ? parts[1] : null);
+  }
+
+  List<Widget> _parts(BuildContext context, {bool pinnedOnly = false}) {
     final scheme = Theme.of(context).colorScheme;
     final ink = foregroundColor ?? scheme.onSurface;
     final heading = title;
@@ -555,6 +605,29 @@ class SliverAppBar extends _Sliver {
       ),
     );
     final tall = math.max(expandedHeight ?? toolbarHeight, toolbarHeight);
+    if (pinnedOnly) {
+      final fill = backgroundColor ?? scheme.surface;
+      Widget dressed(Widget child) => Container(
+        color: fill,
+        child: DefaultTextStyle(style: TextStyle(color: ink), child: child),
+      );
+      return [
+        dressed(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [toolbar, ?under],
+          ),
+        ),
+        if (tall > toolbarHeight)
+          dressed(
+            SizedBox(
+              height: tall - toolbarHeight,
+              child: space ?? const SizedBox.shrink(),
+            ),
+          ),
+      ];
+    }
     return [
       Container(
         color: backgroundColor ?? scheme.surface,

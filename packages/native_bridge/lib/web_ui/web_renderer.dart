@@ -184,14 +184,20 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       final transition = tree.props[RootProps.pageTransition] ?? _owedTransition;
       _owedTransition = null;
       tree = UIBuilder.withPageTransition(tree, null);
-      final leaving = transition is Map && animations && _currentTree != null
-          ? _pictureOfScreen()
-          : null;
+      final moving = transition is Map && animations && _currentTree != null;
+      // Where the heroes of the page that is going stand, before it goes.
+      final heroes = moving ? _heroRects() : const <String, web.DOMRect>{};
+      final leaving = moving ? _pictureOfScreen() : null;
       _syncChildren(rootElement, [
         tree,
       ], _currentTree == null ? const [] : [_currentTree!]);
       _currentTree = tree;
-      if (leaving != null) _movePages(leaving, transition as Map);
+      if (leaving != null) {
+        final ms = (_num((transition as Map)['ms']) ?? 300).toDouble();
+        // Before the pages move, while the new one is where it will rest.
+        if (heroes.isNotEmpty) _flyHeroes(heroes, leaving, ms);
+        _movePages(leaving, transition);
+      }
       // Only now: an element the patch above removed can still speak while
       // it goes (a focused field blurs), and that is the old tree's event.
       _shownBuild = build;
@@ -281,6 +287,98 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         ].jsify() as JSObject,
         timing,
       );
+    }
+  }
+
+  /// The boxes on screen that have a hero's name, and where each stands.
+  Map<String, web.DOMRect> _heroRects() {
+    final found = <String, web.DOMRect>{};
+    final boxes = rootElement.querySelectorAll('[data-hero]');
+    for (var i = 0; i < boxes.length; i++) {
+      final box = boxes.item(i) as web.Element;
+      final rect = box.getBoundingClientRect();
+      // One that takes no room is not on screen to fly from.
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      found.putIfAbsent(box.getAttribute('data-hero') ?? '', () => rect);
+    }
+    return found;
+  }
+
+  /// Flies each hero of the page now in the root that [from] has a place
+  /// for: a copy of it travels from there to where the hero stands, growing
+  /// or shrinking from the one size to the other, over [ms], and neither the
+  /// hero nor its counterpart in [leaving], the picture of the old page, is
+  /// seen until it lands.
+  void _flyHeroes(
+    Map<String, web.DOMRect> from,
+    web.HTMLElement leaving,
+    double ms,
+  ) {
+    final old = leaving.querySelectorAll('[data-hero]');
+    final boxes = rootElement.querySelectorAll('[data-hero]');
+    final flown = <String>{};
+    for (var i = 0; i < boxes.length; i++) {
+      final hero = boxes.item(i) as web.HTMLElement;
+      final tag = hero.getAttribute('data-hero') ?? '';
+      final start = from[tag];
+      if (start == null || !flown.add(tag)) continue;
+      final end = hero.getBoundingClientRect();
+      if (end.width <= 0 || end.height <= 0) continue;
+      for (var j = 0; j < old.length; j++) {
+        final was = old.item(j) as web.HTMLElement;
+        if (was.getAttribute('data-hero') == tag) {
+          was.style.visibility = 'hidden';
+        }
+      }
+      final flight = hero.cloneNode(true) as web.HTMLElement
+        ..removeAttribute('id')
+        ..removeAttribute('data-hero')
+        ..setAttribute('aria-hidden', 'true');
+      final inside = flight.querySelectorAll('[id]');
+      for (var j = 0; j < inside.length; j++) {
+        (inside.item(j) as web.Element).removeAttribute('id');
+      }
+      // Out of its page the copy has lost what it inherited from it.
+      final worn = web.window.getComputedStyle(hero);
+      flight.classList.add('dnn-hero-flight');
+      flight.style
+        ..position = 'fixed'
+        ..margin = '0'
+        ..boxSizing = 'border-box'
+        ..font = worn.font
+        ..color = worn.color
+        ..left = '${end.left}px'
+        ..top = '${end.top}px'
+        ..width = '${end.width}px'
+        ..height = '${end.height}px'
+        ..transformOrigin = '0 0'
+        ..pointerEvents = 'none'
+        ..zIndex = '2147483001';
+      web.document.body?.appendChild(flight);
+      final shown = hero.style.visibility;
+      hero.style.visibility = 'hidden';
+      // The hero as it will stand, stretched over where the old one stood
+      // and let go: what is in it grows or shrinks with it.
+      final run = flight.animate(
+        [
+          {
+            'transform':
+                'translate(${start.left - end.left}px, '
+                '${start.top - end.top}px) '
+                'scale(${start.width / end.width}, '
+                '${start.height / end.height})',
+          },
+          {'transform': 'none'},
+        ].jsify() as JSObject,
+        {'duration': ms, 'easing': 'cubic-bezier(0.4, 0, 0.2, 1)'}.jsify()!,
+      );
+      void land() {
+        flight.remove();
+        hero.style.visibility = shown;
+      }
+
+      run.onfinish = ((web.Event _) => land()).toJS;
+      run.oncancel = ((web.Event _) => land()).toJS;
     }
   }
 
@@ -1427,8 +1525,21 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final image = _el('img', 'dnn-image') as web.HTMLImageElement;
     final width = _num(p['width']);
     final height = _num(p['height']);
+    // An image that asked is told how its load ended - after this render,
+    // since the answer is a rebuild.
+    final eventId = _optStr(p['eventId']);
+    String? told;
+    void tell(bool loaded) {
+      final state = loaded ? 'loaded' : 'failed';
+      if (eventId == null || told == state) return;
+      told = state;
+      scheduleMicrotask(() => _fire(eventId, {'state': state}));
+    }
+
     if (!hasFallback) {
       image
+        ..addEventListener('load', ((web.Event _) => tell(true)).toJS)
+        ..addEventListener('error', ((web.Event _) => tell(false)).toJS)
         ..src = _str(p['src'])
         // Doubles as the accessible name and as what shows if the load fails.
         ..alt = _str(p['alt']);
@@ -1456,12 +1567,26 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
 
     image
-      ..addEventListener('load', ((web.Event _) => show(true)).toJS)
-      ..addEventListener('error', ((web.Event _) => show(false)).toJS)
+      ..addEventListener(
+        'load',
+        ((web.Event _) {
+          show(true);
+          tell(true);
+        }).toJS,
+      )
+      ..addEventListener(
+        'error',
+        ((web.Event _) {
+          show(false);
+          tell(false);
+        }).toJS,
+      )
       ..src = _str(p['src']);
     // One the browser already holds is complete as soon as it is named, so
     // the fallback is never drawn in front of it.
-    show(image.complete && image.naturalWidth > 0);
+    final held = image.complete && image.naturalWidth > 0;
+    show(held);
+    if (held) tell(true);
     frame
       ..appendChild(fallback)
       ..appendChild(image);
@@ -3242,6 +3367,9 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     if (!fresh || tap) _attr(box, 'tabindex', tap ? '0' : null);
     if (!fresh || p['tooltip'] != null) {
       _attr(box, 'title', _optStr(p['tooltip']));
+    }
+    if (!fresh || p['hero'] != null) {
+      _attr(box, 'data-hero', _optStr(p['hero']));
     }
     final ignored = p['ignorePointer'] == true;
     put('pointer-events', ignored ? 'none' : null);

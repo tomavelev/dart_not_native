@@ -831,22 +831,41 @@ class UIBuilder {
     String fit = 'cover',
     String? color,
     WidgetNode? fallback,
+    String? eventId,
+    void Function(bool loaded)? onLoad,
+    int? loadAsk,
     String? id,
-  }) => WidgetNode(
-    type: 'Image',
-    props: {
-      'src': src,
-      'alt': alt,
-      if (width != null) 'width': width,
-      if (height != null) 'height': height,
-      'fit': fit,
-      // A tint: the picture's shape, filled with this one colour - what an
-      // icon kept as an image is drawn with.
-      if (color != null) 'color': color,
-      if (id != null) 'id': id,
-    },
-    children: fallback == null ? null : [fallback],
-  );
+  }) {
+    if (onLoad != null) {
+      final bindings = EventBindings.required;
+      eventId = bindings.allocate(key: id);
+      bindings.on(eventId, (data) => onLoad(data['state'] != 'failed'));
+    }
+    return WidgetNode(
+      type: 'Image',
+      props: {
+        'src': src,
+        'alt': alt,
+        if (width != null) 'width': width,
+        if (height != null) 'height': height,
+        'fit': fit,
+        // A tint: the picture's shape, filled with this one colour - what an
+        // icon kept as an image is drawn with.
+        if (color != null) 'color': color,
+        // How the load ended: the renderer sends `{state: 'loaded'}` once
+        // the picture is showing - at once, for one it already holds - or
+        // `{state: 'failed'}` when it has given up. Sent each time the
+        // renderer makes the image anew, so the same answer may come twice.
+        if (eventId != null) 'eventId': eventId,
+        // Who is asking, as a number: a new asker in the place of an old one
+        // is a different node, so a renderer that would have kept the image
+        // as it was makes it anew - and says again how the load ended.
+        if (eventId != null && loadAsk != null) 'loadAsk': loadAsk,
+        if (id != null) 'id': id,
+      },
+      children: fallback == null ? null : [fallback],
+    );
+  }
 
   /// A web page embedded in the screen.
   ///
@@ -1271,6 +1290,7 @@ class UIBuilder {
     bool? selected,
     String? tooltip,
     bool ignorePointer = false,
+    String? hero,
     String? id,
   }) {
     double n(Map<String, dynamic> d, String k) =>
@@ -1375,6 +1395,12 @@ class UIBuilder {
         if (selected != null) 'selected': selected,
         if (tooltip != null) 'tooltip': tooltip,
         if (ignorePointer) 'ignorePointer': true,
+        // A name shared with a box on another page. When a page transition
+        // (`RootProps.pageTransition`) takes the screen from a page with a
+        // box of this name to another with one, the renderer flies the new
+        // box from where the old one stood to its own place, over the
+        // transition's time, and shows neither of the two meanwhile.
+        if (hero != null) 'hero': hero,
         if (id != null) 'id': id,
       },
       children: [if (child != null) child],

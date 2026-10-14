@@ -220,20 +220,29 @@ void main() {
 
     test('pushNamedAndRemoveUntil clears the history', () async {
       final renderer = _mount(app());
-      await Navigator.of(context).pushNamed('/a');
+      unawaited(Navigator.of(context).pushNamed('/a'));
+      await _settle();
       expect(Navigator.of(context).canPop(), isTrue);
-      await Navigator.of(context).pushNamedAndRemoveUntil('/b', (_) => false);
+      unawaited(
+        Navigator.of(context).pushNamedAndRemoveUntil('/b', (_) => false),
+      );
+      await _settle();
       expect(_shows(renderer, 'page b'), isTrue);
       expect(Navigator.of(context).canPop(), isFalse);
     });
 
     test('and stops at the route its predicate names', () async {
       final renderer = _mount(app());
-      await Navigator.of(context).pushNamed('/a');
-      await Navigator.of(context).pushNamed('/b');
-      await Navigator.of(
-        context,
-      ).pushNamedAndRemoveUntil('/a', ModalRoute.withName('/'));
+      unawaited(Navigator.of(context).pushNamed('/a'));
+      await _settle();
+      unawaited(Navigator.of(context).pushNamed('/b'));
+      await _settle();
+      unawaited(
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/a', ModalRoute.withName('/')),
+      );
+      await _settle();
       expect(_shows(renderer, 'page a'), isTrue);
       Navigator.of(context).pop();
       await _settle();
@@ -273,7 +282,8 @@ void main() {
     test('the route knows its name and what it was pushed with', () async {
       _mount(app());
       expect(ModalRoute.of(context)?.settings.name, '/');
-      await Navigator.of(context).pushNamed('/a', arguments: 'flag.png');
+      unawaited(Navigator.of(context).pushNamed('/a', arguments: 'flag.png'));
+      await _settle();
       final settings = ModalRoute.of(context)!.settings;
       expect(settings.name, '/a');
       expect(settings.arguments, 'flag.png');
@@ -454,14 +464,15 @@ void main() {
   });
 
   group('widgets that only have to be there', () {
-    test('Hero and MouseRegion draw their child as it is', () {
+    // A Hero is a box with its tag now - see `hero_test.dart`.
+    test('MouseRegion draws its child as it is', () {
       final plain = _mount(const MaterialApp(home: Scaffold(body: Text('x'))));
       final wrapped = _mount(
         const MaterialApp(
           home: Scaffold(
             body: MouseRegion(
               cursor: SystemMouseCursors.click,
-              child: Hero(tag: 'x', child: Text('x')),
+              child: Text('x'),
             ),
           ),
         ),

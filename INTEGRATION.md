@@ -519,10 +519,10 @@ Remote images loaded in list rows. An AdMob test banner showed through a
 
 What was not: that pass was an emulator, by hand - the new nodes have not been
 on a physical phone, and the Maestro flows and the integration lane predate
-them. No app opened a date or time picker, so those two nodes and the Material
-pickers behind them are unverified on a device; so are `dnn:key` hardware
-keys, how pull-to-refresh feels under a finger, what the image disk cache
-does offline or at expiry, and the `disabled` drawing of checkable controls.
+them. Since 2026-10-13 the date and time pickers, `dnn:key` hardware keys and
+what the image disk cache does offline and at expiry have been seen on an iOS
+simulator and an Android emulator; how pull-to-refresh feels under a finger
+and the `disabled` drawing of checkable controls have not.
 
 **iOS.** The renderer that ran - five Maestro flows on a simulator, the app on
 a physical iPad, six example apps looked at by hand - is the one from before
@@ -1040,7 +1040,8 @@ border) - there are many, each documented on the field.
 | In Flutter | Here |
 |---|---|
 | `PopupMenuButton` drops a menu from the button | **A dialog** listing the entries, in the dialog's place. The callbacks are Flutter's; the entry for `initialValue` is ticked |
-| `Hero` flies between pages; `MouseRegion` follows the pointer | Both draw their child and nothing else |
+| `Hero` flies between pages | It does when a page is pushed or popped and both have a hero of the same tag: the arriving page's hero, stretched from the old one's place and size to its own, in a straight line, over the page transition's time. `createRectTween`, `flightShuttleBuilder` and `placeholderBuilder` are accepted and not called; tags are compared as they print |
+| `MouseRegion` follows the pointer | It draws its child and nothing else |
 | A pushed page slides or fades in | The renderer moves from the old page to the new one: the old fades away, a pushed page slides in from the end of the screen, a popped one slides off towards it. That is the one transition - `PageRouteBuilder.transitionsBuilder` is accepted and never called, though its `transitionDuration` is how long it takes (zero for none). Pages pushed on a `Navigator`, named routes and the pages of `router.dart`'s `GoRouter` transition. Pages beneath keep their `State` |
 | `Dismissible`: the row slides away under the finger | It does, in every direction, with `background` behind it; `confirmDismiss`, `dismissThresholds` and `onDismissed` as in Flutter. The gap it leaves does not close until the app removes the row (`resizeDuration` is not carried), `onUpdate` is not called, and each movement of the finger is a build |
 | `AnimatedSwitcher`, `AnimatedCrossFade` animate between children | The old child fades out under the new one as it fades in. The fade is the only transition: a `transitionBuilder` gets a finished animation, and the size is not animated |
@@ -1059,7 +1060,8 @@ border) - there are many, each documented on the field.
 | `GestureDetector`: `onTapDown`, then `onTapUp`, then `onTap` | All three fire together once the tap has happened. Pan, horizontal and vertical drags are one drag. `behavior` is not carried |
 | `Draggable` shows `feedback`; reports start, end, cancel | The platform lifts a picture of the child, so `feedback` is not drawn. `onDragStarted`, `onDragEnd`, `onDraggableCanceled` and `onDragCompleted` are called and `childWhenDragging` is drawn; the velocity and offset they are given are zero |
 | `KeyboardListener` hears keys while its node has focus | The listener whose `FocusNode` was asked for focus (`requestFocus`, `autofocus`) hears alone, and a dialog takes the keys from the page behind it. With no ask, every listener in the visible tree hears |
-| `Image.errorBuilder` runs when loading fails; `loadingBuilder` during | `errorBuilder` is called once, up front, and its result is shown while loading and on failure. `frameBuilder` and `loadingBuilder` are called once per build as for an image already there, so what they wrap it in is drawn and the wait is never seen. `color` tints the picture (as `BlendMode.srcIn`; no other blend is carried) |
+| `Image.errorBuilder` runs when loading fails; `loadingBuilder` during | They do: the renderer says how the load ended. `loadingBuilder`'s widget stands in the image's place while it loads - its `child` is an empty box then, and its `ImageChunkEvent` never says how far - `errorBuilder` is called only after a failure, with an `ImageLoadFailure` and no stack, and `frameBuilder` hears no frame and then frame 0. `color` tints the picture (as `BlendMode.srcIn`; no other blend is carried) |
+| `await Navigator.pushNamed(...)` waits for the page; the page beneath keeps its state | Both, as in Flutter: the pages on the way to the one on screen are kept, and the future completes with what the page was popped with (null for the back gesture or the browser's button) |
 | `RichText` with `WidgetSpan`, tappable spans | Text runs only: a `WidgetSpan` is left out. A `TextSpan` with a `TapGestureRecognizer` is tapped; the class comes from `widgets.dart` here, where Flutter's is in `gestures.dart`, and a tap is the only gesture heard |
 | `TextOverflow.fade` | Drawn as `clip` |
 | `Scaffold.drawer` slides in from the side | Shown as a sheet, opened by the menu button the app bar gains or by `Scaffold.of(context).openDrawer()`, and closed when the app moves to another page. A scaffold nested in another's body is composed from a column and a stack |

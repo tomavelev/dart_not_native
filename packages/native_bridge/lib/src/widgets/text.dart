@@ -763,13 +763,35 @@ String _mimeOf(List<int> bytes) {
 typedef ImageErrorWidgetBuilder =
     Widget Function(BuildContext context, Object error, StackTrace? stackTrace);
 
-/// Flutter's signature for a builder called as an image's bytes arrive.
-/// Called by [Image] once, as for an image that has arrived - see there.
+/// Flutter's signature for a builder called as an image's bytes arrive:
+/// with an [ImageChunkEvent] while the image is on its way, and with null
+/// once it is there - see [Image].
 typedef ImageLoadingBuilder =
-    Widget Function(BuildContext context, Widget child, Object? loadingProgress);
+    Widget Function(
+      BuildContext context,
+      Widget child,
+      ImageChunkEvent? loadingProgress,
+    );
 
-/// Flutter's signature for a builder called as an image's frames arrive.
-/// Called by [Image] once, as for an image already loaded - see there.
+/// How much of an image has arrived, as an [ImageLoadingBuilder] is told.
+///
+/// The bytes are counted by the renderer that fetches them and are not
+/// reported, so there is one thing this ever says: the image is on its way
+/// and nobody knows how long it is - nothing loaded, no total. A builder that
+/// draws a progress bar from the two draws one that does not say how far.
+class ImageChunkEvent {
+  const ImageChunkEvent({
+    required this.cumulativeBytesLoaded,
+    required this.expectedTotalBytes,
+  });
+
+  final int cumulativeBytesLoaded;
+  final int? expectedTotalBytes;
+}
+
+/// Flutter's signature for a builder called as an image's frames arrive:
+/// with no frame while the image is on its way and with frame 0 once it is
+/// showing - see [Image].
 typedef ImageFrameBuilder =
     Widget Function(
       BuildContext context,
@@ -780,9 +802,9 @@ typedef ImageFrameBuilder =
 
 /// What an [Image.errorBuilder] is handed for its `error`.
 ///
-/// The image is loaded by a renderer, on the far side of a channel, and the
-/// stand-in has to be in the tree before anything has been tried - so there is
-/// no real error to hand over, only the fact that this is what to draw if
+/// The image is loaded by a renderer, on the far side of a channel, which
+/// says that it failed and not why - so there is no real error to hand
+/// over, only the fact that this is what to draw now that
 /// there turns out to be one. A builder that prints its error says this.
 class ImageLoadFailure implements Exception {
   const ImageLoadFailure(this.src);
@@ -803,22 +825,28 @@ class ImageLoadFailure implements Exception {
 /// [semanticLabel] is what a screen reader announces, and what a renderer
 /// shows if the image cannot be loaded and there is no [errorBuilder].
 ///
-/// [errorBuilder] is Flutter's, with one difference that follows from where
-/// the loading happens. A renderer cannot call back into a build that is
-/// long over, so the builder is called *once, up front*, with an
-/// [ImageLoadFailure] and no stack trace, and what it returns travels with
-/// the image as its fallback: drawn in the image's place if loading fails -
-/// and also while it is still loading, since a renderer has the one stand-in
-/// for both. A builder that inspects the error, or that expects only to run
-/// after a failure, will find neither true here.
+/// The three builders are Flutter's, and follow the load as the renderer
+/// reports it - an image given any of them is told when its picture is
+/// showing and when it has failed:
 ///
-/// [frameBuilder] and [loadingBuilder] are called once per build, as Flutter
-/// calls them for an image that is already there: the first with frame 0 and
-/// `wasSynchronouslyLoaded` true, the second with no progress. So what they
-/// put around the image - a frame, a clip, a background - is drawn, and the
-/// part of them that is for the wait is never seen: the progress and the
-/// frames stay in the renderer. What shows while an image loads is the
-/// [errorBuilder]'s widget, or nothing.
+/// - [loadingBuilder] is called with an [ImageChunkEvent] while a remote
+///   image is on its way, and what it returns is drawn in the image's place
+///   until the picture arrives - a spinner, a grey box. The event never says
+///   how far: the bytes are counted by the renderer and not reported. Once
+///   the picture is there it is called with null, around the image.
+/// - [errorBuilder] is called when the load has failed, and not before, with
+///   an [ImageLoadFailure] and no stack trace: the renderer says that it
+///   failed, not why.
+/// - [frameBuilder] is called with no frame while the image is on its way
+///   and with frame 0 once it is showing, so a fade-in written the usual way
+///   fades in. `wasSynchronouslyLoaded` is true of an image that needs no
+///   fetching - an asset, bytes - and of a remote one this run of the app
+///   has already shown.
+///
+/// One difference from Flutter while loading: the image has to be in the
+/// tree for a renderer to fetch it, so the `child` a [loadingBuilder] is
+/// handed then is an empty box, and what the builder returns stands in the
+/// image's place rather than around it.
 class Image extends Widget {
   const Image({
     super.key,
@@ -902,33 +930,27 @@ class Image extends Widget {
   final ImageFrameBuilder? frameBuilder;
 
   @override
-  WidgetNode _render(_Owner owner) {
-    final frame = frameBuilder;
-    final loading = loadingBuilder;
-    if (frame == null && loading == null) return _image(owner);
-    // In Flutter's order: the frame builder wraps the image, and the loading
-    // builder wraps what that made.
-    final context = owner._context();
-    Widget built = _NodeWidget(_image);
-    if (frame != null) built = frame(context, built, 0, true);
-    if (loading != null) built = loading(context, built, null);
-    return owner.inSlot('built', () => built._render(owner));
-  }
+  WidgetNode _render(_Owner owner) =>
+      frameBuilder == null && loadingBuilder == null && errorBuilder == null
+      ? _image(owner)
+      // Something of the app's depends on how the load goes: follow it.
+      : owner.inSlot('load', () => _ImageLoad(this)._render(owner));
 
-  WidgetNode _image(_Owner owner) => UIBuilder.image(
+  /// The image's node, with [standIn] to draw in its place until the picture
+  /// is there and [onLoad] to hear how the load ended.
+  WidgetNode _image(
+    _Owner owner, {
+    Widget? standIn,
+    void Function(bool loaded)? onLoad,
+    int? loadAsk,
+  }) => UIBuilder.image(
     src: image._src,
     alt: semanticLabel ?? '',
-    fallback: switch (errorBuilder) {
-      null => null,
-      final build => owner.inSlot(
-        'error',
-        () => build(
-          owner._context(),
-          ImageLoadFailure(image._src),
-          null,
-        )._render(owner),
-      ),
-    },
+    fallback: standIn == null
+        ? null
+        : owner.inSlot('standIn', () => standIn._render(owner)),
+    onLoad: onLoad,
+    loadAsk: loadAsk,
     width: width,
     height: height,
     color: color?._hex,
@@ -941,4 +963,116 @@ class Image extends Widget {
     },
     id: _idOf(key),
   );
+}
+
+/// An [Image] with builders, and where its load has got to.
+class _ImageLoad extends StatefulWidget {
+  const _ImageLoad(this.image);
+  final Image image;
+
+  @override
+  State<_ImageLoad> createState() => _ImageLoadState();
+}
+
+class _ImageLoadState extends State<_ImageLoad> {
+  /// The remote images that have been seen to load, this run of the app: a
+  /// renderer keeps what it fetched, so one of these is there at once.
+  static final Set<String> _arrived = {};
+
+  /// Null while the image is on its way; then whether it loaded.
+  bool? _loaded;
+
+  /// Whether the image was there from the start, with nothing to wait for.
+  bool _atOnce = true;
+
+  /// A number for this wait, so the renderer answers it and not an earlier
+  /// one for the same picture in the same place.
+  static int _asks = 0;
+  int _ask = 0;
+
+  String get _src => widget.image.image._src;
+
+  @override
+  void initState() {
+    super.initState();
+    _begin();
+  }
+
+  @override
+  void didUpdateWidget(_ImageLoad oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.image.image._src != _src) _begin();
+  }
+
+  void _begin() {
+    final src = _src;
+    final fetched = src.startsWith('http://') || src.startsWith('https://');
+    _atOnce = !fetched || _arrived.contains(src);
+    _loaded = _atOnce ? true : null;
+    _ask = ++_asks;
+  }
+
+  void _heard(bool loaded) {
+    if (loaded && _src.startsWith('http')) {
+      // A long-lived app sees many pictures; the set is only a hint.
+      if (_arrived.length > 4000) _arrived.clear();
+      _arrived.add(_src);
+    }
+    if (!mounted || _loaded == loaded) return;
+    setState(() => _loaded = loaded);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image = widget.image;
+    final loaded = _loaded;
+    if (loaded == false) {
+      // Failed: the app's own word for it, or - with none - the renderer's,
+      // which is the description.
+      final standIn = image.errorBuilder?.call(
+        context,
+        ImageLoadFailure(_src),
+        null,
+      );
+      return _NodeWidget(
+        (owner) => image._image(
+          owner,
+          standIn: standIn,
+          onLoad: _heard,
+          loadAsk: _ask,
+        ),
+      );
+    }
+    final waiting = loaded == null;
+    // Always a stand-in, if only an empty one: it is what a renderer draws
+    // until the picture is there, where it would otherwise write the
+    // description - and the same node, whichever way the load goes.
+    final standIn = waiting
+        ? image.loadingBuilder?.call(
+            context,
+            const SizedBox.shrink(),
+            const ImageChunkEvent(
+              cumulativeBytesLoaded: 0,
+              expectedTotalBytes: null,
+            ),
+          )
+        : null;
+    Widget built = _NodeWidget(
+      (owner) => image._image(
+        owner,
+        standIn: standIn ?? const SizedBox.shrink(),
+        onLoad: _heard,
+        loadAsk: _ask,
+      ),
+    );
+    // In Flutter's order: the frame builder wraps the image, and the loading
+    // builder wraps what that made.
+    final frame = image.frameBuilder;
+    if (frame != null) {
+      built = frame(context, built, waiting ? null : 0, _atOnce);
+    }
+    final loading = image.loadingBuilder;
+    if (loading != null && !waiting) built = loading(context, built, null);
+    return built;
+  }
 }

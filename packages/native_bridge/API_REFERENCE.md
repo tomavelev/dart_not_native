@@ -250,6 +250,13 @@ coordinates) does not.
 | `RendererEvents.slotRect` (`dnn:slotRect`) | `{slotId, x, y, width, height, visible}` - where a `FlutterSlot` is |
 | `RendererEvents.lifecycle` (`dnn:lifecycle`) | `{state}` - `resumed`, `inactive`, `paused`, `detached` |
 
+Two props a node carries for the renderer to act on by itself:
+
+| Prop | On | What the renderer does |
+|---|---|---|
+| `eventId` | `Image` | Sends `{state: 'loaded'}` once the picture is showing, or `{state: 'failed'}` when it has given up - each time it makes the image anew, so the same answer may come twice. `loadAsk` beside it is a number that changes when a new asker takes the place of an old one |
+| `hero` | `Box` | On a page transition (`RootProps.pageTransition`), flies the new page's box of this name from where the old page's stood to its own place, over the transition's time, and shows neither meanwhile |
+
 An event is answered by the build it was raised against: the tree travels
 with its build number, both native renderers hand it back with each event,
 the web and Flutter renderers name the build they are showing, and
@@ -302,7 +309,7 @@ the top of `CHANGELOG.md`; the ones existing code meets first:
 - `Locale('en', 'US')` is positional; a script needs `Locale.fromSubtags`.
 
 Not in the layer at all: `AnimationController` and `Tween`. There in name only,
-so that a screen compiles: `Hero` (no flight), `MouseRegion` (no hover),
+so that a screen compiles: `MouseRegion` (no hover),
 `FadeTransition` (the value when built). `PopupMenuButton` opens its menu as
 a dialog.
 

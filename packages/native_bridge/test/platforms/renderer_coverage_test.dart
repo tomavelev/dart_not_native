@@ -415,16 +415,58 @@ void main() {
         'Android (Kotlin) looks in memory before it fetches or shows a '
             'fallback',
         kotlin,
-        'private fun loadImage(src: String?, into: ImageView, hiding: View, '
-            'limit: Int) {',
+        'private fun loadImage(\n',
         ['imageCache.get(key)', 'imageWaiters[key]'],
       ),
       (
         'iOS (Swift) looks in memory before it fetches or shows a fallback',
         swift,
-        'private func load(_ src: String?, into view: UIImageView, '
-            'hiding fallback: UIView) {',
+        'private func load(\n',
         ['imageCache.object(forKey:', 'imageWaiters'],
+      ),
+      // An image with builders is told how its load ended (`eventId`).
+      (
+        'Android (Kotlin) says whether an image loaded',
+        kotlin,
+        'private fun renderImage(node: Map<*, *>): View {',
+        ['node["eventId"]', '"loaded" else "failed"'],
+      ),
+      (
+        'iOS (Swift) says whether an image loaded',
+        swift,
+        'private func renderImage(_ node: [String: Any]) -> UIView {',
+        ['node["eventId"]', '"loaded" : "failed"'],
+      ),
+      (
+        'Android (Kotlin) falls back to a stale copy when offline',
+        kotlin,
+        'private fun loadImage(\n',
+        ['only-if-cached, max-stale'],
+      ),
+      (
+        'iOS (Swift) falls back to a stale copy when offline',
+        swift,
+        'private func load(\n',
+        ['URLCache.shared.cachedResponse(for:'],
+      ),
+      // A hero: found by name, and flown on a page transition.
+      (
+        'Android (Kotlin) flies a hero',
+        kotlin,
+        'private fun flyHeroes(',
+        ['heroViews', 'flyHero(root, view, start, end, ms)'],
+      ),
+      (
+        'iOS (Swift) flies a hero',
+        swift,
+        'private func flyHeroes(',
+        ['heroViews', 'snapshotView(afterScreenUpdates: true)'],
+      ),
+      (
+        'iOS (Swift) reports hardware keys',
+        swift,
+        'private func initialize() {',
+        ['eventId: "dnn:key"'],
       ),
       (
         'Android (Kotlin) draws an image\'s child as its fallback',

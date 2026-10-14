@@ -332,6 +332,9 @@ class NativeUIRenderer {
       self?.sendViewport()
       self?.scheduleSlotUpdate()
     }
+    container.onKey = { [weak self] key, down in
+      self?.send(eventId: "dnn:key", data: ["key": key, "down": down])
+    }
     container.translatesAutoresizingMaskIntoConstraints = false
     // Pin the rendered subtree to the appearance the theme asked for, so the
     // system controls the renderer does not paint itself - a switch, a text
@@ -631,20 +634,52 @@ class NativeUIRenderer {
   /// meantime is uncovered rather than swapped in. A pushed page slides in
   /// from the end of the screen while that happens; a popped one - the
   /// picture - slides off towards it.
-  private func movePages(_ container: UIView, _ transition: [String: Any], rtl: Bool) {
+  ///
+  /// `heroes` are the hero names the page about to be drawn has. A box on
+  /// screen with one of them is left out of the picture, and the new page's
+  /// box of that name flies from where it stood: a picture of it, stretched
+  /// from the one place and size to the other over the same time, with the
+  /// box itself out of sight until the picture lands.
+  private func movePages(
+    _ container: UIView, _ transition: [String: Any], rtl: Bool, heroes: Set<String> = []
+  ) {
     let ms = (transition["ms"] as? NSNumber)?.doubleValue ?? 300
-    guard ms > 0, container.bounds.width > 0, let above = container.superview,
-      let leaving = container.snapshotView(afterScreenUpdates: false)
-    else { return }
+    guard ms > 0, container.bounds.width > 0, let above = container.superview else { return }
+    // Where the old page's heroes stand, and those boxes out of sight for
+    // the picture - which then has to be of the screen as it is this moment.
+    var starts: [String: CGRect] = [:]
+    var hidden: [(UIView, CGFloat)] = []
+    if !heroes.isEmpty {
+      for case let view as UIView in heroViews.keyEnumerator().allObjects {
+        guard let name = heroViews.object(forKey: view) as String?, heroes.contains(name),
+          starts[name] == nil, view.window != nil, !view.isHidden,
+          view.bounds.width > 0, view.bounds.height > 0
+        else { continue }
+        starts[name] = view.convert(view.bounds, to: above)
+        hidden.append((view, view.alpha))
+        view.alpha = 0
+      }
+    }
+    let picture = container.snapshotView(afterScreenUpdates: !hidden.isEmpty)
+    // A patch may keep these very views: they were only out of sight for
+    // the picture.
+    for (view, alpha) in hidden { view.alpha = alpha }
+    guard let leaving = picture else { return }
     leaving.frame = container.frame
     leaving.isUserInteractionEnabled = false
     above.insertSubview(leaving, aboveSubview: container)
     let kind = transition["kind"] as? String
     let travel = container.bounds.width * 0.25 * (rtl ? -1 : 1)
+    let sources = hidden.map { $0.0 }
     // The page is not drawn yet: this is called before the render, and the
     // animation is set going once it has been.
     DispatchQueue.main.async { [weak self] in
       let page = self?.currentRoot
+      // Before the page is set to one side: where its heroes stand now is
+      // where they will come to rest.
+      if !starts.isEmpty {
+        self?.flyHeroes(from: starts, sources: sources, in: container, above: above, ms: ms)
+      }
       if kind == "push" { page?.transform = CGAffineTransform(translationX: travel, y: 0) }
       UIView.animate(
         withDuration: ms / 1000, delay: 0, options: [.curveEaseOut, .allowUserInteraction],
@@ -656,6 +691,48 @@ class NativeUIRenderer {
         completion: { _ in
           leaving.removeFromSuperview()
           page?.transform = .identity
+        })
+    }
+  }
+
+  /// The boxes that have a hero's name (`hero`), by view.
+  private let heroViews = NSMapTable<UIView, NSString>.weakToStrongObjects()
+
+  /// Every hero's name in `node` and below it.
+  private func heroNames(_ node: [String: Any], into names: inout Set<String>) {
+    if let hero = node["hero"] as? String { names.insert(hero) }
+    for child in childNodes(node) { heroNames(child, into: &names) }
+  }
+
+  /// Sends a picture of each hero now on screen from where the old page's
+  /// stood (`from`) to where it stands.
+  private func flyHeroes(
+    from starts: [String: CGRect], sources: [UIView], in container: UIView, above: UIView,
+    ms: Double
+  ) {
+    container.layoutIfNeeded()
+    var flown = Set<String>()
+    for case let view as UIView in heroViews.keyEnumerator().allObjects {
+      guard let name = heroViews.object(forKey: view) as String?, let start = starts[name],
+        !flown.contains(name), view.window != nil, !view.isHidden,
+        view.bounds.width > 0, view.bounds.height > 0
+      else { continue }
+      let end = view.convert(view.bounds, to: above)
+      // The same view in the same place: it never left.
+      if sources.contains(where: { $0 === view }), end.equalTo(start) { continue }
+      guard let flight = view.snapshotView(afterScreenUpdates: true) else { continue }
+      flown.insert(name)
+      flight.frame = start
+      flight.isUserInteractionEnabled = false
+      above.addSubview(flight)
+      let shown = view.alpha
+      view.alpha = 0
+      UIView.animate(
+        withDuration: ms / 1000, delay: 0, options: [.curveEaseInOut],
+        animations: { flight.frame = end },
+        completion: { [weak view] _ in
+          flight.removeFromSuperview()
+          view?.alpha = shown
         })
     }
   }
@@ -687,7 +764,9 @@ class NativeUIRenderer {
       next["props"] = props
     }
     if let transition = transition, currentTree != nil {
-      movePages(container, transition, rtl: rtl)
+      var names = Set<String>()
+      heroNames(next, into: &names)
+      movePages(container, transition, rtl: rtl, heroes: names)
     }
     if isRTL != rtl {
       isRTL = rtl
@@ -1064,6 +1143,9 @@ class NativeUIRenderer {
     // height the new window gives it.
     if let target = lazyListJump(newNode, id: newNode["id"] as? String ?? "") {
       list.restoreOffset = target
+      // A list already on screen travels there when asked to (`animateTo`):
+      // it asks for its rows on the way, as it does under a finger.
+      list.restoreTravels = newNode["scrollAnimated"] as? Bool ?? false
       list.setNeedsLayout()
     }
     return true
@@ -2729,7 +2811,14 @@ class NativeUIRenderer {
     }
     NSLayoutConstraint.activate(constraints)
 
-    load(node["src"] as? String, into: imageView, hiding: fallback)
+    // An image that asked is told how its load ended.
+    var told: ((Bool) -> Void)?
+    if let eventId = node["eventId"] as? String {
+      told = { [weak self] loaded in
+        self?.send(eventId: eventId, data: ["state": loaded ? "loaded" : "failed"])
+      }
+    }
+    load(node["src"] as? String, into: imageView, hiding: fallback, told: told)
     return container
   }
 
@@ -2747,7 +2836,8 @@ class NativeUIRenderer {
   }
 
   /**
-   Fills `view` from `src`, hiding `fallback` once it arrives.
+   Fills `view` from `src`, hiding `fallback` once it arrives; `told` hears
+   whether it did, once.
 
    A remote image already in `imageCache` is shown here and now, before this
    returns - so a rebuild of a screen full of pictures never shows the alt
@@ -2755,26 +2845,41 @@ class NativeUIRenderer {
    many views are waiting for it, decoded where it was fetched rather than on
    the thread that draws, and remembered. The bytes themselves are the
    session's to keep: `URLSession.shared` stores them in `URLCache.shared`, on
-   disk, for as long as the response's cache headers allow.
+   disk, for as long as the response's cache headers allow - and when the
+   server cannot be reached, the copy on disk is shown whatever its age.
    */
-  private func load(_ src: String?, into view: UIImageView, hiding fallback: UIView) {
-    guard let src, !src.isEmpty else { return }
+  private func load(
+    _ src: String?, into view: UIImageView, hiding fallback: UIView,
+    told: ((Bool) -> Void)? = nil
+  ) {
+    guard let src, !src.isEmpty else {
+      told?(false)
+      return
+    }
 
     guard src.hasPrefix("http://") || src.hasPrefix("https://") else {
-      if let bundled = localImage(src) {
+      let bundled = localImage(src)
+      if let bundled {
         show(bundled, in: view, hiding: fallback)
       }
+      told?(bundled != nil)
       return
     }
 
     if let cached = NativeUIRenderer.imageCache.object(forKey: src as NSString) {
       show(cached, in: view, hiding: fallback)
+      told?(true)
       return
     }
 
-    guard let url = URL(string: src) else { return }
+    guard let url = URL(string: src) else {
+      told?(false)
+      return
+    }
     // Weakly: a row scrolled away before its picture arrived owes it nothing.
     let waiter: (UIImage?) -> Void = { [weak self, weak view, weak fallback] image in
+      // Whoever asked hears either way, whether or not the view is still there.
+      told?(image != nil)
       guard let self, let image, let view, let fallback else { return }
       self.show(image, in: view, hiding: fallback)
     }
@@ -2784,7 +2889,12 @@ class NativeUIRenderer {
     }
     NativeUIRenderer.imageWaiters[src] = [waiter]
 
-    URLSession.shared.dataTask(with: url) { data, _, _ in
+    URLSession.shared.dataTask(with: url) { fetched, _, error in
+      // With no way to the server, a copy that has outlived its cache headers
+      // is still the picture: an old one is better than none.
+      let data =
+        error == nil
+        ? fetched : URLCache.shared.cachedResponse(for: URLRequest(url: url))?.data
       var decoded: UIImage?
       if let data, let image = UIImage(data: data) {
         decoded = image
@@ -4795,6 +4905,11 @@ class NativeUIRenderer {
       self?.send(eventId: eventId, data: data)
     }
     box.apply(boxStyle(node))
+    if let hero = node["hero"] as? String {
+      heroViews.setObject(hero as NSString, forKey: box)
+    } else {
+      heroViews.removeObject(forKey: box)
+    }
   }
 
   /// A decorated box around at most one child - see `DnnBoxView`.
@@ -6167,8 +6282,10 @@ private class LazyListView: UIScrollView {
   var startOffset: CGFloat = 0
   var totalExtent: CGFloat = 0
 
-  /// The offset to scroll to once laid out; nil after that.
+  /// The offset to scroll to once laid out; nil after that. With
+  /// `restoreTravels` it is scrolled to, not jumped to.
   var restoreOffset: CGFloat?
+  var restoreTravels = false
   var onViewportChange: (() -> Void)?
 
   /// Room inside the scroller: the rows are framed within it, and scroll out
@@ -6276,7 +6393,13 @@ private class LazyListView: UIScrollView {
     guard bounds.height > 0 else { return }
     if let restore = restoreOffset {
       restoreOffset = nil
-      contentOffset = CGPoint(x: 0, y: min(restore, max(0, height - bounds.height)))
+      let target = CGPoint(x: 0, y: min(restore, max(0, height - bounds.height)))
+      if restoreTravels {
+        restoreTravels = false
+        setContentOffset(target, animated: true)
+      } else {
+        contentOffset = target
+      }
     }
     if bounds.size != reportedSize {
       reportedSize = bounds.size

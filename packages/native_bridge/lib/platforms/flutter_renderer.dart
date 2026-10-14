@@ -123,6 +123,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final transition = tree.props[RootProps.pageTransition];
     if (transition is Map) {
       _page++;
+      _pageHeroes = _heroTags(tree, {});
       _pageKind = transition['kind'];
       _pageTime = Duration(
         milliseconds: (transition['ms'] as num?)?.toInt() ?? 300,
@@ -196,6 +197,20 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   /// Which page is showing, counted from the trees that said they were a new
   /// one ([RootProps.pageTransition]), and how the last of them was reached.
   int _page = 0;
+
+  /// The hero names in the tree that turned the page, and the heroes built.
+  Set<String> _pageHeroes = const {};
+  final _Heroes _heroes = _Heroes();
+
+  static Set<String> _heroTags(WidgetNode node, Set<String> into) {
+    final hero = node.props['hero'];
+    if (hero is String) into.add(hero);
+    for (final child in node.children ?? const <WidgetNode>[]) {
+      _heroTags(child, into);
+    }
+    return into;
+  }
+
   Object? _pageKind;
   Duration _pageTime = const Duration(milliseconds: 300);
 
@@ -253,6 +268,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         kind: kind,
         time: _pageTime,
         rtl: rtl,
+        heroes: _heroes,
+        heroTags: _pageHeroes,
         child: Builder(
           builder: (context) {
             final widget = buildNode(tree, context);
@@ -1020,22 +1037,37 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             ),
           );
 
-    Widget onError(BuildContext context, Object error, StackTrace? stack) =>
-        fallback ??
-        SizedBox(
-          width: width,
-          height: height,
-          child: Center(
-            child: Text(alt, style: TextStyle(color: _textSecondaryColor)),
-          ),
-        );
+    // An image that asked is told how its load ended - after the frame,
+    // since the answer is a rebuild and this is a build.
+    final eventId = p['eventId'] as String?;
+    void tell(String state) {
+      if (eventId == null) return;
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (handles(eventId)) handleEvent(eventId, {'state': state});
+      });
+    }
+
+    Widget onError(BuildContext context, Object error, StackTrace? stack) {
+      tell('failed');
+      return fallback ??
+          SizedBox(
+            width: width,
+            height: height,
+            child: Center(
+              child: Text(alt, style: TextStyle(color: _textSecondaryColor)),
+            ),
+          );
+    }
 
     // Only an image with a fallback has anything to show before its first
     // frame; one without stays an empty box of its size, as it always was.
-    final ImageFrameBuilder? whileLoading = fallback == null
+    final ImageFrameBuilder? whileLoading = fallback == null && eventId == null
         ? null
-        : (context, child, frame, wasSynchronouslyLoaded) =>
-              wasSynchronouslyLoaded || frame != null ? child : fallback;
+        : (context, child, frame, wasSynchronouslyLoaded) {
+            final there = wasSynchronouslyLoaded || frame != null;
+            if (there) tell('loaded');
+            return there ? child : fallback ?? child;
+          };
 
     final tint = _color(p['color']);
     final image =
@@ -1994,6 +2026,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
     final tooltip = _optString(p['tooltip']);
     if (tooltip != null) box = Tooltip(message: tooltip, child: box);
+    final hero = _optString(p['hero']);
+    if (hero != null) box = _HeroBox(tag: hero, heroes: _heroes, child: box);
 
     final margin = _edges(p['margin']);
     if (margin != null) {
@@ -4897,12 +4931,18 @@ class _PageSwitch extends StatefulWidget {
     required this.kind,
     required this.time,
     required this.rtl,
+    required this.heroes,
+    required this.heroTags,
     required this.child,
   });
   final int page;
   final Object? kind;
   final Duration time;
   final bool rtl;
+
+  /// The heroes built, and the names the arriving page has among them.
+  final _Heroes heroes;
+  final Set<String> heroTags;
   final Widget child;
 
   @override
@@ -4919,8 +4959,18 @@ class _PageSwitchState extends State<_PageSwitch>
     parent: _run,
     curve: Curves.easeOut,
   );
+  late final Animation<double> _flown = CurvedAnimation(
+    parent: _run,
+    curve: Curves.fastOutSlowIn,
+  );
   Widget? _leaving;
   int _leavingPage = 0;
+
+  /// Where the page itself is, under whatever is sliding it.
+  final GlobalKey _pageKey = GlobalKey();
+
+  /// The heroes in the air.
+  List<_Flight> _flights = const [];
 
   @override
   void didUpdateWidget(_PageSwitch oldWidget) {
@@ -4928,9 +4978,59 @@ class _PageSwitchState extends State<_PageSwitch>
     if (oldWidget.page == widget.page) return;
     _leaving = oldWidget.child;
     _leavingPage = oldWidget.page;
+    _flights = const [];
+    _takeOff(oldWidget.page);
     _run.duration = widget.time;
     _run.forward(from: 0).whenCompleteOrCancel(() {
-      if (mounted && _run.isCompleted) setState(() => _leaving = null);
+      if (!mounted || !_run.isCompleted) return;
+      setState(() {
+        _leaving = null;
+        _flights = const [];
+      });
+      widget.heroes.hide(const {});
+    });
+  }
+
+  /// Notes where the heroes of the page that is going stand, hides the ones
+  /// the arriving page has too, and - once that page is laid out - sends each
+  /// of its own from the old place to where it stands.
+  void _takeOff(int from) {
+    final heroes = widget.heroes;
+    final stack = context.findRenderObject();
+    final places = <String, Rect>{};
+    if (stack != null) {
+      for (final tag in widget.heroTags) {
+        final rect = heroes.rectOf(tag, page: from, within: stack);
+        if (rect != null) places[tag] = rect;
+      }
+    }
+    // Not told to anyone: every hero concerned is built in this frame - the
+    // arriving page's for the first time, the leaving page's in its new
+    // place - and reads it then.
+    heroes.hidden = places.keys.toSet();
+    if (places.isEmpty) return;
+    final page = widget.page;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.page != page) return;
+      final arrived = _pageKey.currentContext?.findRenderObject();
+      final flights = <_Flight>[];
+      if (arrived != null) {
+        for (final MapEntry(key: tag, value: start) in places.entries) {
+          final box = heroes.boxOf(tag, page: page);
+          final end = box?.rectIn(arrived);
+          if (box == null || end == null) continue;
+          // Above the pages the copy has lost what the hero inherits from
+          // its own - the text style, the icon colour - so it takes them.
+          final dressed = InheritedTheme.captureAll(
+            box.context,
+            box.widget.child,
+          );
+          flights.add(_Flight(tag, start, end, dressed));
+        }
+      }
+      setState(() => _flights = flights);
+      // One with nothing to fly to is seen again where it was.
+      heroes.hide({for (final flight in flights) flight.tag});
     });
   }
 
@@ -4956,6 +5056,15 @@ class _PageSwitchState extends State<_PageSwitch>
     return Stack(
       fit: StackFit.passthrough,
       children: [
+        // Something to fade against: where the arriving page has not reached
+        // yet, the leaving one would otherwise thin out over nothing, to
+        // black. The pages are keyed, so it comes and goes around them.
+        if (leaving != null)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Theme.of(context).scaffoldBackgroundColor,
+            ),
+          ),
         // The same wrapping whether it is moving or not, so the page's
         // widgets are the same ones once the transition is over.
         SlideTransition(
@@ -4963,7 +5072,10 @@ class _PageSwitchState extends State<_PageSwitch>
           position: leaving != null && widget.kind == 'push'
               ? _slide(away: false)
               : _still,
-          child: widget.child,
+          child: _PageOf(
+            page: widget.page,
+            child: KeyedSubtree(key: _pageKey, child: widget.child),
+          ),
         ),
         if (leaving != null)
           IgnorePointer(
@@ -4972,11 +5084,137 @@ class _PageSwitchState extends State<_PageSwitch>
               position: widget.kind == 'pop' ? _slide(away: true) : _still,
               child: FadeTransition(
                 opacity: ReverseAnimation(_eased),
-                child: leaving,
+                child: _PageOf(page: _leavingPage, child: leaving),
+              ),
+            ),
+          ),
+        // A hero in the air: the arriving page's, drawn at its own size and
+        // stretched over wherever it has got to, above both pages.
+        for (final flight in _flights)
+          AnimatedBuilder(
+            key: ValueKey<String>('hero ${flight.tag}'),
+            animation: _flown,
+            builder: (context, child) => Positioned.fromRect(
+              rect: Rect.lerp(flight.from, flight.to, _flown.value)!,
+              child: child!,
+            ),
+            child: IgnorePointer(
+              child: ExcludeSemantics(
+                child: FittedBox(
+                  fit: BoxFit.fill,
+                  child: SizedBox.fromSize(
+                    size: flight.to.size,
+                    child: flight.child,
+                  ),
+                ),
               ),
             ),
           ),
       ],
     );
   }
+}
+
+/// A hero on its way: from where the old page's stood to where the new
+/// page's stands, and what the new page's draws.
+class _Flight {
+  const _Flight(this.tag, this.from, this.to, this.child);
+  final String tag;
+  final Rect from;
+  final Rect to;
+  final Widget child;
+}
+
+/// Says which page the widgets below belong to.
+class _PageOf extends InheritedWidget {
+  const _PageOf({required this.page, required super.child});
+  final int page;
+
+  @override
+  bool updateShouldNotify(_PageOf oldWidget) => page != oldWidget.page;
+}
+
+/// The boxes with a hero's name that are built, and the names not to be
+/// drawn for now because a copy is in the air.
+class _Heroes extends ChangeNotifier {
+  final Map<String, List<_HeroBoxState>> _boxes = {};
+  Set<String> hidden = const {};
+
+  /// Changes what is hidden and has the boxes concerned drawn again.
+  void hide(Set<String> tags) {
+    if (hidden.isEmpty && tags.isEmpty) return;
+    hidden = tags;
+    notifyListeners();
+  }
+
+  _HeroBoxState? boxOf(String tag, {required int page}) {
+    for (final box in _boxes[tag] ?? const <_HeroBoxState>[]) {
+      if (box.mounted && box.page == page) return box;
+    }
+    return null;
+  }
+
+  Rect? rectOf(String tag, {required int page, required RenderObject within}) =>
+      boxOf(tag, page: page)?.rectIn(within);
+}
+
+/// A box with a hero's name: found by it, and not drawn while a copy flies.
+class _HeroBox extends StatefulWidget {
+  const _HeroBox({required this.tag, required this.heroes, required this.child});
+  final String tag;
+  final _Heroes heroes;
+  final Widget child;
+
+  @override
+  State<_HeroBox> createState() => _HeroBoxState();
+}
+
+class _HeroBoxState extends State<_HeroBox> {
+  int? page;
+
+  @override
+  void initState() {
+    super.initState();
+    (widget.heroes._boxes[widget.tag] ??= []).add(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    page = context.dependOnInheritedWidgetOfExactType<_PageOf>()?.page;
+  }
+
+  @override
+  void didUpdateWidget(_HeroBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tag == widget.tag) return;
+    oldWidget.heroes._boxes[oldWidget.tag]?.remove(this);
+    (widget.heroes._boxes[widget.tag] ??= []).add(this);
+  }
+
+  @override
+  void dispose() {
+    final boxes = widget.heroes._boxes[widget.tag];
+    boxes?.remove(this);
+    if (boxes != null && boxes.isEmpty) widget.heroes._boxes.remove(widget.tag);
+    super.dispose();
+  }
+
+  /// Where this box is in [ancestor]'s own space, once it has been laid out.
+  Rect? rectIn(RenderObject ancestor) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    if (box.size.isEmpty) return null;
+    return box.localToGlobal(Offset.zero, ancestor: ancestor) & box.size;
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.heroes,
+    builder: (context, child) => Opacity(
+      opacity: widget.heroes.hidden.contains(widget.tag) ? 0 : 1,
+      child: child,
+    ),
+    child: widget.child,
+  );
 }

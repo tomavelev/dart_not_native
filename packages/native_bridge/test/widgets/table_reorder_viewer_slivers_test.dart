@@ -412,6 +412,119 @@ void main() {
       expect(app.nodes.any((node) => node.props['height'] == 160), isTrue);
     });
 
+    group('pinned at the top', () {
+      bool scrolls(AppTester app, String text) => app
+          .ofType('Scroll')
+          .any((scroll) => _texts(scroll).contains(text));
+
+      test('an app bar stands above the scroller, not in it', () {
+        final app = AppTester.widget(
+          _app(
+            const CustomScrollView(
+              slivers: [
+                SliverAppBar(title: Text('Bar'), pinned: true),
+                SliverToBoxAdapter(child: Text('Row')),
+              ],
+            ),
+          ),
+        );
+
+        expect(app.hasText('Bar'), isTrue);
+        expect(scrolls(app, 'Bar'), isFalse);
+        expect(scrolls(app, 'Row'), isTrue);
+      });
+
+      test('one that is not pinned scrolls with the rest', () {
+        final app = AppTester.widget(
+          _app(
+            const CustomScrollView(
+              slivers: [
+                SliverAppBar(title: Text('Bar')),
+                SliverToBoxAdapter(child: Text('Row')),
+              ],
+            ),
+          ),
+        );
+
+        expect(scrolls(app, 'Bar'), isTrue);
+      });
+
+      test('a tall one keeps its toolbar and lets the rest go', () {
+        final app = AppTester.widget(
+          _app(
+            const CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  title: Text('Bar'),
+                  pinned: true,
+                  expandedHeight: 160,
+                  flexibleSpace: FlexibleSpaceBar(title: Text('Tall title')),
+                ),
+                SliverToBoxAdapter(child: Text('Row')),
+              ],
+            ),
+          ),
+        );
+
+        expect(scrolls(app, 'Bar'), isFalse);
+        expect(scrolls(app, 'Tall title'), isTrue);
+        // The toolbar's height is held; the rest of the 160 scrolls.
+        final scroll = app.ofType('Scroll').single;
+        expect(
+          _nodes(scroll).any((node) => node.props['height'] == 104),
+          isTrue,
+        );
+      });
+
+      test('a header pinned straight after a pinned bar is held too', () {
+        final app = AppTester.widget(
+          _app(
+            CustomScrollView(
+              slivers: [
+                const SliverAppBar(title: Text('Bar'), pinned: true),
+                SliverPersistentHeader(delegate: _Header(), pinned: true),
+                const SliverToBoxAdapter(child: Text('Row')),
+              ],
+            ),
+          ),
+        );
+
+        expect(scrolls(app, 'Header at 0.0'), isFalse);
+        expect(scrolls(app, 'Row'), isTrue);
+      });
+
+      test('a header pinned further down scrolls away', () {
+        final app = AppTester.widget(
+          _app(
+            CustomScrollView(
+              slivers: [
+                const SliverToBoxAdapter(child: Text('Row')),
+                SliverPersistentHeader(delegate: _Header(), pinned: true),
+              ],
+            ),
+          ),
+        );
+
+        expect(scrolls(app, 'Header at 0.0'), isTrue);
+      });
+
+      test('a view that takes only the room it needs holds nothing', () {
+        final app = AppTester.widget(
+          _app(
+            const CustomScrollView(
+              shrinkWrap: true,
+              slivers: [
+                SliverAppBar(title: Text('Bar'), pinned: true),
+                SliverToBoxAdapter(child: Text('Row')),
+              ],
+            ),
+          ),
+        );
+
+        expect(scrolls(app, 'Bar'), isTrue);
+      });
+    });
+
     test('a RefreshIndicator over one refreshes it', () {
       final app = AppTester.widget(
         _app(
@@ -446,3 +559,15 @@ class _Header extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_Header oldDelegate) => false;
 }
+
+Iterable<WidgetNode> _nodes(WidgetNode node) sync* {
+  yield node;
+  for (final child in node.children ?? const <WidgetNode>[]) {
+    yield* _nodes(child);
+  }
+}
+
+List<String> _texts(WidgetNode node) => [
+  for (final inner in _nodes(node))
+    if (inner.props['content'] case final String text) text,
+];

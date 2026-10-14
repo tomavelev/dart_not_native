@@ -940,6 +940,10 @@ class _Owner {
   /// build - one no renderer knows is there.
   bool _nestedFab = false;
 
+  /// How tall the bottom bar of a scaffold inside another's body is taken to
+  /// be, when one was drawn in this build - no renderer knows that either.
+  double _nestedBar = 0;
+
   /// The listenables the last build depended on, and the listener watching
   /// each. A subscription belongs to the tree rather than to a widget: this
   /// framework rebuilds from the root and diffs, so one listener per
@@ -1032,6 +1036,10 @@ class _Owner {
   /// The router of the routed [MaterialApp] mounted below, if any, so
   /// Navigator.pushNamed/pop reach it.
   NavigationApp? routerNav;
+
+  /// The entry of the named history whose page is being built, while one is:
+  /// the page on screen, or one kept beneath it.
+  RouteEntry? _namedEntry;
 
   /// The named routes of the [MaterialApp] being shown, by name, so a
   /// navigator can push one as a page.
@@ -1144,6 +1152,7 @@ class _Owner {
       // turned out to be the root, and only when it is not the default.
       _pageTransition = null;
       _nestedFab = false;
+      _nestedBar = 0;
       final tree = _buildRoot();
       return UIBuilder.withPageTransition(
         UIBuilder.withTextDirection(tree, _screenDirection.name),
@@ -1314,16 +1323,18 @@ class _Owner {
     return queued;
   }
 
-  /// The room around [snackBar]: its own margin, and above a floating button
-  /// only the widget layer knows about - a nested scaffold's - the height of
+  /// The room around [snackBar]: its own margin, and above what only the
+  /// widget layer knows is there - a nested scaffold's bottom bar, at the
+  /// height such a bar usually is, and its floating button, at the height of
   /// one and the gap a renderer leaves over its own.
   List<double>? _snackBarRoom(SnackBar snackBar) {
     final stated = snackBar.margin?._resolved._ltrb;
-    if (!_nestedFab || snackBar.behavior == SnackBarBehavior.fixed) {
+    final lift = (_nestedFab ? 56.0 + 8 : 0.0) + _nestedBar;
+    if (lift == 0 || snackBar.behavior == SnackBarBehavior.fixed) {
       return stated;
     }
     final room = stated ?? const [16.0, 0.0, 16.0, 16.0];
-    return [room[0], room[1], room[2], room[3] + 56 + 8];
+    return [room[0], room[1], room[2], room[3] + lift];
   }
 
   /// Takes down the snackbar showing, and shows the next one waiting.
