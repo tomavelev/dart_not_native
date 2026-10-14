@@ -116,8 +116,11 @@ class ScrollController extends ChangeNotifier {
   /// As [position], for code written against a controller with several.
   Iterable<ScrollPosition> get positions => hasClients ? [position] : const [];
 
-  /// Whether the offset last asked for is to be travelled to.
+  /// Whether the offset last asked for is to be travelled to, and over how
+  /// long, along what.
   bool _animated = false;
+  Duration _travel = Duration.zero;
+  Curve _travelCurve = Curves.ease;
 
   /// Scrolls to [value] at once.
   void jumpTo(double value) {
@@ -132,16 +135,17 @@ class ScrollController extends ChangeNotifier {
     _owner?._requestRebuild();
   }
 
-  /// Scrolls to [offset], travelling there: the renderer's own smooth
-  /// scroll, at the pace the platform keeps. [duration] is how long the
-  /// returned future takes - the renderers are not told it - and [curve] is
-  /// not carried; a duration of zero is a [jumpTo].
+  /// Scrolls to [offset], travelling there over [duration] along [curve];
+  /// the returned future completes when it is there. A duration of zero is
+  /// a [jumpTo].
   Future<void> animateTo(
     double offset, {
     required Duration duration,
     required Curve curve,
   }) {
     _animated = duration > Duration.zero;
+    _travel = duration;
+    _travelCurve = curve;
     _go(offset);
     return _animated ? Future<void>.delayed(duration) : Future<void>.value();
   }
@@ -481,6 +485,8 @@ WidgetNode _scroller(
     scrollOffset: position._offset,
     scrollVersion: position._version,
     scrollAnimated: position._animated,
+    scrollMs: position._travel.inMilliseconds,
+    scrollCurve: position._travelCurve.name,
     onScroll: _reporting(owner, position, vertical ? Axis.vertical : Axis.horizontal),
     id: id,
   );
@@ -794,6 +800,8 @@ class ListView extends Widget {
           scrollOffset: position._wireOffset,
           scrollVersion: position._version,
           scrollAnimated: position._animated,
+          scrollMs: position._travel.inMilliseconds,
+          scrollCurve: position._travelCurve.name,
           onScroll: _reporting(owner, position, Axis.vertical),
           // Room inside the scroller, as Flutter's is: the rows scroll under
           // the edges rather than stopping short of them.

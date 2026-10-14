@@ -11,12 +11,15 @@ part of '../../widgets.dart';
 
 /// How an animation is paced over its duration.
 ///
-/// The protocol carries five paces, because every renderer already has those
-/// five and no more: a CSS timing function, an Android `Interpolator`, a UIKit
-/// animation option. Every curve Flutter names is here, and each travels as
-/// the nearest of the five - `Curves.elasticOut` is `easeOut` by the time a
-/// renderer sees it, which keeps the code compiling and the motion honest
-/// about where it goes, if not about the overshoot on the way.
+/// The protocol carries five paces by name - `linear`, `ease`, `easeIn`,
+/// `easeOut`, `easeInOut` - and any cubic Bézier by its two control points
+/// (`cubic(a,b,c,d)`), which every renderer can draw: a CSS
+/// `cubic-bezier`, an Android `PathInterpolator`, UIKit's cubic timing.
+/// Every curve Flutter names is here, and each that is a cubic in Flutter
+/// travels as that cubic, with Flutter's numbers - `Curves.fastOutSlowIn`,
+/// `Curves.easeOutBack` with its overshoot. The rest - a bounce, a spring -
+/// travel as the nearest of the five, which keeps the motion honest about
+/// where it goes, if not about the way there.
 class Curve {
   const Curve(this.name);
 
@@ -50,10 +53,10 @@ class Curve {
   int get hashCode => name.hashCode;
 }
 
-/// A cubic Bézier curve through (0,0), ([a],[b]), ([c],[d]) and (1,1).
-/// [transform] is exact; a renderer is handed the nearest of the five paces.
+/// A cubic Bézier curve through (0,0), ([a],[b]), ([c],[d]) and (1,1),
+/// which travels to a renderer as itself.
 class Cubic extends Curve {
-  const Cubic(this.a, this.b, this.c, this.d) : super('easeInOut');
+  const Cubic(this.a, this.b, this.c, this.d) : super('cubic($a,$b,$c,$d)');
   final double a;
   final double b;
   final double c;
@@ -65,6 +68,10 @@ class Cubic extends Curve {
     if (t >= 1) return 1;
     return _cubic(a, b, c, d, t);
   }
+
+  /// The same curve run backwards: the cubic turned end for end.
+  @override
+  Curve get flipped => Cubic(1 - c, 1 - d, 1 - a, 1 - b);
 }
 
 /// y at x = [t] on the cubic Bézier with control points (a,b) and (c,d),
@@ -94,41 +101,44 @@ abstract final class Curves {
   static const Curve easeOut = Curve('easeOut');
   static const Curve easeInOut = Curve('easeInOut');
 
+  // Not cubics in Flutter, and so the nearest of the five.
   static const Curve decelerate = easeOut;
-  static const Curve fastLinearToSlowEaseIn = easeOut;
-  static const Curve fastOutSlowIn = easeInOut;
-  static const Curve slowMiddle = ease;
   static const Curve fastEaseInToSlowEaseOut = easeInOut;
-  static const Curve linearToEaseOut = easeOut;
-  static const Curve easeInToLinear = easeIn;
-
-  static const Curve easeInSine = easeIn;
-  static const Curve easeInQuad = easeIn;
-  static const Curve easeInCubic = easeIn;
-  static const Curve easeInQuart = easeIn;
-  static const Curve easeInQuint = easeIn;
-  static const Curve easeInExpo = easeIn;
-  static const Curve easeInCirc = easeIn;
-  static const Curve easeInBack = easeIn;
-
-  static const Curve easeOutSine = easeOut;
-  static const Curve easeOutQuad = easeOut;
-  static const Curve easeOutCubic = easeOut;
-  static const Curve easeOutQuart = easeOut;
-  static const Curve easeOutQuint = easeOut;
-  static const Curve easeOutExpo = easeOut;
-  static const Curve easeOutCirc = easeOut;
-  static const Curve easeOutBack = easeOut;
-
-  static const Curve easeInOutSine = easeInOut;
-  static const Curve easeInOutQuad = easeInOut;
-  static const Curve easeInOutCubic = easeInOut;
   static const Curve easeInOutCubicEmphasized = easeInOut;
-  static const Curve easeInOutQuart = easeInOut;
-  static const Curve easeInOutQuint = easeInOut;
-  static const Curve easeInOutExpo = easeInOut;
-  static const Curve easeInOutCirc = easeInOut;
-  static const Curve easeInOutBack = easeInOut;
+
+  // Flutter's cubics, with Flutter's numbers.
+  static const Cubic fastLinearToSlowEaseIn = Cubic(0.18, 1.0, 0.04, 1.0);
+  static const Cubic fastOutSlowIn = Cubic(0.4, 0.0, 0.2, 1.0);
+  static const Cubic slowMiddle = Cubic(0.15, 0.85, 0.85, 0.15);
+  static const Cubic linearToEaseOut = Cubic(0.35, 0.91, 0.33, 0.97);
+  static const Cubic easeInToLinear = Cubic(0.67, 0.03, 0.65, 0.09);
+
+  static const Cubic easeInSine = Cubic(0.47, 0.0, 0.745, 0.715);
+  static const Cubic easeInQuad = Cubic(0.55, 0.085, 0.68, 0.53);
+  static const Cubic easeInCubic = Cubic(0.55, 0.055, 0.675, 0.19);
+  static const Cubic easeInQuart = Cubic(0.895, 0.03, 0.685, 0.22);
+  static const Cubic easeInQuint = Cubic(0.755, 0.05, 0.855, 0.06);
+  static const Cubic easeInExpo = Cubic(0.95, 0.05, 0.795, 0.035);
+  static const Cubic easeInCirc = Cubic(0.6, 0.04, 0.98, 0.335);
+  static const Cubic easeInBack = Cubic(0.6, -0.28, 0.735, 0.045);
+
+  static const Cubic easeOutSine = Cubic(0.39, 0.575, 0.565, 1.0);
+  static const Cubic easeOutQuad = Cubic(0.25, 0.46, 0.45, 0.94);
+  static const Cubic easeOutCubic = Cubic(0.215, 0.61, 0.355, 1.0);
+  static const Cubic easeOutQuart = Cubic(0.165, 0.84, 0.44, 1.0);
+  static const Cubic easeOutQuint = Cubic(0.23, 1.0, 0.32, 1.0);
+  static const Cubic easeOutExpo = Cubic(0.19, 1.0, 0.22, 1.0);
+  static const Cubic easeOutCirc = Cubic(0.075, 0.82, 0.165, 1.0);
+  static const Cubic easeOutBack = Cubic(0.175, 0.885, 0.32, 1.275);
+
+  static const Cubic easeInOutSine = Cubic(0.445, 0.05, 0.55, 0.95);
+  static const Cubic easeInOutQuad = Cubic(0.455, 0.03, 0.515, 0.955);
+  static const Cubic easeInOutCubic = Cubic(0.645, 0.045, 0.355, 1.0);
+  static const Cubic easeInOutQuart = Cubic(0.77, 0.0, 0.175, 1.0);
+  static const Cubic easeInOutQuint = Cubic(0.86, 0.0, 0.07, 1.0);
+  static const Cubic easeInOutExpo = Cubic(1.0, 0.0, 0.0, 1.0);
+  static const Cubic easeInOutCirc = Cubic(0.785, 0.135, 0.15, 0.86);
+  static const Cubic easeInOutBack = Cubic(0.68, -0.55, 0.265, 1.55);
 
   // A bounce or a spring is not one of the five; each lands where it would
   // have, along the pace nearest its overall shape.
@@ -155,11 +165,34 @@ abstract class Animation<T> extends Listenable {
   bool get isDismissed => status == AnimationStatus.dismissed;
 }
 
+/// How long a transition widget takes to move to the value its animation
+/// has now: set round what an [AnimatedSwitcher]'s `transitionBuilder`
+/// returns, which is built at the animation's start and then at its end.
+/// Anywhere else a transition is drawn at its value outright.
+class _TransitionTime extends InheritedWidget {
+  const _TransitionTime({
+    required this.duration,
+    required this.curve,
+    required super.child,
+  });
+  final Duration duration;
+  final Curve curve;
+
+  static _TransitionTime? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_TransitionTime>();
+
+  @override
+  bool updateShouldNotify(_TransitionTime oldWidget) =>
+      oldWidget.duration != duration || oldWidget.curve != curve;
+}
+
 /// A child at the opacity an [Animation] says, in Flutter.
 ///
 /// An animation here stands still (see [Animation]), so the child is drawn at
 /// the value it has when the widget is built - which, for the animation a
-/// page route hands its `buildTransitions`, is fully shown.
+/// page route hands its `buildTransitions`, is fully shown. Built by an
+/// [AnimatedSwitcher]'s `transitionBuilder`, it fades from the value at the
+/// start to the value at the end.
 class FadeTransition extends StatelessWidget {
   const FadeTransition({
     super.key,
@@ -175,8 +208,284 @@ class FadeTransition extends StatelessWidget {
   Widget build(BuildContext context) {
     final value = opacity.value.clamp(0.0, 1.0).toDouble();
     final child = this.child ?? const SizedBox.shrink();
+    final time = _TransitionTime.of(context);
+    if (time != null) {
+      return AnimatedOpacity(
+        opacity: value,
+        duration: time.duration,
+        curve: time.curve,
+        child: child,
+      );
+    }
     return value >= 1 ? child : Opacity(opacity: value, child: child);
   }
+}
+
+/// A child at the scale an [Animation] says, in Flutter - moving there, in
+/// an [AnimatedSwitcher]'s transition (see [FadeTransition]).
+class ScaleTransition extends StatelessWidget {
+  const ScaleTransition({
+    super.key,
+    required this.scale,
+    this.alignment = Alignment.center,
+    this.filterQuality,
+    this.child,
+  });
+  final Animation<double> scale;
+
+  /// Accepted and not carried: a box scales about its middle.
+  final Alignment alignment;
+  final Object? filterQuality;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = _TransitionTime.of(context);
+    return AnimatedScale(
+      scale: scale.value,
+      duration: time?.duration ?? Duration.zero,
+      curve: time?.curve ?? Curves.linear,
+      child: child,
+    );
+  }
+}
+
+/// A child turned by as many turns as an [Animation] says, in Flutter -
+/// turning there, in an [AnimatedSwitcher]'s transition.
+class RotationTransition extends StatelessWidget {
+  const RotationTransition({
+    super.key,
+    required this.turns,
+    this.alignment = Alignment.center,
+    this.filterQuality,
+    this.child,
+  });
+  final Animation<double> turns;
+  final Alignment alignment;
+  final Object? filterQuality;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = _TransitionTime.of(context);
+    return AnimatedRotation(
+      turns: turns.value,
+      duration: time?.duration ?? Duration.zero,
+      curve: time?.curve ?? Curves.linear,
+      child: child,
+    );
+  }
+}
+
+/// A child moved by the [Offset] an [Animation] says, in multiples of its
+/// own size, in Flutter - sliding there, in an [AnimatedSwitcher]'s
+/// transition.
+class SlideTransition extends StatelessWidget {
+  const SlideTransition({
+    super.key,
+    required this.position,
+    this.transformHitTests = true,
+    this.textDirection,
+    this.child,
+  });
+  final Animation<Offset> position;
+  final bool transformHitTests;
+  final TextDirection? textDirection;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = _TransitionTime.of(context);
+    var offset = position.value;
+    // Read from the right, a slide along the line is the other way round.
+    if (textDirection == TextDirection.rtl) offset = Offset(-offset.dx, offset.dy);
+    return AnimatedSlide(
+      offset: offset,
+      duration: time?.duration ?? Duration.zero,
+      curve: time?.curve ?? Curves.linear,
+      child: child,
+    );
+  }
+}
+
+/// A child shown by as much of its size along [axis] as an [Animation]
+/// says, in Flutter. Here it is all of it or none of it - none at zero -
+/// and in an [AnimatedSwitcher]'s transition the space moves from the one
+/// to the other.
+class SizeTransition extends StatelessWidget {
+  const SizeTransition({
+    super.key,
+    this.axis = Axis.vertical,
+    required this.sizeFactor,
+    this.axisAlignment = 0.0,
+    this.fixedCrossAxisSizeFactor,
+    this.child,
+  });
+  final Axis axis;
+  final Animation<double> sizeFactor;
+  final double axisAlignment;
+  final double? fixedCrossAxisSizeFactor;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = _TransitionTime.of(context);
+    final shown = sizeFactor.value > 0
+        ? (child ?? const SizedBox.shrink())
+        : (axis == Axis.vertical
+              ? const SizedBox(height: 0)
+              : const SizedBox(width: 0));
+    if (time == null) return shown;
+    return AnimatedSize(
+      duration: time.duration,
+      curve: time.curve,
+      alignment: axis == Axis.vertical
+          ? Alignment(0, axisAlignment)
+          : Alignment(axisAlignment, 0),
+      child: shown,
+    );
+  }
+}
+
+/// Something that gives a value for a point along an animation, in Flutter.
+abstract class Animatable<T> {
+  const Animatable();
+
+  /// The value at [t], 0 to 1.
+  T transform(double t);
+
+  /// The value at the point [animation] is at.
+  T evaluate(Animation<double> animation) => transform(animation.value);
+
+  /// An animation of this, driven by [parent].
+  Animation<T> animate(Animation<double> parent) =>
+      _AnimatedEvaluation<T>(parent, this);
+
+  /// This, along the values [parent] gives.
+  Animatable<T> chain(Animatable<double> parent) =>
+      _ChainedEvaluation<T>(parent, this);
+}
+
+class _AnimatedEvaluation<T> extends Animation<T> {
+  _AnimatedEvaluation(this.parent, this.animatable);
+  final Animation<double> parent;
+  final Animatable<T> animatable;
+  @override
+  T get value => animatable.evaluate(parent);
+  @override
+  AnimationStatus get status => parent.status;
+  @override
+  void addListener(VoidCallback listener) => parent.addListener(listener);
+  @override
+  void removeListener(VoidCallback listener) =>
+      parent.removeListener(listener);
+}
+
+class _ChainedEvaluation<T> extends Animatable<T> {
+  _ChainedEvaluation(this.parent, this.evaluatable);
+  final Animatable<double> parent;
+  final Animatable<T> evaluatable;
+  @override
+  T transform(double t) => evaluatable.transform(parent.transform(t));
+}
+
+/// The values between [begin] and [end], in Flutter: numbers, offsets,
+/// sizes, alignments and colours go between the two; anything else is
+/// [begin] before the middle and [end] from it.
+class Tween<T extends Object?> extends Animatable<T> {
+  Tween({this.begin, this.end});
+  T? begin;
+  T? end;
+
+  /// The value a [t] of the way from [begin] to [end].
+  T lerp(double t) {
+    final a = begin, b = end;
+    double number(Object? n) => (n as num?)?.toDouble() ?? 0;
+    final Object? value = switch ((a, b)) {
+      (num? _, num? _) when a != null || b != null =>
+        number(a) + (number(b) - number(a)) * t,
+      (Offset x, Offset y) => Offset(
+        x.dx + (y.dx - x.dx) * t,
+        x.dy + (y.dy - x.dy) * t,
+      ),
+      (Size x, Size y) => Size(
+        x.width + (y.width - x.width) * t,
+        x.height + (y.height - x.height) * t,
+      ),
+      (Alignment x, Alignment y) => Alignment(
+        x.x + (y.x - x.x) * t,
+        x.y + (y.y - x.y) * t,
+      ),
+      (Color x, Color y) => Color.fromARGB(
+        (x.alpha + (y.alpha - x.alpha) * t).round(),
+        (x.red + (y.red - x.red) * t).round(),
+        (x.green + (y.green - x.green) * t).round(),
+        (x.blue + (y.blue - x.blue) * t).round(),
+      ),
+      _ => t < 0.5 ? a : b,
+    };
+    return value as T;
+  }
+
+  @override
+  T transform(double t) {
+    if (t == 0.0) return begin as T;
+    if (t == 1.0) return end as T;
+    return lerp(t);
+  }
+}
+
+/// A [Tween] of colours.
+class ColorTween extends Tween<Color?> {
+  ColorTween({super.begin, super.end});
+}
+
+/// A [Tween] of sizes.
+class SizeTween extends Tween<Size?> {
+  SizeTween({super.begin, super.end});
+}
+
+/// A [Tween] of whole numbers, rounded.
+class IntTween extends Tween<int> {
+  IntTween({super.begin, super.end});
+  @override
+  int lerp(double t) => (begin! + (end! - begin!) * t).round();
+}
+
+/// A [Tween] that stays at [value].
+class ConstantTween<T> extends Tween<T> {
+  ConstantTween(T value) : super(begin: value, end: value);
+  @override
+  T lerp(double t) => begin as T;
+}
+
+/// [curve]'s value at a point, as an [Animatable].
+class CurveTween extends Animatable<double> {
+  CurveTween({required this.curve});
+  Curve curve;
+  @override
+  double transform(double t) => curve.transform(t);
+}
+
+/// [parent] along [curve], in Flutter.
+class CurvedAnimation extends Animation<double> {
+  CurvedAnimation({required this.parent, required this.curve, this.reverseCurve});
+  final Animation<double> parent;
+  Curve curve;
+  Curve? reverseCurve;
+  @override
+  double get value {
+    final reversing = parent.status == AnimationStatus.reverse;
+    return (reversing ? reverseCurve ?? curve : curve).transform(parent.value);
+  }
+
+  @override
+  AnimationStatus get status => parent.status;
+  @override
+  void addListener(VoidCallback listener) => parent.addListener(listener);
+  @override
+  void removeListener(VoidCallback listener) =>
+      parent.removeListener(listener);
 }
 
 /// An animation that is always [value].
@@ -578,10 +887,14 @@ typedef AnimatedSwitcherTransitionBuilder =
 /// )
 /// ```
 ///
-/// The transition is the fade. A [transitionBuilder] is called, with an
-/// animation that has finished (see [Animation]), and what it returns is
-/// what fades; a [layoutBuilder] is accepted and not called - the children
-/// are stacked about their centres, which is Flutter's default.
+/// The transition is a fade unless a [transitionBuilder] says otherwise. It
+/// is called with the animation standing at its start and then at its end,
+/// and the [FadeTransition]s, [ScaleTransition]s, [SlideTransition]s,
+/// [RotationTransition]s and [SizeTransition]s in what it returns move
+/// from the one to the other - a [Tween] or a [CurvedAnimation] between
+/// them is evaluated at both ends. Anything else in it is drawn as it is at
+/// the end. A [layoutBuilder] is accepted and not called - the children are
+/// stacked about their centres, which is Flutter's default.
 class AnimatedSwitcher extends StatelessWidget {
   const AnimatedSwitcher({
     super.key,
@@ -614,11 +927,8 @@ class AnimatedSwitcher extends StatelessWidget {
       inCurve: switchInCurve,
       outCurve: switchOutCurve,
       alignment: Alignment.center,
-      child: child == null
-          ? null
-          : builder == null
-          ? child
-          : builder(child, kAlwaysCompleteAnimation),
+      transition: builder,
+      child: child,
     );
   }
 }
@@ -642,6 +952,7 @@ class _Switch extends StatefulWidget {
     required this.outCurve,
     required this.alignment,
     this.leavingOver = false,
+    this.transition,
   });
   final Object? identity;
   final Widget? child;
@@ -654,6 +965,10 @@ class _Switch extends StatefulWidget {
   /// Whether a child that is leaving is laid over the stack rather than in
   /// it, so the stack is the size of the child coming in alone.
   final bool leavingOver;
+
+  /// How a child comes and goes, when not by a fade: built at the
+  /// animation's start and then at its end (see [AnimatedSwitcher]).
+  final AnimatedSwitcherTransitionBuilder? transition;
 
   @override
   State<_Switch> createState() => _SwitchState();
@@ -693,7 +1008,7 @@ class _SwitchState extends State<_Switch> {
     final fading = KeyedSubtree(
       key: _keyOf(gone.serial),
       child: IgnorePointer(
-        child: _FadeTo(
+        child: _moving(
           from: 1,
           to: 0,
           duration: widget.reverseDuration,
@@ -707,6 +1022,35 @@ class _SwitchState extends State<_Switch> {
         : fading;
   }
 
+  /// [child] on its way from [from] to [to]: faded, or moved by the
+  /// switch's transition.
+  Widget _moving({
+    required double from,
+    required double to,
+    required Duration duration,
+    required Curve curve,
+    required Widget child,
+  }) {
+    final transition = widget.transition;
+    if (transition == null) {
+      return _FadeTo(
+        from: from,
+        to: to,
+        duration: duration,
+        curve: curve,
+        child: child,
+      );
+    }
+    return _Transitioning(
+      from: from,
+      to: to,
+      duration: duration,
+      curve: curve,
+      transition: transition,
+      child: child,
+    );
+  }
+
   // A key of its own for each child that has been here, so a child's state
   // stays with it while the ones around it come and go.
   Key _keyOf(int serial) => ValueKey('switch-${identityHashCode(this)}-$serial');
@@ -717,14 +1061,15 @@ class _SwitchState extends State<_Switch> {
     final current = KeyedSubtree(
       key: _keyOf(_serial),
       child: _entered && widget.duration > Duration.zero
-          ? _FadeTo(
+          ? _moving(
               from: 0,
               to: 1,
               duration: widget.duration,
               curve: widget.inCurve,
               child: child,
             )
-          : child,
+          : (widget.transition?.call(child, kAlwaysCompleteAnimation) ??
+                child),
     );
     if (_leaving.isEmpty) return current;
     return Stack(
@@ -733,6 +1078,63 @@ class _SwitchState extends State<_Switch> {
         for (final gone in _leaving) _gone(gone),
         current,
       ],
+    );
+  }
+}
+
+/// [child] as [transition] builds it with the animation at [from], then at
+/// [to] - the transition widgets in it moving from the one to the other.
+class _Transitioning extends StatefulWidget {
+  const _Transitioning({
+    required this.from,
+    required this.to,
+    required this.duration,
+    required this.curve,
+    required this.transition,
+    required this.child,
+  });
+  final double from;
+  final double to;
+  final Duration duration;
+  final Curve curve;
+  final AnimatedSwitcherTransitionBuilder transition;
+  final Widget child;
+
+  @override
+  State<_Transitioning> createState() => _TransitioningState();
+}
+
+class _TransitioningState extends State<_Transitioning> {
+  late double _at = widget.from;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(_FadeToState._settle, () {
+      if (mounted) setState(() => _at = widget.to);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _at == widget.to
+        ? (widget.to >= widget.from
+              ? AnimationStatus.completed
+              : AnimationStatus.dismissed)
+        : (widget.to >= widget.from
+              ? AnimationStatus.forward
+              : AnimationStatus.reverse);
+    return _TransitionTime(
+      duration: widget.duration,
+      curve: widget.curve,
+      child: widget.transition(widget.child, _FixedAnimation(_at, status)),
     );
   }
 }
@@ -798,8 +1200,8 @@ class _FadeToState extends State<_FadeTo> {
 /// clipped to it on the way unless [clipBehavior] is [Clip.none]. The
 /// renderer does the moving, since only it knows how big the child came
 /// out; a child that changes size between renders - a picture arriving - is
-/// not moved to. [reverseDuration] is accepted and not carried, and
-/// [onEnd] is not called.
+/// not moved to. [onEnd] is called when a move has got there, as the
+/// renderer says. [reverseDuration] is accepted and not carried.
 class AnimatedSize extends Widget {
   const AnimatedSize({
     super.key,
@@ -830,6 +1232,7 @@ class AnimatedSize extends Widget {
     duration: duration,
     curve: curve,
     clip: clipBehavior != Clip.none,
+    onEnd: onEnd,
     id: _idOf(key),
   );
 }
@@ -843,11 +1246,13 @@ WidgetNode _sizing(
   required Duration duration,
   required Curve curve,
   bool clip = true,
+  VoidCallback? onEnd,
   String? id,
 }) => UIBuilder.box(
   alignment: alignment._resolved._xy,
   clip: clip,
   animateSize: duration > Duration.zero,
+  onSizeEnd: onEnd,
   animateMs: duration > Duration.zero ? duration.inMilliseconds : null,
   curve: curve.name,
   id: id,

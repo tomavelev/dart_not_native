@@ -1148,6 +1148,8 @@ class NativeUIRenderer {
       // A list already on screen travels there when asked to (`animateTo`):
       // it asks for its rows on the way, as it does under a finger.
       list.restoreTravels = newNode["scrollAnimated"] as? Bool ?? false
+      list.restoreSeconds = Double(number(newNode["scrollMs"]) ?? 0) / 1000
+      list.restorePoints = travelPoints(newNode["scrollCurve"])
       list.setNeedsLayout()
     }
     return true
@@ -2824,7 +2826,16 @@ class NativeUIRenderer {
         self?.send(eventId: eventId, data: ["state": loaded ? "loaded" : "failed"])
       }
     }
-    load(node["src"] as? String, into: imageView, hiding: fallback, told: told)
+    var progress: ((Int64, Int64?) -> Void)?
+    if let eventId = node["eventId"] as? String, node["progress"] as? Bool == true {
+      progress = { [weak self] loaded, expected in
+        var data: [String: Any] = ["state": "loading", "loaded": loaded]
+        if let expected { data["expected"] = expected }
+        self?.send(eventId: eventId, data: data)
+      }
+    }
+    load(
+      node["src"] as? String, into: imageView, hiding: fallback, told: told, progress: progress)
     return container
   }
 
@@ -2909,7 +2920,8 @@ class NativeUIRenderer {
    */
   private func load(
     _ src: String?, into view: UIImageView, hiding fallback: UIView,
-    told: ((Bool) -> Void)? = nil
+    told: ((Bool) -> Void)? = nil,
+    progress: ((Int64, Int64?) -> Void)? = nil
   ) {
     guard let src, !src.isEmpty else {
       told?(false)
@@ -2948,7 +2960,9 @@ class NativeUIRenderer {
     }
     NativeUIRenderer.imageWaiters[src] = [waiter]
 
-    URLSession.shared.dataTask(with: url) { fetched, _, error in
+    var watching: NSKeyValueObservation?
+    let task = URLSession.shared.dataTask(with: url) { fetched, _, error in
+      watching?.invalidate()
       // With no way to the server, a copy that has outlived its cache headers
       // is still the picture: an old one is better than none.
       let data =
@@ -2975,7 +2989,20 @@ class NativeUIRenderer {
         let waiting = NativeUIRenderer.imageWaiters.removeValue(forKey: src) ?? []
         for waiter in waiting { waiter(result) }
       }
-    }.resume()
+    }
+    if let progress {
+      // How far it has got, a few times a second.
+      var said: CFTimeInterval = 0
+      watching = task.observe(\.countOfBytesReceived, options: [.new]) { task, _ in
+        let now = CACurrentMediaTime()
+        guard now - said >= 0.1 else { return }
+        said = now
+        let loaded = task.countOfBytesReceived
+        let expected = task.countOfBytesExpectedToReceive
+        DispatchQueue.main.async { progress(loaded, expected > 0 ? expected : nil) }
+      }
+    }
+    task.resume()
   }
 
   /**
@@ -4041,8 +4068,8 @@ class NativeUIRenderer {
     // growing further up the tree animates this view's position through the
     // same layer, and removing that would snap it to where it is going.
     view.layer.removeAnimation(forKey: "opacity")
-    UIView.animate(
-      withDuration: duration, delay: 0, options: curve(node),
+    animate(
+      node, duration: duration,
       animations: { view.alpha = target },
       completion: { finished in if finished { done?() } })
     return true
@@ -4088,11 +4115,61 @@ class NativeUIRenderer {
     // below it, and that has to move at the same time or it jumps.
     var root: UIView = box
     while let parent = root.superview { root = parent }
-    UIView.animate(withDuration: duration, delay: 0, options: curve(node)) {
-      box.backgroundColor = target
-      root.layoutIfNeeded()
-    }
+    animate(
+      node, duration: duration,
+      animations: {
+        box.backgroundColor = target
+        root.layoutIfNeeded()
+      })
     return true
+  }
+
+  /// The two control points of a `cubic(a,b,c,d)` curve, or nil for a curve
+  /// said by name.
+  private func cubicPoints(_ curve: Any?) -> (CGPoint, CGPoint)? {
+    guard let text = curve as? String, text.hasPrefix("cubic("), text.hasSuffix(")") else {
+      return nil
+    }
+    let numbers = text.dropFirst(6).dropLast().split(separator: ",").compactMap {
+      Double($0.trimmingCharacters(in: .whitespaces))
+    }
+    guard numbers.count == 4 else { return nil }
+    return (CGPoint(x: numbers[0], y: numbers[1]), CGPoint(x: numbers[2], y: numbers[3]))
+  }
+
+  /// Runs [animations] over [duration] along the node's curve: a cubic by
+  /// UIKit's cubic timing, a named one by its animation option. [completion]
+  /// hears whether it got to the end.
+  private func animate(
+    _ node: [String: Any], duration: TimeInterval, options: UIView.AnimationOptions = [],
+    animations: @escaping () -> Void, completion: ((Bool) -> Void)? = nil
+  ) {
+    if let (one, two) = cubicPoints(node["curve"]) {
+      let animator = UIViewPropertyAnimator(
+        duration: duration,
+        timingParameters: UICubicTimingParameters(controlPoint1: one, controlPoint2: two))
+      animator.isUserInteractionEnabled = true
+      animator.addAnimations(animations)
+      animator.addCompletion { position in completion?(position == .end) }
+      animator.startAnimation()
+      return
+    }
+    UIView.animate(
+      withDuration: duration, delay: 0, options: options.union(curve(node)),
+      animations: animations, completion: completion)
+  }
+
+  /// The control points a curve travels along, cubic or named; nil for a
+  /// straight one.
+  private func travelPoints(_ curve: Any?) -> (CGPoint, CGPoint)? {
+    if let points = cubicPoints(curve) { return points }
+    switch curve as? String {
+    case "linear": return nil
+    case "easeIn": return (CGPoint(x: 0.42, y: 0), CGPoint(x: 1, y: 1))
+    case "easeOut": return (CGPoint(x: 0, y: 0), CGPoint(x: 0.58, y: 1))
+    case "easeInOut": return (CGPoint(x: 0.42, y: 0), CGPoint(x: 0.58, y: 1))
+    default: return (CGPoint(x: 0.25, y: 0.1), CGPoint(x: 0.25, y: 1))
+    }
   }
 
   /// A protocol curve name as a UIKit animation option.
@@ -4936,12 +5013,18 @@ class NativeUIRenderer {
     if let transform = node["transform"] as? [String: Any] {
       // About the centre, which is where a view's transform already pivots:
       // scaled, then turned, then moved.
-      let scale = finite(transform["scale"]) ?? 1
+      // Never quite nothing: UIKit cannot move to a transform that is, and
+      // would land there at once.
+      func held(_ value: CGFloat) -> CGFloat {
+        abs(value) < 0.0001 ? (value < 0 ? -0.0001 : 0.0001) : value
+      }
+      let scale = held(finite(transform["scale"]) ?? 1)
+      let scaleY = held(finite(transform["scaleY"]) ?? scale)
       style.transform = CGAffineTransform(
         translationX: finite(transform["dx"]) ?? 0, y: finite(transform["dy"]) ?? 0
       )
       .rotated(by: finite(transform["rotate"]) ?? 0)
-      .scaledBy(x: scale, y: scale)
+      .scaledBy(x: scale, y: scaleY)
     }
 
     style.tapEventId = node["tapEventId"] as? String
@@ -4974,7 +5057,9 @@ class NativeUIRenderer {
     let sizeMs = node["animateSize"] as? Bool == true ? number(node["animateMs"]) ?? 0 : 0
     box.animatesSize = sizeMs > 0
     box.sizeSeconds = Double(sizeMs) / 1000
-    box.sizeCurve = curve(node)
+    box.sizeCurve = node["curve"] as? String
+    box.sizeEndEventId = node["sizeEndEventId"] as? String
+    box.sticky = node["sticky"] as? Bool == true
     if sizeMs > 0 { sizingBoxes.add(box) } else { sizingBoxes.remove(box) }
     if let hero = node["hero"] as? String {
       heroViews.setObject(hero as NSString, forKey: box)
@@ -5026,15 +5111,21 @@ class NativeUIRenderer {
     }
     guard let lead = moving.first?.0 else { return }
     root.layoutIfNeeded()
-    UIView.animate(
-      withDuration: lead.sizeSeconds, delay: 0,
-      options: [lead.sizeCurve, .allowUserInteraction, .beginFromCurrentState],
+    animate(
+      ["curve": lead.sizeCurve as Any], duration: lead.sizeSeconds,
+      options: [.allowUserInteraction, .beginFromCurrentState],
       animations: {
         for (box, now) in moving { box.pinSize(now) }
         root.layoutIfNeeded()
       },
-      completion: { _ in
-        for (box, _) in moving { box.unpinSize() }
+      completion: { [weak self] finished in
+        for (box, _) in moving {
+          box.unpinSize()
+          // Only a move that got there: an interrupted one has a newer one.
+          if finished, let ended = box.sizeEndEventId {
+            self?.send(eventId: ended, data: [:])
+          }
+        }
       })
   }
 
@@ -5072,9 +5163,8 @@ class NativeUIRenderer {
     var root: UIView = box
     while let parent = root.superview { root = parent }
     root.layoutIfNeeded()
-    UIView.animate(
-      withDuration: duration, delay: 0,
-      options: [curve(node), .allowUserInteraction, .beginFromCurrentState],
+    animate(
+      node, duration: duration, options: [.allowUserInteraction, .beginFromCurrentState],
       animations: {
         self.configureBox(box, node)
         root.layoutIfNeeded()
@@ -5226,7 +5316,10 @@ class NativeUIRenderer {
       return
     }
     scroll.appliedScrollVersion = version
-    scroll.jump(to: offset, animated: node["scrollAnimated"] as? Bool ?? false)
+    scroll.jump(
+      to: offset, animated: node["scrollAnimated"] as? Bool ?? false,
+      seconds: Double(number(node["scrollMs"]) ?? 0) / 1000,
+      points: travelPoints(node["scrollCurve"]))
   }
 
   private func patchScroll(_ view: UIView, _ node: [String: Any]) -> Bool {
@@ -6424,6 +6517,9 @@ private class LazyListView: UIScrollView {
   /// `restoreTravels` it is scrolled to, not jumped to.
   var restoreOffset: CGFloat?
   var restoreTravels = false
+  /// How long that travel takes and along what, when the app said.
+  var restoreSeconds: TimeInterval = 0
+  var restorePoints: (CGPoint, CGPoint)?
   var onViewportChange: (() -> Void)?
 
   /// Room inside the scroller: the rows are framed within it, and scroll out
@@ -6532,7 +6628,10 @@ private class LazyListView: UIScrollView {
     if let restore = restoreOffset {
       restoreOffset = nil
       let target = CGPoint(x: 0, y: min(restore, max(0, height - bounds.height)))
-      if restoreTravels {
+      if restoreTravels && restoreSeconds > 0 {
+        restoreTravels = false
+        DnnScrollTravel.go(self, to: target, seconds: restoreSeconds, points: restorePoints)
+      } else if restoreTravels {
         restoreTravels = false
         setContentOffset(target, animated: true)
       } else {

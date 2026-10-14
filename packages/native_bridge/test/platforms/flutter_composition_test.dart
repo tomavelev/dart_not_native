@@ -845,6 +845,32 @@ void main() {
       expect(pixels(), 2400);
     });
 
+    testWidgets('a travel takes the time and curve it is given', (
+      tester,
+    ) async {
+      WidgetNode tree(double offset, int version, {int? ms}) =>
+          UIBuilder.scroll(
+            scrollOffset: offset,
+            scrollVersion: version,
+            scrollAnimated: ms != null,
+            scrollMs: ms,
+            scrollCurve: 'linear',
+            child: UIBuilder.box(width: 100, height: 3000),
+          );
+      double pixels() => tester
+          .state<ScrollableState>(find.byType(Scrollable))
+          .position
+          .pixels;
+
+      await show(tester, tree(0, 1));
+      await show(tester, tree(1000, 2, ms: 1000));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(pixels(), closeTo(500, 40));
+      await tester.pumpAndSettle();
+      expect(pixels(), 1000);
+    });
+
     testWidgets('reports where it has been scrolled to, when it comes to '
         'rest and not once a frame', (tester) async {
       listen('at');

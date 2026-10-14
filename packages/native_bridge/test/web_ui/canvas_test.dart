@@ -216,6 +216,45 @@ void main() {
     expect(rect.height, 80);
   });
 
+  group('layers and blends', () {
+    test('shapes overlapping in a layer are no darker where they do', () async {
+      await renderer.render(
+        picture(
+          [
+            ['saveLayer', 0.5],
+            ['rect', 0, 0, 60, 40, 0],
+            ['rect', 30, 0, 60, 40, 0],
+            ['restore'],
+          ],
+          paints: const [
+            {'color': '#0000ff'},
+          ],
+        ),
+      );
+      final alone = pixel(10, 20)[3];
+      final both = pixel(45, 20)[3];
+      expect(alone, closeTo(128, 3));
+      expect(both, alone);
+    });
+
+    test('a paint that multiplies darkens what it lands on', () async {
+      await renderer.render(
+        picture(
+          [
+            ['rect', 0, 0, 100, 80, 0],
+            ['rect', 0, 0, 50, 80, 1],
+          ],
+          paints: const [
+            {'color': '#ffff00'},
+            {'color': '#00ffff', 'blend': 'multiply'},
+          ],
+        ),
+      );
+      expect(pixel(25, 40), [0, 255, 0, 255]);
+      expect(pixel(75, 40), [255, 255, 0, 255]);
+    });
+  });
+
   group('the even-odd rule', () {
     const ring = [
       ['R', 0, 0, 100, 80],

@@ -523,6 +523,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
           key: id == null ? null : ValueKey('scroll:$id'),
           renderer: this,
           props: p,
+          slivers: _stickySlivers(p, children, context),
           child: _single(children, context),
         );
       case 'Icon':
@@ -1078,6 +1079,30 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
     final tint = _color(p['color']);
     final blend = BlendMode.values.asNameMap()[p['blend']] ?? BlendMode.srcIn;
+    // How far it has got, a few times a second, to an image that asked.
+    var said = Duration.zero;
+    final watch = Stopwatch()..start();
+    final ImageLoadingBuilder? onProgress =
+        eventId == null || p['progress'] != true
+        ? null
+        : (context, child, progress) {
+            if (progress != null &&
+                watch.elapsed - said >= const Duration(milliseconds: 100)) {
+              said = watch.elapsed;
+              final loaded = progress.cumulativeBytesLoaded;
+              final expected = progress.expectedTotalBytes;
+              SchedulerBinding.instance.addPostFrameCallback((_) {
+                if (handles(eventId)) {
+                  handleEvent(eventId, {
+                    'state': 'loading',
+                    'loaded': loaded,
+                    'expected': ?expected,
+                  });
+                }
+              });
+            }
+            return child;
+          };
     final image =
         src.startsWith('http://') ||
             src.startsWith('https://') ||
@@ -1090,6 +1115,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             color: tint,
             colorBlendMode: tint == null ? null : blend,
             frameBuilder: whileLoading,
+            loadingBuilder: onProgress,
             errorBuilder: onError,
           )
         : Image.asset(
@@ -1905,9 +1931,11 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
     // A box that moves to the size its child comes to: Flutter's own.
     if (content != null && duration != null && p['animateSize'] == true) {
+      final ended = _optString(p['sizeEndEventId']);
       content = AnimatedSize(
         duration: duration,
         curve: curve,
+        onEnd: ended == null ? null : () => handleEvent(ended, const {}),
         alignment: alignment ?? Alignment.center,
         clipBehavior: clip ? Clip.hardEdge : Clip.none,
         child: content,
@@ -2518,7 +2546,61 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       Duration(milliseconds: (_double(p['durationMs']) ?? 200).toInt());
 
   /// A protocol curve name as a Flutter [Curve].
+  /// A vertical scroller's content as slivers, when the column it scrolls
+  /// holds a box that stays at the top once scrolled past (`sticky`): the
+  /// runs between such boxes as columns, and each of them pinned - which is
+  /// what Flutter's own pinned header is. Null for any other scroller.
+  List<Widget>? _stickySlivers(
+    Map<String, dynamic> p,
+    List<WidgetNode> children,
+    BuildContext context,
+  ) {
+    if (p['axis'] == 'horizontal' || p['reverse'] == true) return null;
+    final column = children.length == 1 ? children.single : null;
+    if (column == null || column.type != 'Column') return null;
+    final rows = column.children ?? const <WidgetNode>[];
+    bool sticks(WidgetNode node) =>
+        node.type == 'Box' && node.props['sticky'] == true;
+    if (!rows.any(sticks)) return null;
+    final slivers = <Widget>[];
+    var run = <Widget>[];
+    void close() {
+      if (run.isEmpty) return;
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: run,
+          ),
+        ),
+      );
+      run = [];
+    }
+
+    for (final row in rows) {
+      if (sticks(row)) {
+        close();
+        slivers.add(PinnedHeaderSliver(child: buildNode(row, context)));
+      } else {
+        run.add(buildNode(row, context));
+      }
+    }
+    close();
+    return slivers;
+  }
+
   static Curve _curve(Map<String, dynamic> p) {
+    final curve = p['curve'];
+    if (curve is String && curve.startsWith('cubic(')) {
+      final n = curve
+          .substring(6, curve.length - 1)
+          .split(',')
+          .map((part) => double.tryParse(part.trim()))
+          .toList();
+      if (n.length == 4 && !n.contains(null)) {
+        return Cubic(n[0]!, n[1]!, n[2]!, n[3]!);
+      }
+    }
     switch (p['curve']) {
       case 'linear':
         return Curves.linear;
@@ -3288,7 +3370,12 @@ class _LazyListController extends ScrollController {
   /// Moves the list to [offset]: where it starts, when it is not on screen
   /// yet, and a jump once the frame is laid out when it is - by then the rows
   /// that came with the ask are there, and the offset can be held to them.
-  void moveTo(double offset, {bool animated = false}) {
+  void moveTo(
+    double offset, {
+    bool animated = false,
+    Duration duration = _travel,
+    Curve curve = Curves.easeInOut,
+  }) {
     _lastOffset = math.max(0, offset);
     if (!hasClients) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -3298,12 +3385,25 @@ class _LazyListController extends ScrollController {
           .clamp(position.minScrollExtent, position.maxScrollExtent)
           .toDouble();
       if (animated) {
-        animateTo(held, duration: _travel, curve: Curves.easeInOut);
+        animateTo(held, duration: duration, curve: curve);
       } else {
         jumpTo(held);
       }
     });
   }
+}
+
+/// How long a scroll the tree asked to travel takes - its `scrollMs`, or the
+/// renderer's own pace - and along what curve.
+(Duration, Curve) _scrollTravel(Map<String, dynamic> p) {
+  final ms = FlutterUIRenderer._double(p['scrollMs'])?.toInt();
+  final curve = p['scrollCurve'];
+  return (
+    ms == null || ms <= 0 ? _travel : Duration(milliseconds: ms),
+    curve is String
+        ? FlutterUIRenderer._curve({'curve': curve})
+        : Curves.easeInOut,
+  );
 }
 
 /// A long list of fixed-height rows, of which the tree carries a window.
@@ -3409,9 +3509,12 @@ class _NodeLazyListState extends State<_NodeLazyList> {
       widget.props['scrollVersion'],
     )?.toInt();
     if (widget.renderer._takeScrollVersion(_listId, version)) {
+      final (duration, curve) = _scrollTravel(widget.props);
       _controller.moveTo(
         offset,
         animated: widget.props['scrollAnimated'] == true,
+        duration: duration,
+        curve: curve,
       );
     }
   }
@@ -3956,24 +4059,29 @@ class _BoxFrame {
   }
 }
 
-/// A box's `{rotate, scale, dx, dy}`, applied about its centre.
+/// A box's `{rotate, scale, scaleY, dx, dy}`, applied about its centre;
+/// `scaleY` is `scale` where it is not said.
 class _BoxTransform {
-  const _BoxTransform(this.rotate, this.scale, this.dx, this.dy);
+  const _BoxTransform(this.rotate, this.scale, this.dx, this.dy, [double? scaleY])
+    : scaleY = scaleY ?? scale;
 
   static _BoxTransform? from(Object? value) {
     if (value is! Map) return null;
     double read(String key, double fallback) =>
         FlutterUIRenderer._double(value[key]) ?? fallback;
+    final scale = read('scale', 1);
     return _BoxTransform(
       read('rotate', 0),
-      read('scale', 1),
+      scale,
       read('dx', 0),
       read('dy', 0),
+      read('scaleY', scale),
     );
   }
 
   final double rotate;
   final double scale;
+  final double scaleY;
   final double dx;
   final double dy;
 
@@ -3981,7 +4089,7 @@ class _BoxTransform {
   /// whatever the scale and the angle.
   Matrix4 get matrix => Matrix4.translationValues(dx, dy, 0)
     ..multiply(Matrix4.rotationZ(rotate))
-    ..multiply(Matrix4.diagonal3Values(scale, scale, 1));
+    ..multiply(Matrix4.diagonal3Values(scale, scaleY, 1));
 }
 
 class _BoxTransformTween extends Tween<_BoxTransform> {
@@ -3997,6 +4105,7 @@ class _BoxTransformTween extends Tween<_BoxTransform> {
       mix(a.scale, b.scale),
       mix(a.dx, b.dx),
       mix(a.dy, b.dy),
+      mix(a.scaleY, b.scaleY),
     );
   }
 }
@@ -4059,6 +4168,7 @@ class _NodeBoxState extends State<_NodeBox> {
     Offset? global, {
     Offset velocity = Offset.zero,
     double? scale,
+    double? rotation,
     int? pointers,
   }) {
     final eventId = _id('panEventId');
@@ -4075,6 +4185,7 @@ class _NodeBoxState extends State<_NodeBox> {
       'vx': velocity.dx,
       'vy': velocity.dy,
       'scale': ?scale,
+      'rotation': ?rotation,
       'pointers': ?pointers,
     });
   }
@@ -4085,6 +4196,7 @@ class _NodeBoxState extends State<_NodeBox> {
     '_update',
     details.focalPoint,
     scale: details.scale,
+    rotation: details.rotation,
     pointers: details.pointerCount,
   );
 
@@ -4392,6 +4504,8 @@ class _CommandPainter extends CustomPainter {
     if (spec is! Map) return paint..color = textColor;
     final blur = FlutterUIRenderer._double(spec['blur']) ?? 0;
     return paint
+      ..blendMode =
+          BlendMode.values.asNameMap()[spec['blend']] ?? BlendMode.srcOver
       ..maskFilter = blur > 0 ? MaskFilter.blur(BlurStyle.normal, blur) : null
       ..shader = _shader(spec['gradient'])
       ..color = FlutterUIRenderer._color(spec['color']) ?? textColor
@@ -4518,6 +4632,15 @@ class _CommandPainter extends CustomPainter {
         _text(canvas, c);
       case 'save':
         canvas.save();
+      case 'saveLayer':
+        canvas.saveLayer(
+          null,
+          Paint()
+            ..color = Color.fromRGBO(0, 0, 0, _n(c, 1, 1).clamp(0.0, 1.0))
+            ..blendMode =
+                BlendMode.values.asNameMap()[c.elementAtOrNull(2)] ??
+                BlendMode.srcOver,
+        );
       case 'restore':
         // A restore with no save to match would undo the surface's own clip.
         if (canvas.getSaveCount() > floor) canvas.restore();
@@ -4648,11 +4771,16 @@ class _NodeScroll extends StatefulWidget {
     required this.renderer,
     required this.props,
     required this.child,
+    this.slivers,
   });
 
   final FlutterUIRenderer renderer;
   final Map<String, dynamic> props;
   final Widget child;
+
+  /// The scroller's content as slivers, when it holds a sticky box - see
+  /// [FlutterUIRenderer._stickySlivers].
+  final List<Widget>? slivers;
 
   @override
   State<_NodeScroll> createState() => _NodeScrollState();
@@ -4713,7 +4841,8 @@ class _NodeScrollState extends State<_NodeScroll> {
           .clamp(position.minScrollExtent, position.maxScrollExtent)
           .toDouble();
       if (widget.props['scrollAnimated'] == true) {
-        _controller.animateTo(held, duration: _travel, curve: Curves.easeInOut);
+        final (duration, curve) = _scrollTravel(widget.props);
+        _controller.animateTo(held, duration: duration, curve: curve);
       } else {
         _controller.jumpTo(held);
       }
@@ -4758,7 +4887,26 @@ class _NodeScrollState extends State<_NodeScroll> {
     final shrinkWrap = p['shrinkWrap'] == true;
     final refreshes =
         p['refreshEventId'] is String && !horizontal && !shrinkWrap;
-    final scroller = SingleChildScrollView(
+    final slivers = widget.slivers;
+    final padding = FlutterUIRenderer._edges(p['padding']);
+    final Widget scroller = slivers != null
+        ? CustomScrollView(
+            controller: _controller,
+            physics: refreshes ? const AlwaysScrollableScrollPhysics() : null,
+            slivers: padding == null
+                ? slivers
+                : [
+                    for (final sliver in slivers)
+                      SliverPadding(
+                        padding: EdgeInsets.only(
+                          left: padding.left,
+                          right: padding.right,
+                        ),
+                        sliver: sliver,
+                      ),
+                  ],
+          )
+        : SingleChildScrollView(
       controller: _controller,
       scrollDirection: horizontal ? Axis.horizontal : Axis.vertical,
       reverse: p['reverse'] == true,
@@ -5279,3 +5427,4 @@ class _HeroBoxState extends State<_HeroBox> {
     child: widget.child,
   );
 }
+

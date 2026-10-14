@@ -43,6 +43,41 @@ void main() {
     expect(shown.image.props.containsKey('eventId'), isFalse);
   });
 
+  group('loadingBuilder hears how far', () {
+    test('the node asks to be told, and each report is a call', () async {
+      final heard = <(int, int?)>[];
+      final shown = _Shown(
+        Image.network(
+          _fresh(),
+          loadingBuilder: (context, child, progress) {
+            if (progress != null) {
+              heard.add((
+                progress.cumulativeBytesLoaded,
+                progress.expectedTotalBytes,
+              ));
+            }
+            return const Text('…');
+          },
+        ),
+      );
+      expect(shown.image.props['progress'], isTrue);
+      await shown.renderer.handleEvent(
+        shown.image.props['eventId'] as String,
+        {'state': 'loading', 'loaded': 4000, 'expected': 10000},
+      );
+      await pumpEventQueue();
+
+      expect(heard.last, (4000, 10000));
+    });
+
+    test('an image with no loadingBuilder does not ask', () {
+      final shown = _Shown(
+        Image.network(_fresh(), errorBuilder: (_, _, _) => const Text('?')),
+      );
+      expect(shown.image.props.containsKey('progress'), isFalse);
+    });
+  });
+
   group('errorBuilder', () {
     test('is not asked while the image is on its way', () {
       var asked = 0;

@@ -48,6 +48,28 @@ void main() {
     expect(height(), 120);
   });
 
+  test('a move that gets there says so', () async {
+    final renderer = WebUIRenderer(root: root);
+    final said = <String>[];
+    renderer.onEvent('ended', (_) => said.add('ended'));
+    WidgetNode asking(double inner) => WidgetNode(
+      type: 'Box',
+      props: {
+        'animateSize': true,
+        'animateMs': 150,
+        'sizeEndEventId': 'ended',
+        'id': 'outer',
+      },
+      children: [UIBuilder.box(width: 50, height: inner)],
+    );
+    await renderer.render(asking(20));
+    await renderer.render(asking(120));
+    await wait(60);
+    expect(said, isEmpty);
+    await wait(200);
+    expect(said, ['ended']);
+  });
+
   test('without animateSize it is there at once', () async {
     final renderer = WebUIRenderer(root: root);
     await renderer.render(sized(20, animate: false));

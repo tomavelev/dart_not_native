@@ -775,10 +775,10 @@ typedef ImageLoadingBuilder =
 
 /// How much of an image has arrived, as an [ImageLoadingBuilder] is told.
 ///
-/// The bytes are counted by the renderer that fetches them and are not
-/// reported, so there is one thing this ever says: the image is on its way
-/// and nobody knows how long it is - nothing loaded, no total. A builder that
-/// draws a progress bar from the two draws one that does not say how far.
+/// The bytes are counted by the renderer that fetches them, which says how
+/// many have come a few times a second - and how many there are, when the
+/// server said. The browser fetches an `<img>` itself and says neither, so
+/// there the image is on its way with nothing loaded and no total.
 class ImageChunkEvent {
   const ImageChunkEvent({
     required this.cumulativeBytesLoaded,
@@ -831,9 +831,9 @@ class ImageLoadFailure implements Exception {
 ///
 /// - [loadingBuilder] is called with an [ImageChunkEvent] while a remote
 ///   image is on its way, and what it returns is drawn in the image's place
-///   until the picture arrives - a spinner, a grey box. The event never says
-///   how far: the bytes are counted by the renderer and not reported. Once
-///   the picture is there it is called with null, around the image.
+///   until the picture arrives - a spinner, a progress bar, called again as
+///   the bytes come (not on the web, whose browser does not say). Once the
+///   picture is there it is called with null, around the image.
 /// - [errorBuilder] is called when the load has failed, and not before, with
 ///   an [ImageLoadFailure] and no stack trace: the renderer says that it
 ///   failed, not why.
@@ -950,6 +950,7 @@ class Image extends Widget {
     _Owner owner, {
     Widget? standIn,
     void Function(bool loaded)? onLoad,
+    void Function(int loaded, int? expected)? onProgress,
     int? loadAsk,
   }) => UIBuilder.image(
     src: image._src,
@@ -958,6 +959,7 @@ class Image extends Widget {
         ? null
         : owner.inSlot('standIn', () => standIn._render(owner)),
     onLoad: onLoad,
+    onProgress: onProgress,
     loadAsk: loadAsk,
     width: width,
     height: height,
@@ -993,6 +995,22 @@ class _ImageLoadState extends State<_ImageLoad> {
   /// Null while the image is on its way; then whether it loaded.
   bool? _loaded;
 
+  /// How much of it has come, as the renderer last said.
+  ImageChunkEvent _chunk = const ImageChunkEvent(
+    cumulativeBytesLoaded: 0,
+    expectedTotalBytes: null,
+  );
+
+  void _progressed(int loaded, int? expected) {
+    if (!mounted || _loaded != null) return;
+    setState(
+      () => _chunk = ImageChunkEvent(
+        cumulativeBytesLoaded: loaded,
+        expectedTotalBytes: expected,
+      ),
+    );
+  }
+
   /// Whether the image was there from the start, with nothing to wait for.
   bool _atOnce = true;
 
@@ -1021,6 +1039,10 @@ class _ImageLoadState extends State<_ImageLoad> {
     _atOnce = !fetched || _arrived.contains(src);
     _loaded = _atOnce ? true : null;
     _ask = ++_asks;
+    _chunk = const ImageChunkEvent(
+      cumulativeBytesLoaded: 0,
+      expectedTotalBytes: null,
+    );
   }
 
   void _heard(bool loaded) {
@@ -1059,20 +1081,14 @@ class _ImageLoadState extends State<_ImageLoad> {
     // until the picture is there, where it would otherwise write the
     // description - and the same node, whichever way the load goes.
     final standIn = waiting
-        ? image.loadingBuilder?.call(
-            context,
-            const SizedBox.shrink(),
-            const ImageChunkEvent(
-              cumulativeBytesLoaded: 0,
-              expectedTotalBytes: null,
-            ),
-          )
+        ? image.loadingBuilder?.call(context, const SizedBox.shrink(), _chunk)
         : null;
     Widget built = _NodeWidget(
       (owner) => image._image(
         owner,
         standIn: standIn ?? const SizedBox.shrink(),
         onLoad: _heard,
+        onProgress: image.loadingBuilder == null ? null : _progressed,
         loadAsk: _ask,
       ),
     );

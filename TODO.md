@@ -2078,29 +2078,32 @@ notice.
 3. ~~**`onEnd` is never called** on any implicit animation.~~ Called since
    2026-10-10, and since 2026-10-14 when the renderer says the move has
    finished (§6.3 item 1) - by the app's own clock only where a renderer
-   never answers. Not for `AnimatedSize`, which is not told when its child's
-   size changes.
+   never answers - and for `AnimatedSize` since the same day, which the
+   renderer tells when a move to its child's size has got there.
 4. **Implicit animation: what is left.** Padding, margin and alignment
    move since 2026-10-11 (`AnimatedPadding`, `AnimatedAlign`, and an
    `AnimatedContainer`'s own) - on Android, in the Flutter host and, for an
    alignment, in the browser, which were the renderers that did not; seen on
    an iOS simulator and an Android emulator. `AnimatedSwitcher` and `AnimatedCrossFade` fade since
-   2026-10-11 (the old child fades out under the new one); the fade is the
-   only transition - a `transitionBuilder` is handed a finished animation.
+   2026-10-11 (the old child fades out under the new one), and since
+   2026-10-14 a `transitionBuilder`'s `ScaleTransition`, `SlideTransition`,
+   `RotationTransition` and `SizeTransition` move too - built at the
+   animation's start and at its end.
    ~~`AnimatedSize` shows the new size at once~~, and ~~a cross-fade's size
    is not animated~~: both move since 2026-10-14, the renderer moving a box
    (`animateSize`) to the size its child came to - seen on an iOS simulator,
    an Android emulator and in Chrome. A child that changes size between
-   renders (a picture arriving) is not moved to. All curves collapse to the
-   five every renderer has.
+   renders (a picture arriving) is not moved to. ~~All curves collapse to
+   the five every renderer has~~ - since 2026-10-14 each of Flutter's cubics
+   travels as that cubic; the bounces and springs are the nearest of the five.
 5. **A `ScrollController` hears scrolling a step behind.** A scroller - a
    windowed list included, since 2026-10-11 - reports its offset when it
    comes to rest and at most every 100 ms on the way, so `offset` and
    listeners follow the reader: enough for a "back to top" button or loading
    more near the end, not for moving something in step with the drag.
-   `animateTo` travels since 2026-10-12 - the renderer's own smooth scroll,
-   at the platform's pace and not the duration asked for - and in a windowed
-   list on iOS too since 2026-10-13 (`scrolling.dart`). Scroll notifications are
+   `animateTo` travels since 2026-10-12, in a windowed list on iOS too since
+   2026-10-13, and since 2026-10-14 over the duration and along the curve
+   asked for (`scrolling.dart`). Scroll notifications are
    sent since 2026-10-11 - `NotificationListener<ScrollNotification>` hears a
    start, updates and an end - as often as the offset is reported, and the
    end is a quarter of a second of quiet rather than something a renderer
@@ -2118,7 +2121,9 @@ notice.
    `SliverPersistentHeader`, `SliverFillRemaining` and a few more (a sliver
    is the boxes it would lay out: nothing is lazy, nothing collapses and a
    floating bar scrolls away; a bar or header pinned at the very top is held
-   above the scroller since 2026-10-13). Seen on an iOS simulator, an Android emulator and in
+   above the scroller since 2026-10-13, and one pinned further down sticks at
+   the top once scrolled past since 2026-10-14 - over an earlier one, where
+   Flutter stacks them). Seen on an iOS simulator, an Android emulator and in
    Chrome; rows reordered by hand on Android and in Chrome. (`Hero`, `MouseRegion` and
    `PopupMenuButton` were on this list until 2026-10-04; `MouseRegion` is
    there in name, the third opens a dialog, and a `Hero` flies since
@@ -2164,9 +2169,10 @@ notice.
    leaves the other to the scroller on all four renderers - and a
    `GestureDetector` with only horizontal or only vertical drag callbacks
    is one too. Swiped on an iOS simulator, an Android emulator and in Chrome
-   with touch, over a windowed list. Still open: the page does not follow
-   the finger and a tab change does not animate; and on the web a windowed
-   list in a tab starts from the top when the tab comes back (§6.3 item 9).
+   with touch, over a windowed list. Since 2026-10-14 the page follows the
+   finger and a tab change slides (it is a `PageView` kept in step with the
+   controller). Still open: on the web a windowed list in a tab starts from
+   the top when the tab comes back (§6.3 item 9).
 10. ~~**Snackbars are not queued.**~~ Queued since 2026-10-10, as Flutter's
     are. Their fill, their message's and action's colours and how round
     they are travel since 2026-10-11, on all four renderers. Still open:
@@ -2186,15 +2192,15 @@ notice.
     Chrome. Since 2026-10-14 `dart:ui`'s own `Gradient.linear`, `.radial`
     and `.sweep`, every tile mode, every blur style (`outer` and `inner` on
     a fill only), an even-odd `Path.fillType` and - on iOS - a blur over a
-    gradient are drawn too, seen on all three. Still not carried: blend
-    modes on a paint and `saveLayer` paints.
+    gradient are drawn too, seen on all three, and a paint's blend mode and
+    `saveLayer`'s opacity and blend as well.
 13. ~~**An image's wait is never seen.**~~ It is since 2026-10-13: the
     renderer says how a load ended, so `loadingBuilder`'s widget stands in
     while a picture loads, `errorBuilder` is called only after a failure and
     `frameBuilder` hears the first frame - seen on an iOS simulator, an
-    Android emulator and in Chrome. What is left: the progress is never a
-    number (the bytes are counted in the renderer), and while loading the
-    builder's `child` is an empty box. `color` tints the picture since
+    Android emulator and in Chrome. Since 2026-10-14 the progress is the
+    bytes that have come, on Android, iOS and the Flutter host (the browser
+    does not say); while loading the builder's `child` is an empty box. `color` tints the picture since
     2026-10-11, and since 2026-10-14 in whatever `colorBlendMode` says; on
     the web the picture's clear parts stay clear whatever the mode
     (`text.dart`).
@@ -2438,8 +2444,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2524 tests
-  (1499 in the package, 388 for the example apps and goldens, 594 in the browser,
+  contracts, the plugin system and the design system are covered by 2580 tests
+  (1548 in the package, 388 for the example apps and goldens, 601 in the browser,
   43 in the bloc package,
   counted 2026-10-14), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

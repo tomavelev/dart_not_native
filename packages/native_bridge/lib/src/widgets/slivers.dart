@@ -93,6 +93,16 @@ class CustomScrollView extends StatelessWidget {
         continue;
       }
       top = false;
+      // Pinned further down, it scrolls up to the top and stays there.
+      final vertical = scrollDirection == Axis.vertical && !reverse;
+      if (vertical &&
+          ((sliver is SliverPersistentHeader && sliver.pinned) ||
+              (sliver is SliverAppBar && sliver.pinned))) {
+        scrolled.addAll([
+          for (final box in _boxesOf(context, sliver)) _Sticky(child: box),
+        ]);
+        continue;
+      }
       scrolled.addAll(_boxesOf(context, sliver));
     }
     final view = ListView(
@@ -429,8 +439,9 @@ abstract class SliverPersistentHeaderDelegate {
 
 /// A header at its full height. [pinned], it is held above the scroll view
 /// when it is the first sliver, or follows only other pinned ones with
-/// nothing that scrolls between; anywhere else it scrolls away, as a
-/// [floating] one always does.
+/// nothing that scrolls between; further down, it scrolls up to the top of
+/// the view and stays there - over the one pinned before it, where Flutter
+/// stacks them - until the list scrolls back. A [floating] one scrolls away.
 class SliverPersistentHeader extends _Sliver {
   const SliverPersistentHeader({
     super.key,
@@ -662,4 +673,19 @@ class SliverAppBar extends _Sliver {
       ),
     ];
   }
+}
+
+
+/// [child], held at the top of the scroller it is in once the content has
+/// scrolled past it - see `UIBuilder.box`'s `sticky`.
+class _Sticky extends Widget {
+  const _Sticky({required this.child});
+  final Widget child;
+
+  @override
+  WidgetNode _render(_Owner owner) => UIBuilder.box(
+    sticky: true,
+    expand: 'width',
+    child: _renderChild(owner, child),
+  );
 }

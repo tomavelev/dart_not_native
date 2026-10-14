@@ -55,6 +55,7 @@ void main() {
   }
 
   int red(List<int> rgba, int x, int y) => rgba[(y * 100 + x) * 4];
+  int alpha(List<int> rgba, int x, int y) => rgba[(y * 100 + x) * 4 + 3];
 
   testWidgets('a path filled even-odd leaves its hole', (tester) async {
     final rgba = await drawn(tester, [
@@ -80,5 +81,18 @@ void main() {
     ]);
     expect(red(rgba, 10, 10), 255);
     expect(red(rgba, 50, 40), 0);
+  });
+
+  testWidgets('shapes overlapping in a layer are no darker where they do', (
+    tester,
+  ) async {
+    final rgba = await drawn(tester, [
+      ['saveLayer', 0.5],
+      ['rect', 0, 0, 60, 40, 0],
+      ['rect', 30, 0, 60, 40, 0],
+      ['restore'],
+    ]);
+    expect(alpha(rgba, 10, 20), closeTo(128, 3));
+    expect(alpha(rgba, 45, 20), alpha(rgba, 10, 20));
   });
 }

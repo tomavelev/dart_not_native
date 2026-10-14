@@ -834,13 +834,23 @@ class UIBuilder {
     WidgetNode? fallback,
     String? eventId,
     void Function(bool loaded)? onLoad,
+    void Function(int loaded, int? expected)? onProgress,
     int? loadAsk,
     String? id,
   }) {
     if (onLoad != null) {
       final bindings = EventBindings.required;
       eventId = bindings.allocate(key: id);
-      bindings.on(eventId, (data) => onLoad(data['state'] != 'failed'));
+      bindings.on(eventId, (data) {
+        if (data['state'] == 'loading') {
+          onProgress?.call(
+            (data['loaded'] as num?)?.toInt() ?? 0,
+            (data['expected'] as num?)?.toInt(),
+          );
+          return;
+        }
+        onLoad(data['state'] != 'failed');
+      });
     }
     return WidgetNode(
       type: 'Image',
@@ -861,6 +871,10 @@ class UIBuilder {
         // `{state: 'failed'}` when it has given up. Sent each time the
         // renderer makes the image anew, so the same answer may come twice.
         if (eventId != null) 'eventId': eventId,
+        // And, on the way, `{state: 'loading', loaded, expected}` - the bytes
+        // that have come and the bytes there are, when the server said -
+        // a few times a second at most.
+        if (eventId != null && onProgress != null) 'progress': true,
         // Who is asking, as a number: a new asker in the place of an old one
         // is a different node, so a renderer that would have kept the image
         // as it was makes it anew - and says again how the load ended.
@@ -1300,6 +1314,8 @@ class UIBuilder {
     bool ignorePointer = false,
     String? hero,
     bool animateSize = false,
+    void Function()? onSizeEnd,
+    bool sticky = false,
     String? id,
   }) {
     double n(Map<String, dynamic> d, String k) =>
@@ -1354,6 +1370,10 @@ class UIBuilder {
         (d) => onDropHover(d['over'] == true),
       );
     }
+    final sizeEnd = bind(
+      'sizeEnd',
+      onSizeEnd == null ? null : (_) => onSizeEnd(),
+    );
     final size = bind(
       'size',
       onSize == null ? null : (d) => onSize(n(d, 'width'), n(d, 'height')),
@@ -1411,10 +1431,18 @@ class UIBuilder {
         // transition's time, and shows neither of the two meanwhile.
         if (hero != null) 'hero': hero,
         if (animateSize) 'animateSize': true,
+        // In a vertical scroller: once the content has scrolled past the
+        // box, it stays at the top of the view - drawn over what scrolls
+        // beneath it, and over a sticky box before it - until it scrolls
+        // back down to its place.
+        if (sticky) 'sticky': true,
+        // Sent `{}` each time a move to the child's size runs to its end.
+        if (animateSize && sizeEnd != null) 'sizeEndEventId': sizeEnd,
         // A pan that hears a second finger: while two are down, an update
         // also carries `scale` - their spread over what it was when the
-        // second came down - with `x`, `y` and `dx`, `dy` the point between
-        // them, and `pointers`, how many there are.
+        // second came down - and `rotation`, how far the line between them
+        // has turned since, in radians clockwise, with `x`, `y` and `dx`,
+        // `dy` the point between them, and `pointers`, how many there are.
         if (panScale && onPan != null) 'panScale': true,
         if (id != null) 'id': id,
       },
@@ -1501,6 +1529,8 @@ class UIBuilder {
     double? scrollOffset,
     int? scrollVersion,
     bool scrollAnimated = false,
+    int? scrollMs,
+    String? scrollCurve,
     void Function(double offset, double? maxExtent, double? viewport)?
     onScroll,
     String? id,
@@ -1540,9 +1570,14 @@ class UIBuilder {
         // the same trick a text field's focusVersion uses.
         if (scrollOffset != null) 'scrollOffset': scrollOffset,
         if (scrollOffset != null) 'scrollVersion': scrollVersion ?? 0,
-        // Travel there instead of jumping: the renderer's own smooth scroll,
-        // at the pace the platform keeps.
+        // Travel there instead of jumping - over `scrollMs` along
+        // `scrollCurve` when they are said, and otherwise by the renderer's
+        // own smooth scroll, at the pace the platform keeps.
         if (scrollOffset != null && scrollAnimated) 'scrollAnimated': true,
+        if (scrollOffset != null && scrollAnimated && scrollMs != null)
+          'scrollMs': scrollMs,
+        if (scrollOffset != null && scrollAnimated && scrollCurve != null)
+          'scrollCurve': scrollCurve,
         if (scrolled != null) 'scrollEventId': scrolled,
         if (id != null) 'id': id,
       },
@@ -2036,6 +2071,8 @@ class UIBuilder {
     double? scrollOffset,
     int? scrollVersion,
     bool scrollAnimated = false,
+    int? scrollMs,
+    String? scrollCurve,
     List<double>? padding,
     void Function()? onRefresh,
     bool refreshing = false,
@@ -2115,9 +2152,14 @@ class UIBuilder {
         // As on a scroll node: jump to this offset when the version is new.
         if (scrollOffset != null) 'scrollOffset': scrollOffset,
         if (scrollOffset != null) 'scrollVersion': scrollVersion ?? 0,
-        // Travel there instead of jumping: the renderer's own smooth scroll,
-        // at the pace the platform keeps.
+        // Travel there instead of jumping - over `scrollMs` along
+        // `scrollCurve` when they are said, and otherwise by the renderer's
+        // own smooth scroll, at the pace the platform keeps.
         if (scrollOffset != null && scrollAnimated) 'scrollAnimated': true,
+        if (scrollOffset != null && scrollAnimated && scrollMs != null)
+          'scrollMs': scrollMs,
+        if (scrollOffset != null && scrollAnimated && scrollCurve != null)
+          'scrollCurve': scrollCurve,
       },
       children: [
         for (var index = start; index < end; index++)

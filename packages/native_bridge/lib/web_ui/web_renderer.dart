@@ -230,6 +230,16 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
           ..addEventListener('finish', release.toJS)
           ..addEventListener('cancel', release.toJS);
       }
+      // A move that got there says so, to a box that asked.
+      final ended = _nodes[box]?.props['sizeEndEventId'];
+      if (ended is String) {
+        motion.addEventListener(
+          'finish',
+          ((web.Event _) {
+            handleEvent(ended, const {});
+          }).toJS,
+        );
+      }
     }
   }
 
@@ -2755,6 +2765,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
   /// A protocol curve name as a CSS timing function.
   String _timing(Map<String, dynamic> p) {
+    final cubic = _cubicOf(p['curve']);
+    if (cubic != null) return 'cubic-bezier(${cubic.join(', ')})';
     switch (p['curve']) {
       case 'linear':
         return 'linear';
@@ -2767,6 +2779,19 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       default:
         return 'ease-in-out';
     }
+  }
+
+  /// The four control numbers of a `cubic(a,b,c,d)` curve, or null for a
+  /// curve said by name.
+  static List<double>? _cubicOf(Object? curve) {
+    if (curve is! String || !curve.startsWith('cubic(')) return null;
+    final numbers = curve
+        .substring(6, curve.length - 1)
+        .split(',')
+        .map((part) => double.tryParse(part.trim()))
+        .toList();
+    if (numbers.length != 4 || numbers.contains(null)) return null;
+    return [for (final n in numbers) n!];
   }
 
   /// Takes or gives up the keyboard when the app asks.
@@ -3462,7 +3487,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
           : 'translate(${_num(transform['dx']) ?? 0}px, '
                 '${_num(transform['dy']) ?? 0}px) '
                 'rotate(${_num(transform['rotate']) ?? 0}rad) '
-                'scale(${_num(transform['scale']) ?? 1})',
+                'scale(${_num(transform['scale']) ?? 1}'
+                '${_num(transform['scaleY']) == null ? '' : ', ${_num(transform['scaleY'])}'})',
     );
 
     // Motion. The browser does the animating: naming the properties here
@@ -3493,6 +3519,9 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
     if (!fresh || p['animateSize'] == true) {
       _attr(box, 'data-animate-size', p['animateSize'] == true ? '' : null);
+    }
+    if (!fresh || p['sticky'] == true) {
+      _attr(box, 'data-sticky', p['sticky'] == true ? '' : null);
     }
     final ignored = p['ignorePointer'] == true;
     put('pointer-events', ignored ? 'none' : null);
@@ -4120,7 +4149,10 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       // right-hand end, and `scrollLeft` runs negative from there. Reversed
       // as well, the two turn it back.
       final along = horizontal && _rtl ? -position : position;
-      if (p['scrollAnimated'] == true && animations) {
+      final ms = _num(p['scrollMs']);
+      if (p['scrollAnimated'] == true && animations && ms != null && ms > 0) {
+        _travelScroll(viewport, horizontal, along, ms, p['scrollCurve']);
+      } else if (p['scrollAnimated'] == true && animations) {
         viewport.scrollTo(
           {horizontal ? 'left' : 'top': along, 'behavior': 'smooth'}.jsify()!,
         );
@@ -4130,6 +4162,70 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         viewport.scrollTop = along;
       }
     });
+  }
+
+  /// The travel each scroller is on, by a number a newer one replaces.
+  final Expando<int> _scrollTravel = Expando('scrollTravel');
+  int _travels = 0;
+
+  /// Moves [viewport] to [to] over [ms] along [curve], a frame at a time -
+  /// a browser's own smooth scroll keeps a pace of its own.
+  void _travelScroll(
+    web.Element viewport,
+    bool horizontal,
+    double to,
+    double ms,
+    Object? curve,
+  ) {
+    final travel = ++_travels;
+    _scrollTravel[viewport] = travel;
+    final from = (horizontal ? viewport.scrollLeft : viewport.scrollTop)
+        .toDouble();
+    final points = _cubicOf(curve) ?? _namedCubic(curve);
+    double? start;
+    void step(num now) {
+      if (_scrollTravel[viewport] != travel || !viewport.isConnected) return;
+      start ??= now.toDouble();
+      final t = ((now - start!) / ms).clamp(0.0, 1.0).toDouble();
+      final eased = points == null ? t : _bezier(points, t);
+      final at = from + (to - from) * eased;
+      if (horizontal) {
+        viewport.scrollLeft = at;
+      } else {
+        viewport.scrollTop = at;
+      }
+      if (t < 1) web.window.requestAnimationFrame(step.toJS);
+    }
+
+    web.window.requestAnimationFrame(step.toJS);
+  }
+
+  /// The control numbers of the five paces said by name; null for linear.
+  static List<double>? _namedCubic(Object? curve) => switch (curve) {
+    'linear' => null,
+    'easeIn' => const [0.42, 0.0, 1.0, 1.0],
+    'easeOut' => const [0.0, 0.0, 0.58, 1.0],
+    'easeInOut' => const [0.42, 0.0, 0.58, 1.0],
+    _ => const [0.25, 0.1, 0.25, 1.0],
+  };
+
+  /// y at x = [t] on the cubic Bézier with control points [points].
+  static double _bezier(List<double> points, double t) {
+    final [a, b, c, d] = points;
+    double at(double p1, double p2, double m) =>
+        3 * p1 * (1 - m) * (1 - m) * m + 3 * p2 * (1 - m) * m * m + m * m * m;
+    var low = 0.0, high = 1.0, middle = t;
+    for (var i = 0; i < 30; i++) {
+      middle = (low + high) / 2;
+      final x = at(a, c, middle);
+      if ((x - t).abs() < 1e-4) break;
+      if (x < t) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    return at(b, d, middle);
   }
 
   void _applyScrollAsks() {
@@ -4422,6 +4518,10 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ),
     );
     state
+      ..angleFrom = math.atan2(
+        state.secondY - state.nowY,
+        state.secondX - state.nowX,
+      )
       ..focalX = (state.nowX + state.secondX) / 2
       ..focalY = (state.nowY + state.secondY) / 2;
     if (!state.panning) {
@@ -4437,6 +4537,18 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         'pointers': 2,
       });
     }
+  }
+
+  /// [radians] brought within half a turn either way.
+  static double _turn(double radians) {
+    var turn = radians;
+    while (turn > math.pi) {
+      turn -= 2 * math.pi;
+    }
+    while (turn < -math.pi) {
+      turn += 2 * math.pi;
+    }
+    return turn;
   }
 
   /// One of two fingers moved: says how far apart they are now, over how
@@ -4466,6 +4578,10 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       'vx': 0.0,
       'vy': 0.0,
       'scale': spread / state.spreadFrom,
+      'rotation': _turn(
+        math.atan2(state.secondY - state.nowY, state.secondX - state.nowX) -
+            state.angleFrom,
+      ),
       'pointers': 2,
     });
     state
@@ -5572,6 +5688,7 @@ class _NodeState {
   double secondX = 0;
   double secondY = 0;
   double spreadFrom = 0;
+  double angleFrom = 0;
   double focalX = 0;
   double focalY = 0;
 
@@ -5722,6 +5839,8 @@ void _replayCanvasCommands(
     // sigma is scaled by however much the surface is.
     final blur = paint?['blur'];
     final blurred = blur is num && blur > 0;
+    final blended = paint?['blend'] != null;
+    if (blended) context.globalCompositeOperation = _compositeOf(paint?['blend']);
     if (blurred) {
       final scale = context.getTransform().a.abs();
       context.filter = 'blur(${blur * (scale > 0 ? scale : 1)}px)';
@@ -5752,6 +5871,7 @@ void _replayCanvasCommands(
       }
     }
     if (blurred) context.filter = 'none';
+    if (blended) context.globalCompositeOperation = 'source-over';
   }
 
   void oval(double l, double t, double w, double h) {
@@ -5881,6 +6001,17 @@ void _replayCanvasCommands(
 
   context.save();
   var saved = 0;
+  // The layers open, innermost last: what each draws over, and how.
+  final layers =
+      <
+        ({
+          web.CanvasRenderingContext2D parent,
+          web.HTMLCanvasElement layer,
+          int depth,
+          double alpha,
+          Object? blend,
+        })
+      >[];
   for (final command in commands) {
     if (command is! List || command.isEmpty) continue;
     final c = command;
@@ -5926,9 +6057,41 @@ void _replayCanvasCommands(
       case 'save':
         context.save();
         saved++;
+      case 'saveLayer':
+        // Drawn on a surface of its own until the matching restore, then
+        // laid over this one: shapes that overlap inside it are not darker
+        // where they do.
+        context.save();
+        saved++;
+        final surface = context.canvas;
+        final layer =
+            web.document.createElement('canvas') as web.HTMLCanvasElement
+              ..width = surface.width
+              ..height = surface.height;
+        final drawn = layer.getContext('2d')! as web.CanvasRenderingContext2D;
+        drawn.setTransform(context.getTransform());
+        layers.add((
+          parent: context,
+          layer: layer,
+          depth: saved,
+          alpha: n(c, 1).clamp(0.0, 1.0).toDouble(),
+          blend: c.length > 2 ? c[2] : null,
+        ));
+        context = drawn;
       case 'restore':
         // Never past the frame's own save, which is not the commands' to pop.
-        if (saved > 0) {
+        if (layers.isNotEmpty && layers.last.depth == saved) {
+          final open = layers.removeLast();
+          context = open.parent
+            ..save()
+            ..setTransform(1.toJS, 0, 0, 1, 0, 0)
+            ..globalAlpha = open.alpha
+            ..globalCompositeOperation = _compositeOf(open.blend)
+            ..drawImage(open.layer, 0, 0)
+            ..restore()
+            ..restore();
+          saved--;
+        } else if (saved > 0) {
           context.restore();
           saved--;
         }
@@ -5956,7 +6119,53 @@ void _replayCanvasCommands(
         }
     }
   }
+  // A layer never closed is laid over all the same.
+  while (layers.isNotEmpty) {
+    final open = layers.removeLast();
+    context = open.parent
+      ..save()
+      ..setTransform(1.toJS, 0, 0, 1, 0, 0)
+      ..globalAlpha = open.alpha
+      ..globalCompositeOperation = _compositeOf(open.blend)
+      ..drawImage(open.layer, 0, 0)
+      ..restore()
+      ..restore();
+    saved--;
+  }
   for (; saved >= 0; saved--) {
     context.restore();
   }
 }
+
+/// The canvas's name for a Flutter `BlendMode`: how what is drawn is laid
+/// over what is there.
+String _compositeOf(Object? blend) => switch (blend) {
+  'clear' => 'destination-out',
+  'src' => 'copy',
+  'dst' => 'destination-over',
+  'dstOver' => 'destination-over',
+  'srcIn' => 'source-in',
+  'dstIn' => 'destination-in',
+  'srcOut' => 'source-out',
+  'dstOut' => 'destination-out',
+  'srcATop' => 'source-atop',
+  'dstATop' => 'destination-atop',
+  'xor' => 'xor',
+  'plus' => 'lighter',
+  'modulate' || 'multiply' => 'multiply',
+  'screen' => 'screen',
+  'overlay' => 'overlay',
+  'darken' => 'darken',
+  'lighten' => 'lighten',
+  'colorDodge' => 'color-dodge',
+  'colorBurn' => 'color-burn',
+  'hardLight' => 'hard-light',
+  'softLight' => 'soft-light',
+  'difference' => 'difference',
+  'exclusion' => 'exclusion',
+  'hue' => 'hue',
+  'saturation' => 'saturation',
+  'color' => 'color',
+  'luminosity' => 'luminosity',
+  _ => 'source-over',
+};

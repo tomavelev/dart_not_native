@@ -67,9 +67,9 @@ class MaskFilter {
 /// What travels is [color], [style], [strokeWidth], [strokeCap],
 /// [strokeJoin], a [shader] that is a gradient
 /// (`LinearGradient(...).createShader(rect)`, a `RadialGradient`'s or a
-/// `SweepGradient`'s, or one made by [Gradient.linear] and its kin) and a
-/// [maskFilter] that is a blur, in any [BlurStyle]. [colorFilter],
-/// [blendMode] and [isAntiAlias] can be set, so a painter written for
+/// `SweepGradient`'s, or one made by [Gradient.linear] and its kin), a
+/// [maskFilter] that is a blur, in any [BlurStyle], and a [blendMode].
+/// [colorFilter] and [isAntiAlias] can be set, so a painter written for
 /// Flutter compiles, and are not carried.
 class Paint {
   Color color = const Color(0xFF000000);
@@ -95,7 +95,7 @@ class Paint {
   /// Ignored - see the class doc.
   Object? colorFilter;
 
-  /// Ignored - see the class doc.
+  /// How what this paint draws is laid over what is there already.
   BlendMode blendMode = BlendMode.srcOver;
 
   /// Ignored: a mitred corner is each platform's default limit.
@@ -108,7 +108,8 @@ class Paint {
     ..strokeWidth = strokeWidth
     ..strokeCap = strokeCap
     ..strokeJoin = strokeJoin
-    ..shader = shader;
+    ..shader = shader
+    ..blendMode = blendMode;
 
   /// The paint as the protocol spells it, defaults left out so two paints
   /// that draw the same are the same entry. [stroke] forces an outline, for a
@@ -125,6 +126,7 @@ class Paint {
       if (stroked) 'strokeWidth': strokeWidth <= 0 ? 1.0 : strokeWidth,
       if (stroked && strokeCap != StrokeCap.butt) 'cap': strokeCap.name,
       if (stroked && strokeJoin != StrokeJoin.miter) 'join': strokeJoin.name,
+      if (blendMode != BlendMode.srcOver) 'blend': blendMode.name,
     };
   }
 }
@@ -446,7 +448,6 @@ class Path {
 /// is drawn in Dart. What Flutter's canvas has and this one leaves out is
 /// what the command list has no word for: `drawImage`, `drawParagraph`,
 /// `drawVertices`, `drawShadow`, `drawDRRect`, and a free-form `transform`.
-/// [saveLayer] is a plain [save].
 class Canvas {
   Canvas._(this._size);
 
@@ -473,7 +474,8 @@ class Canvas {
     }
     final key =
         '${json['color']}|${json['style']}|${json['strokeWidth']}|'
-        '${json['cap']}|${json['join']}|${json['gradient']}|${json['blur']}';
+        '${json['cap']}|${json['join']}|${json['gradient']}|${json['blur']}|'
+        '${json['blend']}';
     return _paintIndex.putIfAbsent(key, () {
       _paints.add(json);
       return _paints.length - 1;
@@ -633,9 +635,13 @@ class Canvas {
     }
   }
 
-  /// Fills the surface with [color]. [blendMode] is not carried.
+  /// Fills the surface with [color], laid over it in [blendMode].
   void drawColor(Color color, [BlendMode blendMode = BlendMode.srcOver]) =>
-      drawPaint(Paint()..color = color);
+      drawPaint(
+        Paint()
+          ..color = color
+          ..blendMode = blendMode,
+      );
 
   /// Fills the surface with [paint]: a rectangle the size the canvas was
   /// given, since the command list has no "everything".
@@ -653,8 +659,18 @@ class Canvas {
     _commands.add(['save']);
   }
 
-  /// A plain [save]: a layer's paint (its opacity, its blend) is not carried.
-  void saveLayer(Rect? bounds, Paint paint) => save();
+  /// A layer: what is drawn until the matching [restore] is drawn on its
+  /// own and then laid over the canvas at [paint]'s opacity, in its
+  /// [Paint.blendMode] - so shapes that overlap inside it are not darker
+  /// where they do. [bounds] is accepted and not carried.
+  void saveLayer(Rect? bounds, Paint paint) {
+    _saves++;
+    _commands.add([
+      'saveLayer',
+      paint.color.alpha / 255,
+      if (paint.blendMode != BlendMode.srcOver) paint.blendMode.name,
+    ]);
+  }
 
   /// As in Flutter, a restore with nothing saved does nothing.
   void restore() {

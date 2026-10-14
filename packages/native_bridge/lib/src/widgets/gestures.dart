@@ -132,7 +132,8 @@ class ScaleUpdateDetails {
   final double horizontalScale;
   final double verticalScale;
 
-  /// Always zero: no renderer reports a turn.
+  /// How far the line between the fingers has turned since the second came
+  /// down, in radians, clockwise; zero for one finger.
   final double rotation;
   final int pointerCount;
   final Offset focalPointDelta;
@@ -255,6 +256,7 @@ class GestureDetector extends Widget {
             scale: scale,
             horizontalScale: scale,
             verticalScale: scale,
+            rotation: n('rotation'),
             pointerCount: fingers,
             focalPointDelta: Offset(n('dx'), n('dy')),
           ),
@@ -642,14 +644,15 @@ enum DismissDirection {
 ///
 /// The row follows the finger, with [background] showing behind it - or
 /// [secondaryBackground], for a swipe towards the start. Let go past the
-/// threshold, or flung, it slides the rest of the way and [onDismissed] is
-/// called, once [confirmDismiss] agrees; let go short of it, it slides back.
-/// As in Flutter the app must then take the row out of its list.
+/// threshold, or flung, it slides the rest of the way - once
+/// [confirmDismiss] agrees - and the room it took closes over
+/// [resizeDuration], [onResize] called as it does; then [onDismissed] is
+/// called. Let go short of the threshold, it slides back. As in Flutter the
+/// app must then take the row out of its list. A null [resizeDuration]
+/// leaves the room open and calls [onDismissed] as soon as the row is gone.
 ///
-/// Short of Flutter: the gap the row leaves does not close by itself
-/// ([resizeDuration] and [onResize] are accepted and not carried) and
-/// [onUpdate] is not called. Each movement of the finger is a build, so on a
-/// long screen the row is a little behind the finger.
+/// Short of Flutter: [onUpdate] is not called. Each movement of the finger
+/// is a build, so on a long screen the row is a little behind the finger.
 class Dismissible extends StatefulWidget {
   const Dismissible({
     required Key super.key,
@@ -661,7 +664,7 @@ class Dismissible extends StatefulWidget {
     this.onUpdate,
     this.onDismissed,
     this.direction = DismissDirection.horizontal,
-    this.resizeDuration,
+    this.resizeDuration = const Duration(milliseconds: 300),
     this.dismissThresholds = const <DismissDirection, double>{},
     this.movementDuration = const Duration(milliseconds: 200),
     this.crossAxisEndOffset = 0.0,
@@ -688,7 +691,7 @@ class Dismissible extends StatefulWidget {
   /// How long the row takes to slide away, or back.
   final Duration movementDuration;
 
-  /// Accepted and not carried.
+  /// How long the room the row took takes to close once it has gone.
   final Duration? resizeDuration;
   final double crossAxisEndOffset;
   final HitTestBehavior behavior;
@@ -707,6 +710,12 @@ class _DismissibleState extends State<Dismissible> {
   /// The way it was dismissed, once it has been.
   DismissDirection? _dismissed;
   Size? _size;
+
+  /// The room the row takes along the list while it closes - its own size,
+  /// then none - or null while it is not closing; and whether the closing
+  /// has been drawn at its start yet.
+  double? _room;
+  bool _closing = false;
 
   static const double _fling = 700;
 
@@ -787,9 +796,29 @@ class _DismissibleState extends State<Dismissible> {
       _dismissed = way;
       _offset = sign * extent;
     });
-    // Told once the row has slid away, as Flutter tells it.
+    // Told once the row has slid away - and its room has closed - as
+    // Flutter tells it.
     await Future<void>.delayed(widget.movementDuration);
-    if (mounted) widget.onDismissed?.call(way);
+    if (!mounted) return;
+    final resize = widget.resizeDuration;
+    final size = _size;
+    if (resize != null && resize > Duration.zero && size != null) {
+      // Drawn at its own size first, so a renderer has something to move
+      // from, and then at none.
+      setState(() => _room = _vertical ? size.width : size.height);
+      await Future<void>.delayed(const Duration(milliseconds: 32));
+      if (!mounted) return;
+      setState(() => _closing = true);
+      widget.onResize?.call();
+      final ticks = Timer.periodic(
+        const Duration(milliseconds: 16),
+        (_) => widget.onResize?.call(),
+      );
+      await Future<void>.delayed(resize);
+      ticks.cancel();
+      if (!mounted) return;
+    }
+    widget.onDismissed?.call(way);
   }
 
   void _measured(double width, double height) {
@@ -817,7 +846,8 @@ class _DismissibleState extends State<Dismissible> {
         : (towardsStart
               ? widget.secondaryBackground ?? widget.background
               : widget.background);
-    return UIBuilder.stack(
+    final room = _room;
+    final rows = UIBuilder.stack(
       id: _idOf(widget.key),
       children: [
         // Always there, and empty at rest: a background that arrived with the
@@ -845,6 +875,18 @@ class _DismissibleState extends State<Dismissible> {
           child: row,
         ),
       ],
+    );
+    if (room == null) return rows;
+    // Gone, and the room it took closing behind it.
+    final shown = _closing ? 0.0 : room;
+    return UIBuilder.box(
+      height: _vertical ? null : shown,
+      width: _vertical ? shown : null,
+      expand: _vertical ? null : 'width',
+      clip: true,
+      animateMs: _closing ? widget.resizeDuration!.inMilliseconds : 0,
+      curve: 'easeIn',
+      child: rows,
     );
   });
 }

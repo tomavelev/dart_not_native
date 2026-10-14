@@ -418,6 +418,44 @@ void main() {
   });
 
   group('a CustomScrollView', () {
+    test('a header pinned further down sticks once scrolled past', () {
+      final app = AppTester.widget(
+        _app(
+          CustomScrollView(
+            slivers: [
+              const SliverToBoxAdapter(child: Text('Intro')),
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _TitleHeader('Section'),
+              ),
+              const SliverToBoxAdapter(child: Text('Body')),
+            ],
+          ),
+        ),
+      );
+      final sticky = app.nodes.where((n) => n.props['sticky'] == true);
+      expect(sticky, hasLength(1));
+      bool holds(WidgetNode n, String text) =>
+          (n.type == 'Text' && n.props['content'] == text) ||
+          (n.children ?? const <WidgetNode>[]).any((c) => holds(c, text));
+      expect(holds(sticky.single, 'Section'), isTrue);
+      expect(app.texts, ['Intro', 'Section', 'Body']);
+    });
+
+    test('one not pinned does not', () {
+      final app = AppTester.widget(
+        _app(
+          CustomScrollView(
+            slivers: [
+              const SliverToBoxAdapter(child: Text('Intro')),
+              SliverPersistentHeader(delegate: _TitleHeader('Section')),
+            ],
+          ),
+        ),
+      );
+      expect(app.nodes.any((n) => n.props['sticky'] == true), isFalse);
+    });
+
     test('a bar\'s title is at the start of the line, either way', () {
       List<Object?> titleAlignment(TextDirection reading) {
         final app = AppTester.widget(
@@ -733,3 +771,17 @@ List<String> _texts(WidgetNode node) => [
   for (final inner in _nodes(node))
     if (inner.props['content'] case final String text) text,
 ];
+
+class _TitleHeader extends SliverPersistentHeaderDelegate {
+  _TitleHeader(this.title);
+  final String title;
+  @override
+  double get minExtent => 40;
+  @override
+  double get maxExtent => 40;
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
+      Text(title);
+  @override
+  bool shouldRebuild(covariant SliverPersistentHeaderDelegate old) => false;
+}

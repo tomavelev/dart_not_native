@@ -42,4 +42,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getSize(outer).height, 120);
   });
+
+  testWidgets('and says so when it is there', (tester) async {
+    final renderer = FlutterUIRenderer();
+    var ended = 0;
+    renderer.onEvent('ended', (_) => ended++);
+    WidgetNode sized(double inner) => WidgetNode(
+      type: 'Box',
+      props: {'animateSize': true, 'animateMs': 200, 'sizeEndEventId': 'ended'},
+      children: [UIBuilder.box(width: 50, height: inner)],
+    );
+    Future<void> show(WidgetNode node) async {
+      await renderer.render(node);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: Builder(builder: renderer.build),
+          ),
+        ),
+      );
+    }
+
+    await show(sized(20));
+    await show(sized(120));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(ended, 0);
+    await tester.pumpAndSettle();
+    expect(ended, 1);
+  });
 }

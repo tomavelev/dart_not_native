@@ -22,6 +22,8 @@ void main() {
     bool? confirm,
     Map<DismissDirection, double> thresholds = const {},
     TextDirection reading = TextDirection.ltr,
+    Duration? resize,
+    VoidCallback? onResize,
   }) => AppTester.widget(
     Directionality(
       textDirection: reading,
@@ -32,6 +34,8 @@ void main() {
         secondaryBackground: const Text('Delete'),
         dismissThresholds: thresholds,
         movementDuration: Duration.zero,
+        resizeDuration: resize,
+        onResize: onResize,
         confirmDismiss: confirm == null
             ? null
             : (way) async {
@@ -69,6 +73,43 @@ void main() {
     await app.emit('${pan}_end', {v: speed});
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
+
+  group('its room closing', () {
+    test('gone, the room it took closes, and then it is dismissed', () async {
+      var resized = 0;
+      final app = row(
+        resize: const Duration(milliseconds: 100),
+        onResize: () => resized++,
+      );
+      await drag(app, 300);
+      // Drawn at its own height first, so there is somewhere to move from.
+      final closing = app.nodes.firstWhere(
+        (n) => n.type == 'Box' && n.props['clip'] == true,
+      );
+      expect(closing.props['height'], 60);
+      expect(dismissed, isEmpty);
+
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      final shut = app.nodes.firstWhere(
+        (n) => n.type == 'Box' && n.props['clip'] == true,
+      );
+      expect(shut.props['height'], 0);
+      expect(shut.props['animateMs'], 100);
+      expect(dismissed, isEmpty, reason: 'not before it has closed');
+
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(dismissed, [DismissDirection.startToEnd]);
+      expect(resized, greaterThan(1));
+    });
+
+    test('Flutter\'s default is to close it', () {
+      const dismissible = Dismissible(
+        key: ValueKey('r'),
+        child: Text('x'),
+      );
+      expect(dismissible.resizeDuration, const Duration(milliseconds: 300));
+    });
+  });
 
   test('at rest it is the row, with nothing behind it', () {
     final app = row();

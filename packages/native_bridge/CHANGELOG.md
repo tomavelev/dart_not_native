@@ -145,6 +145,105 @@ Flutter, it now agrees, and these are the places existing code has to change:
   grey block; under Materialize a disabled tonal button keeps a fill.
   A text button is written in the app's primary under both.
 
+### Curves are Flutter's
+
+Only five paces reached a renderer, so `Curves.fastOutSlowIn` was an
+ease-in-out and `Curves.easeOutBack` lost its overshoot. Every curve that is
+a cubic Bézier in Flutter now travels as that cubic (`cubic(a,b,c,d)`), with
+Flutter's numbers, and so does any `Cubic` an app makes: a CSS
+`cubic-bezier`, an Android `PathInterpolator`, UIKit's cubic timing, Flutter's
+own. The bounces, springs and three-point curves are still the nearest of the
+five. `Cubic.flipped` is the cubic turned end for end.
+
+### `animateTo` takes the time it is given
+
+`ScrollController.animateTo` travelled by each platform's own smooth scroll,
+at its own pace. The renderer is now told the duration and the curve
+(`scrollMs`, `scrollCurve`) and moves the scroller a frame at a time - a
+windowed list hears every step, as it does under a finger, and a finger put
+down on the way takes over. Seen on an iOS simulator, an Android emulator and
+in Chrome: two seconds, linear, is two seconds.
+
+### Transitions beyond the fade
+
+An `AnimatedSwitcher`'s `transitionBuilder` was called with a finished
+animation, so whatever it returned faded. It is now built with the animation
+at its start and then at its end, and `FadeTransition`, `ScaleTransition`,
+`SlideTransition`, `RotationTransition` and `SizeTransition` move between the
+two. The last four were not here, and nor were `Tween`, `ColorTween`,
+`IntTween`, `CurveTween`, `CurvedAnimation`, `Animatable.animate` and
+`chain` - a builder written for Flutter now compiles and moves. Seen on an
+iOS simulator, an Android emulator and in Chrome.
+
+### `TabBarView` slides, and follows the finger
+
+A `TabBarView` is now a `PageView` kept in step with its `TabController`: the
+page follows a finger and the tab beside it is chosen when it is let go, and
+a tab chosen on the bar slides into view over the controller's
+`animationDuration` (`animateTo` takes a duration and curve of its own).
+Seen on an iOS simulator, an Android emulator and in Chrome.
+
+### A dismissed row closes behind it
+
+`Dismissible.resizeDuration` has Flutter's 300 ms: once the row has slid
+away, the room it took closes over that time, `onResize` is called on the
+way, and then `onDismissed`, as in Flutter - where it used to be called as
+soon as the row had gone and the gap stayed until the app took the row out.
+A null `resizeDuration` keeps the old way. By its tests only.
+
+### Two fingers turning
+
+`ScaleUpdateDetails.rotation` was always zero. While two fingers are down a
+pan now also carries `rotation`, how far the line between them has turned,
+on all four renderers. In Chrome and the Flutter host's tests; not on a
+phone, which cannot be given two fingers from here.
+
+### A header pinned further down stays
+
+A pinned `SliverPersistentHeader` or `SliverAppBar` that was not first among
+the slivers scrolled away. It is now a `sticky` box: once the list has
+scrolled past it, it stays at the top of the view, over the rows going under
+it, until the list comes back down - CSS `position: sticky` in the browser, a
+`PinnedHeaderSliver` in the Flutter host, the box moved down as the scroller
+moves on iOS and Android. Seen on an iOS simulator, an Android emulator and
+in Chrome. Two such headers do not stack, as Flutter's do: the later one
+covers the earlier.
+
+### Layers and blends on a canvas
+
+A `Paint`'s `blendMode` is carried, and `saveLayer` is a layer - what is drawn
+until the matching `restore` is laid over the canvas at the paint's opacity,
+in its blend, so shapes that overlap inside it are not darker where they do.
+`drawColor` takes its blend too. Seen on an iOS simulator, an Android emulator
+and in Chrome; by pixel in Chrome and the Flutter host.
+
+### How far an image has come
+
+`loadingBuilder` was handed nothing loaded and no total, always. Android, iOS
+and the Flutter host now say how many bytes have come - and how many there
+are, when the server said - a few times a second, and the builder is called
+with each. The browser fetches an `<img>` itself and does not say. Seen on an
+iOS simulator and an Android emulator with a server sending a picture in
+twenty pieces.
+
+### `Matrix4` is a matrix
+
+`Matrix4` held one turn, one scale and a shift, and composed them as if order
+did not matter. It is now Flutter's sixteen numbers, column by column, with
+`multiply`, `entry`, `setEntry`, `storage`, `getTranslation` and the rest,
+and calls compose in the order made - a translate after a scale is scaled, as
+in Flutter. What a box is given is read out of it: the shift, the turn and a
+scale along each axis, which the renderers now carry (`scaleY`), so
+`Transform.scale(scaleX: 2, scaleY: 0.5)` stretches where it used to average.
+A skew and a perspective still have nowhere to go.
+
+### Smaller things
+
+- `AnimatedSize.onEnd` is called when the renderer says a move to the
+  child's new size has got there (`sizeEndEventId`).
+- On iOS a box scaled to nothing - a switch's child going - shrank at once:
+  UIKit cannot animate to a scale of zero, so it goes to very nearly zero.
+
 ### `onEnd` is the renderer's word
 
 An implicit animation's `onEnd` was a timer the app set for the duration it

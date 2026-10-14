@@ -7,6 +7,8 @@ import 'package:dart_not_native/testing.dart';
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+BuildContext? _context;
+
 Widget _tabs({
   ScrollPhysics? physics,
   TextDirection direction = TextDirection.ltr,
@@ -18,6 +20,12 @@ Widget _tabs({
     child: Column(
       children: [
         TabBar(tabs: [for (var i = 0; i < count; i++) Tab(text: 'Tab $i')]),
+        Builder(
+          builder: (context) {
+            _context = context;
+            return const SizedBox.shrink();
+          },
+        ),
         Expanded(
           child: TabBarView(
             physics: physics,
@@ -46,6 +54,55 @@ void main() {
     await app.emit('${id}_update', {'x': to, 'y': 100.0, 'dx': to - from});
     await app.emit('${id}_end', {'x': to, 'y': 100.0, 'vx': speed});
   }
+
+  group('the pages move', () {
+    /// The view, told how wide it is, as a renderer tells it.
+    Future<AppTester> measured() async {
+      final app = AppTester.widget(_tabs());
+      final view = swiped(app)!;
+      await app.emit(view.props['sizeEventId'] as String, {
+        'width': 360.0,
+        'height': 500.0,
+      });
+      return app;
+    }
+
+    Map<String, num> moving(AppTester app) {
+      String textIn(WidgetNode node) => node.type == 'Text'
+          ? node.props['content'] as String
+          : textIn(node.children!.single);
+      return {
+        for (final box in app.nodes.where(
+          (n) =>
+              ((n.props['id'] as String?)?.startsWith('page-') ?? false) &&
+              n.props['transform'] != null,
+        ))
+          textIn(box): (box.props['transform'] as Map)['dx'] as num,
+      };
+    }
+
+    test('selecting a tab slides the page there', () async {
+      final app = await measured();
+      DefaultTabController.of(_context!).index = 2;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(moving(app), {'Page 0': 0, 'Page 2': 360});
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(moving(app), {'Page 0': -360, 'Page 2': 0});
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(app.hasText('Page 2'), isTrue);
+      expect(moving(app), isEmpty);
+    });
+
+    test('the page follows a finger', () async {
+      final app = await measured();
+      final id = swiped(app)!.props['panEventId'] as String;
+      await app.emit('${id}_start', {'x': 300.0, 'y': 100.0});
+      await app.emit('${id}_update', {'x': 200.0, 'y': 100.0});
+
+      expect(moving(app), {'Page 0': -100, 'Page 1': 260});
+    });
+  });
 
   test('a swipe towards the start shows the next tab', () async {
     final app = AppTester.widget(_tabs());

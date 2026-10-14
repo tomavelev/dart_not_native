@@ -563,6 +563,97 @@ void main() {
         'private func fillsWidth(',
         ['case "Scroll", "LazyList":'],
       ),
+      // A move to a child's size says when it got there.
+      (
+        'Android (Kotlin) says when a size move got there',
+        views,
+        'private fun shownSize(',
+        ['sizeEnd?.let { host.send(it, emptyMap()) }'],
+      ),
+      (
+        'iOS (Swift) says when a size move got there',
+        swift,
+        'private func moveSizes(',
+        ['box.sizeEndEventId'],
+      ),
+      // Two fingers turning say how far.
+      (
+        'Android (Kotlin) reports a turn of two fingers',
+        views,
+        'private fun movePinch(',
+        ['"rotation" to turn('],
+      ),
+      (
+        'iOS (Swift) reports a turn of two fingers',
+        swiftViews,
+        '@objc private func handlePinch(',
+        ['"rotation":'],
+      ),
+      // A cubic curve is drawn as that cubic.
+      (
+        'Android (Kotlin) moves along a cubic curve',
+        kotlin,
+        'private fun interpolator(',
+        ['PathInterpolator(a, b, c, d)'],
+      ),
+      (
+        'iOS (Swift) moves along a cubic curve',
+        swift,
+        'private func animate(',
+        ['UICubicTimingParameters(controlPoint1: one, controlPoint2: two)'],
+      ),
+      // A scroll travels over the time the app said.
+      (
+        'Android (Kotlin) travels a scroll over the time asked',
+        views,
+        'private fun place(',
+        ['travelMs', 'ValueAnimator.ofInt(from, position)'],
+      ),
+      (
+        'iOS (Swift) travels a scroll over the time asked',
+        swiftViews,
+        'private func setOffset(',
+        ['DnnScrollTravel.go('],
+      ),
+      // A sticky box stays at the top of its scroller.
+      (
+        'Android (Kotlin) keeps a sticky box at the top',
+        views,
+        'private fun follow(',
+        ['scrollY - top'],
+      ),
+      (
+        'iOS (Swift) keeps a sticky box at the top',
+        swiftViews,
+        'private func follow(',
+        ['top - place'],
+      ),
+      // A paint's blend, and a layer.
+      (
+        'Android (Kotlin) draws a canvas layer',
+        views,
+        'internal fun compileCanvas(',
+        ['it.saveLayer(null, layer)'],
+      ),
+      (
+        'iOS (Swift) draws a canvas layer',
+        swiftViews,
+        'private func fillOrStroke(',
+        ['context.setBlendMode(paint.blend)'],
+      ),
+      // How far an image has come.
+      (
+        'Android (Kotlin) says how far an image has come',
+        kotlin,
+        'private fun loadImage(\n',
+        ['progress(so, expected)'],
+      ),
+      (
+        'iOS (Swift) says how far an image has come',
+        swift,
+        'private func load(\n',
+        ['countOfBytesReceived'],
+      ),
       (
         'iOS (Swift) reports hardware keys',
         swift,

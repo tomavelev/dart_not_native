@@ -54,5 +54,6 @@ void main() {
     expect(updates.last['scale'], closeTo(2.0, 0.01));
     expect(updates.last['pointers'], 2);
     expect(updates.last['x'], closeTo(150, 0.5));
+    expect(updates.last['rotation'], closeTo(0, 0.01));
   });
 }

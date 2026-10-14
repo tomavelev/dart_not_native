@@ -439,6 +439,27 @@ void main() {
         expect(pinch['dx'], closeTo(10, 1));
       });
 
+      test('two turning say how far, clockwise', () async {
+        listen(['pan_start', 'pan_update', 'pan_end']);
+        await renderer.render(
+          placed({'panEventId': 'pan', 'panScale': true}),
+        );
+        final rect = box().getBoundingClientRect();
+        final x = rect.left + 50, y = rect.top + 50;
+
+        box().dispatchEvent(pointer('pointerdown', x, y, kind: 'touch'));
+        box().dispatchEvent(
+          pointer('pointerdown', x + 30, y, kind: 'touch', id: 2),
+        );
+        // A quarter turn about the first finger, downwards: clockwise.
+        box().dispatchEvent(
+          pointer('pointermove', x, y + 30, kind: 'touch', id: 2),
+        );
+
+        expect(events.last.$2['rotation'], closeTo(1.5708, 0.01));
+        expect(events.last.$2['scale'], closeTo(1, 0.01));
+      });
+
       test('the finger left goes on panning from where it is', () async {
         listen(['pan_start', 'pan_update', 'pan_end']);
         await renderer.render(

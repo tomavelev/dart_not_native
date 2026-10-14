@@ -1548,8 +1548,18 @@ class NativeUIRenderer(
             val target = px(newNode["scrollOffset"])
             lazyScroll[listId] = target
             val travel = newNode["scrollAnimated"] == true
+            val travelMs = (newNode["scrollMs"] as? Number)?.toLong() ?: 0L
+            val curve = (newNode["scrollCurve"] as? String)?.let { interpolator(mapOf("curve" to it)) }
             scroll.post {
-                if (travel && scroll is android.widget.ScrollView) {
+                if (travel && travelMs > 0) {
+                    // Over the time the app asked, along its curve.
+                    android.animation.ValueAnimator.ofInt(scroll.scrollY, target).apply {
+                        duration = travelMs
+                        curve?.let { interpolator = it }
+                        addUpdateListener { scroll.scrollTo(0, it.animatedValue as Int) }
+                        start()
+                    }
+                } else if (travel && scroll is android.widget.ScrollView) {
                     scroll.smoothScrollTo(0, target)
                 } else {
                     scroll.scrollTo(0, target)
@@ -3047,6 +3057,14 @@ class NativeUIRenderer(
                     sendEvent(id, mapOf("state" to if (loaded) "loaded" else "failed"))
                 }
             },
+            progress = eventId?.takeIf { node["progress"] == true }?.let { id ->
+                { loaded: Long, expected: Long? ->
+                    sendEvent(
+                        id,
+                        mapOf("state" to "loading", "loaded" to loaded, "expected" to expected),
+                    )
+                }
+            },
         )
         return container
     }
@@ -3198,6 +3216,7 @@ class NativeUIRenderer(
         hiding: View,
         limit: Int,
         told: ((Boolean) -> Unit)? = null,
+        progress: ((Long, Long?) -> Unit)? = null,
     ) {
         if (src.isNullOrEmpty()) {
             told?.invoke(false)
@@ -3261,7 +3280,28 @@ class NativeUIRenderer(
                                         "only-if-cached, max-stale=${Int.MAX_VALUE}",
                                     )
                                 }
-                                connection.inputStream.use { it.readBytes() }
+                                val expected = connection.contentLength.toLong().takeIf { it > 0 }
+                                connection.inputStream.use { input ->
+                                    // Read a piece at a time, so that how far it
+                                    // has got can be said - a few times a second.
+                                    val out = java.io.ByteArrayOutputStream()
+                                    val piece = ByteArray(16 * 1024)
+                                    var loaded = 0L
+                                    var said = 0L
+                                    while (true) {
+                                        val read = input.read(piece)
+                                        if (read < 0) break
+                                        out.write(piece, 0, read)
+                                        loaded += read
+                                        val now = android.os.SystemClock.uptimeMillis()
+                                        if (progress != null && now - said >= 100) {
+                                            said = now
+                                            val so = loaded
+                                            activity.runOnUiThread { progress(so, expected) }
+                                        }
+                                    }
+                                    out.toByteArray()
+                                }
                             } finally {
                                 connection.disconnect()
                             }
@@ -4501,7 +4541,21 @@ class NativeUIRenderer(
     }
 
     /** A protocol curve name as an Android interpolator. */
-    private fun interpolator(node: Map<*, *>): Interpolator = when (node["curve"]) {
+    private fun interpolator(node: Map<*, *>): Interpolator =
+        cubicOf(node["curve"])?.let { (a, b, c, d) ->
+            android.view.animation.PathInterpolator(a, b, c, d)
+        } ?: namedInterpolator(node)
+
+    /** The four control numbers of a `cubic(a,b,c,d)` curve, or null for a named one. */
+    private fun cubicOf(curve: Any?): List<Float>? {
+        val text = curve as? String ?: return null
+        if (!text.startsWith("cubic(") || !text.endsWith(")")) return null
+        val numbers = text.substring(6, text.length - 1).split(",").map { it.trim().toFloatOrNull() }
+        if (numbers.size != 4 || numbers.any { it == null }) return null
+        return numbers.map { it!! }
+    }
+
+    private fun namedInterpolator(node: Map<*, *>): Interpolator = when (node["curve"]) {
         "linear" -> LinearInterpolator()
         "easeIn" -> AccelerateInterpolator()
         "easeOut" -> DecelerateInterpolator()
@@ -5274,6 +5328,8 @@ class NativeUIRenderer(
             0L
         }
         box.sizeCurve = if (box.sizeMs > 0) interpolator(node) else null
+        box.sizeEnd = node["sizeEndEventId"] as? String
+        box.sticky = node["sticky"] == true
         box.setStyle(
             style, duration, if (duration > 0) interpolator(node) else null,
             onDone = endAnswer(box, node),
@@ -5358,6 +5414,8 @@ class NativeUIRenderer(
                 (transform?.get("rotate") as? Number)?.toDouble() ?: 0.0
             ).toFloat(),
             scale = (transform?.get("scale") as? Number)?.toFloat() ?: 1f,
+            scaleY = (transform?.get("scaleY") as? Number)?.toFloat()
+                ?: (transform?.get("scale") as? Number)?.toFloat() ?: 1f,
             dx = pxf(transform?.get("dx")) ?: 0f,
             dy = pxf(transform?.get("dy")) ?: 0f,
         )
@@ -5599,6 +5657,8 @@ class NativeUIRenderer(
         val target = px(node["scrollOffset"])
         // Only a scroller already on screen has somewhere to travel from.
         memory.smooth = live && node["scrollAnimated"] == true
+        memory.travelMs = (node["scrollMs"] as? Number)?.toLong() ?: 0L
+        memory.travelCurve = (node["scrollCurve"] as? String)?.let { interpolator(mapOf("curve" to it)) }
         if (live) memory.jumpTo(target) else memory.pending = target
     }
 

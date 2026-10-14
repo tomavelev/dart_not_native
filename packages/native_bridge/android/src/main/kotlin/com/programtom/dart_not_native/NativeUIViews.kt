@@ -37,6 +37,7 @@ import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.os.SystemClock
 import android.view.View
+import android.view.ViewParent
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
@@ -151,6 +152,8 @@ internal data class BoxStyle(
     /** Degrees, because that is what a View rotates by. */
     val rotation: Float = 0f,
     val scale: Float = 1f,
+    /** The scale down, where it differs from [scale], which is across. */
+    val scaleY: Float = scale,
     val dx: Float = 0f,
     val dy: Float = 0f,
 ) {
@@ -373,6 +376,63 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
      */
     var sizeMs: Long = 0
     var sizeCurve: Interpolator? = null
+
+    /** Told when a move to the child's size has got there. */
+    var sizeEnd: String? = null
+
+    /**
+     * Whether the box stays at the top of the scroller it is in once the
+     * content has scrolled past it (`sticky`), and how far it has been moved
+     * down to do so.
+     */
+    var sticky = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (isAttachedToWindow) {
+                if (value) viewTreeObserver.addOnScrollChangedListener(stick)
+                else viewTreeObserver.removeOnScrollChangedListener(stick)
+            }
+            if (!value) unstick()
+        }
+    private var stuckBy = 0f
+    private val stick = android.view.ViewTreeObserver.OnScrollChangedListener { follow() }
+
+    override fun onDetachedFromWindow() {
+        if (sticky) viewTreeObserver.removeOnScrollChangedListener(stick)
+        super.onDetachedFromWindow()
+    }
+
+    /** Moves the box down by as far as its place has gone above the top. */
+    private fun follow() {
+        var scroller: ViewParent? = parent
+        var top = this.top
+        var below: View = this
+        while (scroller != null && scroller !is android.widget.ScrollView &&
+            scroller !is androidx.core.widget.NestedScrollView
+        ) {
+            val holder = scroller as? View ?: return
+            top += holder.top
+            below = holder
+            scroller = scroller.parent
+        }
+        val scrollY = (scroller as? View)?.scrollY ?: return
+        // The scroller's own child sits at its top; the rest add up from it.
+        top -= below.top
+        val down = max(0, scrollY - top).toFloat()
+        if (down == stuckBy) return
+        stuckBy = down
+        translationY = style.dy + down
+        // Over the rows that scroll beneath it: they come after it.
+        translationZ = if (down > 0f) 0.1f else 0f
+    }
+
+    private fun unstick() {
+        if (stuckBy == 0f) return
+        stuckBy = 0f
+        translationY = style.dy
+        translationZ = 0f
+    }
     private var sizeShown: Pair<Int, Int>? = null
     private var sizeTarget: Pair<Int, Int>? = null
     private var sizeAnimator: ValueAnimator? = null
@@ -404,6 +464,16 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                         (from.second + (now.second - from.second) * t).roundToInt()
                     requestLayout()
                 }
+                addListener(object : AnimatorListenerAdapter() {
+                    private var cancelled = false
+                    override fun onAnimationCancel(animation: Animator) {
+                        cancelled = true
+                    }
+                    override fun onAnimationEnd(animation: Animator) {
+                        // Only one that got there: a cancel is a newer move.
+                        if (!cancelled) sizeEnd?.let { host.send(it, emptyMap()) }
+                    }
+                })
                 start()
             }
         }
@@ -489,7 +559,7 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         alpha = next.opacity.coerceIn(0f, 1f)
         rotation = next.rotation
         scaleX = next.scale
-        scaleY = next.scale
+        scaleY = next.scaleY
         translationX = next.dx
         translationY = next.dy
         // The outline is what clips a plain rounded box, and antialiases the
@@ -545,6 +615,7 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
             opacity = mix(a.opacity, b.opacity),
             rotation = mix(a.rotation, b.rotation),
             scale = mix(a.scale, b.scale),
+            scaleY = mix(a.scaleY, b.scaleY),
             dx = mix(a.dx, b.dx),
             dy = mix(a.dy, b.dy),
         )
@@ -758,6 +829,10 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         // children - or clips them to its padding, as a Padding node's frame
         // would - cuts off at the box's own edge.
         if (spills(style)) letDrawOutside(this)
+        if (sticky) {
+            viewTreeObserver.addOnScrollChangedListener(stick)
+            post { follow() }
+        }
     }
 
     /**
@@ -919,9 +994,18 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
      */
     private var pinching = false
     private var spreadFrom = 1f
+    private var angleFrom = 0.0
     private var focalX = 0f
     private var focalY = 0f
     private var resync = false
+
+    /** [radians] brought within half a turn either way. */
+    private fun turn(radians: Double): Double {
+        var turn = radians
+        while (turn > Math.PI) turn -= 2 * Math.PI
+        while (turn < -Math.PI) turn += 2 * Math.PI
+        return turn
+    }
 
     /** Where finger [i] is on the screen - what `getRawX(i)` says from Android 10. */
     private fun rawX(ev: MotionEvent, i: Int) = ev.getX(i) + (ev.rawX - ev.x)
@@ -933,6 +1017,7 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         val ax = rawX(ev, 0); val ay = rawY(ev, 0)
         val bx = rawX(ev, 1); val by = rawY(ev, 1)
         spreadFrom = max(1f, kotlin.math.hypot(bx - ax, by - ay))
+        angleFrom = kotlin.math.atan2((by - ay).toDouble(), (bx - ax).toDouble())
         focalX = (ax + bx) / 2
         focalY = (ay + by) / 2
     }
@@ -952,6 +1037,9 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                 "dx" to (x - focalX) / d, "dy" to (y - focalY) / d,
                 "vx" to 0.0, "vy" to 0.0,
                 "scale" to (kotlin.math.hypot(bx - ax, by - ay) / spreadFrom).toDouble(),
+                "rotation" to turn(
+                    kotlin.math.atan2((by - ay).toDouble(), (bx - ax).toDouble()) - angleFrom,
+                ),
                 "pointers" to 2,
             ),
         )
@@ -1588,6 +1676,17 @@ internal fun compileCanvas(
                 depth++
                 ops += CanvasOp { it.save() }
             }
+            "saveLayer" -> {
+                // Drawn on its own, then laid over the canvas at the paint's
+                // opacity and in its blend, at the matching restore.
+                depth++
+                val layer = Paint().apply {
+                    alpha = (((c.getOrNull(1) as? Number)?.toFloat() ?: 1f) * 255)
+                        .roundToInt().coerceIn(0, 255)
+                    applyBlend(this, c.getOrNull(2) as? String)
+                }
+                ops += CanvasOp { it.saveLayer(null, layer) }
+            }
             "restore" -> if (depth > 0) {
                 depth--
                 ops += CanvasOp { it.restore() }
@@ -1648,6 +1747,28 @@ private fun canvasPaint(spec: Map<*, *>?): Paint = Paint(Paint.ANTI_ALIAS_FLAG).
         maskFilter = android.graphics.BlurMaskFilter(
             it * 1.7320508f, android.graphics.BlurMaskFilter.Blur.NORMAL)
     }
+    applyBlend(this, spec?.get("blend") as? String)
+}
+
+/**
+ * Lays what [paint] draws over the canvas by Flutter's `BlendMode` [name],
+ * whose names are Android's own in another case: every one from Android 10,
+ * the Porter-Duff ones before it.
+ */
+private fun applyBlend(paint: Paint, name: String?) {
+    if (name == null || name == "srcOver") return
+    val upper = name.replace(Regex("([A-Z])"), "_$1").uppercase().replace("_A_TOP", "_ATOP")
+    if (Build.VERSION.SDK_INT >= 29) {
+        runCatching { android.graphics.BlendMode.valueOf(upper) }.getOrNull()
+            ?.let { paint.blendMode = it }
+        return
+    }
+    val mode = when (upper) {
+        "PLUS" -> android.graphics.PorterDuff.Mode.ADD
+        "MODULATE" -> android.graphics.PorterDuff.Mode.MULTIPLY
+        else -> runCatching { android.graphics.PorterDuff.Mode.valueOf(upper) }.getOrNull()
+    } ?: return
+    paint.xfermode = android.graphics.PorterDuffXfermode(mode)
 }
 
 /** A paint's `gradient`, placed in the canvas's own coordinates. */
@@ -2040,6 +2161,24 @@ internal class ScrollMemory(private val view: ViewGroup, private val horizontal:
     private fun position() = if (horizontal) view.scrollX else view.scrollY
 
     private fun place(position: Int) {
+        travel?.cancel()
+        travel = null
+        if (smooth && travelMs > 0) {
+            // Over the time the app asked, along its curve; reported on the
+            // way like a drag, which is what it looks like.
+            smooth = false
+            val from = position()
+            travel = android.animation.ValueAnimator.ofInt(from, position).apply {
+                duration = travelMs
+                travelCurve?.let { interpolator = it }
+                addUpdateListener {
+                    val at = it.animatedValue as Int
+                    if (horizontal) view.scrollTo(at, 0) else view.scrollTo(0, at)
+                }
+                start()
+            }
+            return
+        }
         if (smooth) {
             // Travelled to, by the scroller's own animation; reported on the
             // way like a drag, which is what it looks like.
@@ -2060,6 +2199,14 @@ internal class ScrollMemory(private val view: ViewGroup, private val horizontal:
 
     /** Whether the next offset is travelled to rather than jumped to. */
     var smooth = false
+
+    /**
+     * How long that travel takes and along what, when the app said - 0 for
+     * the scroller's own smooth scroll, at the platform's pace.
+     */
+    var travelMs: Long = 0
+    var travelCurve: android.view.animation.Interpolator? = null
+    private var travel: android.animation.ValueAnimator? = null
 
     /** Goes to [offset] now if there is a layout to go to it in, else at the next one. */
     fun jumpTo(offset: Int) {

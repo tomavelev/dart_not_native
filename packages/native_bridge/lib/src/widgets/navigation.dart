@@ -2931,8 +2931,9 @@ class Tabs extends Widget {
 
 /// Which tab is selected, shared by a [TabBar] and its [TabBarView].
 ///
-/// `vsync` is accepted for Flutter's signature; tabs switch without an
-/// animation here, so there is nothing to synchronise.
+/// A [TabBarView] slides to the tab selected over [animationDuration].
+/// `vsync` is accepted for Flutter's signature; there is nothing here for it
+/// to synchronise.
 class TabController extends ChangeNotifier {
   TabController({
     int initialIndex = 0,
@@ -2940,11 +2941,18 @@ class TabController extends ChangeNotifier {
     required this.length,
     TickerProvider? vsync,
   }) : _index = initialIndex,
-       _previousIndex = initialIndex;
+       _previousIndex = initialIndex,
+       animationDuration = animationDuration ?? const Duration(milliseconds: 300);
 
   final int length;
+
+  /// How long a [TabBarView] takes to slide to a tab selected.
+  final Duration animationDuration;
   int _index;
   int _previousIndex;
+
+  /// How the next change of tab travels, when [animateTo] said.
+  ({Duration duration, Curve curve})? _travel;
 
   int get index => _index;
   set index(int value) {
@@ -2956,12 +2964,17 @@ class TabController extends ChangeNotifier {
 
   int get previousIndex => _previousIndex;
 
-  /// Always false: a tab change lands at once.
+  /// Always false: the selected tab is the new one from the moment it
+  /// changes, while the view slides to it.
   bool get indexIsChanging => false;
 
-  /// Selects tab [value]. It does not animate; see the class doc.
-  void animateTo(int value, {Duration? duration, Curve curve = Curves.ease}) =>
-      index = value;
+  /// Selects tab [value], the view sliding there over [duration] - the
+  /// controller's [animationDuration] when not said.
+  void animateTo(int value, {Duration? duration, Curve curve = Curves.ease}) {
+    _travel = (duration: duration ?? animationDuration, curve: curve);
+    index = value;
+    _travel = null;
+  }
 }
 
 class _TabControllerScope extends InheritedWidget {
@@ -3123,10 +3136,11 @@ class TabBar extends Widget implements PreferredSizeWidget {
 /// away - so a tab keeps its `State` while another is in front, as each page
 /// of Flutter's does once it has been visited.
 ///
-/// A swipe across the page moves to the tab beside it, as in Flutter - unless
-/// [physics] is a [NeverScrollableScrollPhysics]. The page does not follow
-/// the finger: it changes when the finger lifts, having gone far or fast
-/// enough.
+/// It is a [PageView] kept in step with the [TabController]: the page
+/// follows a finger across it and the tab beside it is selected when it is
+/// let go far or fast enough, and a tab selected elsewhere - on the
+/// [TabBar] - slides into view over the controller's `animationDuration`.
+/// A [NeverScrollableScrollPhysics] leaves the tabs the only way to move.
 class TabBarView extends Widget {
   const TabBarView({
     super.key,
@@ -3148,17 +3162,79 @@ class TabBarView extends Widget {
         'DefaultTabController above it.',
       );
     }
-    owner._watch(controller);
-    final page =
-        _renderOneOf(owner, children, controller.index) ?? UIBuilder.sizedBox();
-    if (children.length < 2 || (physics?._never ?? false)) return page;
-    return _swipePages(
+    return _renderChild(
       owner,
-      page,
-      token: controller,
-      onStep: (step) => controller.index += step,
+      _TabPages(controller: controller, physics: physics, children: children),
     );
   }
+}
+
+/// A [TabBarView]'s pages: a [PageView] whose page is the controller's tab.
+class _TabPages extends StatefulWidget {
+  const _TabPages({
+    required this.controller,
+    required this.children,
+    this.physics,
+  });
+  final TabController controller;
+  final List<Widget> children;
+  final ScrollPhysics? physics;
+
+  @override
+  State<_TabPages> createState() => _TabPagesState();
+}
+
+class _TabPagesState extends State<_TabPages> {
+  late final PageController _pages = PageController(
+    initialPage: widget.controller.index,
+  );
+  late TabController _tabs = widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs.addListener(_tabChanged);
+  }
+
+  @override
+  void didUpdateWidget(_TabPages oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      _tabs.removeListener(_tabChanged);
+      _tabs = widget.controller..addListener(_tabChanged);
+      _pages.jumpToPage(_tabs.index);
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabs.removeListener(_tabChanged);
+    _pages.dispose();
+    super.dispose();
+  }
+
+  /// A tab selected elsewhere: the view slides there. One the view itself
+  /// selected - a swipe - is there already.
+  void _tabChanged() {
+    final to = _tabs.index;
+    if (_pages._page == to) return;
+    final travel = _tabs._travel;
+    unawaited(
+      _pages.animateToPage(
+        to,
+        duration: travel?.duration ?? _tabs.animationDuration,
+        curve: travel?.curve ?? Curves.ease,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => PageView(
+    controller: _pages,
+    physics: widget.physics,
+    onPageChanged: (page) => _tabs.index = page,
+    children: widget.children,
+  );
 }
 
 /// Where each swipe in progress began, by what is being swiped - a

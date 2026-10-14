@@ -2861,104 +2861,164 @@ class StadiumBorder extends OutlinedBorder {
 // Transforms.
 // ---------------------------------------------------------------------------
 
-/// A 2D transform with Flutter's `Matrix4` name on it.
+/// A transform, as Flutter's `Matrix4`: sixteen numbers, column by column,
+/// and calls that compose in the order they are made - a scale after a
+/// translate scales about where the translate went, as it does in Flutter.
 ///
-/// A `box` node's transform is `{rotate, scale, dx, dy}` applied about the
-/// centre, so that is what this holds: a turn about the z axis, one scale and
-/// a shift. It is not a matrix. Calls compose naively - translations add,
-/// scales multiply, rotations add - which is right for the common
-/// `Matrix4.identity()..translate(x, y)..scale(s)` and wrong for anything that
-/// depends on the order (a translate after a rotate moves along the screen's
-/// axes here, not the rotated ones). Skew, perspective and a different scale
-/// per axis have nowhere to go; a non-uniform scale travels as its x factor.
+/// A box's transform is a shift, a turn and a scale along each axis, about
+/// the box's middle, so that is what travels: read out of the matrix's flat
+/// part. A skew, a perspective and anything off the screen's plane have
+/// nowhere to go.
 class Matrix4 {
-  Matrix4.identity();
+  Matrix4.identity() : _m = List<double>.filled(16, 0) {
+    _m[0] = _m[5] = _m[10] = _m[15] = 1;
+  }
 
-  /// A shift by ([x], [y]). [z] has no meaning on a flat screen.
-  Matrix4.translationValues(double x, double y, double z) : _dx = x, _dy = y;
+  /// A matrix of nothing but zeros.
+  Matrix4.zero() : _m = List<double>.filled(16, 0);
+
+  /// A copy of [other].
+  Matrix4.copy(Matrix4 other) : _m = List<double>.of(other._m);
+
+  /// The sixteen numbers, column by column, as Flutter takes them.
+  Matrix4.fromList(List<double> values) : _m = List<double>.of(values) {
+    if (_m.length != 16) throw ArgumentError('A Matrix4 is sixteen numbers.');
+  }
+
+  /// A shift by ([x], [y], [z]).
+  factory Matrix4.translationValues(double x, double y, double z) =>
+      Matrix4.identity()
+        .._m[12] = x
+        .._m[13] = y
+        .._m[14] = z;
 
   /// A turn of [radians] about the z axis - clockwise on screen.
-  Matrix4.rotationZ(double radians) : _rotate = radians;
+  factory Matrix4.rotationZ(double radians) =>
+      Matrix4.identity()..rotateZ(radians);
 
-  /// A scale by [x] across and [y] down. The protocol has one scale, so [x]
-  /// is the one that travels.
-  Matrix4.diagonal3Values(double x, double y, double z)
-    : _scaleX = x,
-      _scaleY = y;
+  /// A scale by [x] across, [y] down and [z] out of the screen.
+  factory Matrix4.diagonal3Values(double x, double y, double z) =>
+      Matrix4.identity()
+        .._m[0] = x
+        .._m[5] = y
+        .._m[10] = z;
 
-  double _rotate = 0;
-  double _scaleX = 1;
-  double _scaleY = 1;
-  double _dx = 0;
-  double _dy = 0;
+  final List<double> _m;
+
+  /// The numbers, column by column.
+  List<double> get storage => _m;
+
+  /// The number at [row], [column].
+  double entry(int row, int column) => _m[column * 4 + row];
+
+  void setEntry(int row, int column, double value) =>
+      _m[column * 4 + row] = value;
 
   /// Back to doing nothing.
   void setIdentity() {
-    _rotate = 0;
-    _scaleX = 1;
-    _scaleY = 1;
-    _dx = 0;
-    _dy = 0;
+    for (var i = 0; i < 16; i++) {
+      _m[i] = i % 5 == 0 ? 1 : 0;
+    }
   }
 
-  bool isIdentity() =>
-      _rotate == 0 && _scaleX == 1 && _scaleY == 1 && _dx == 0 && _dy == 0;
-
-  /// Shifts by ([x], [y]) more.
-  void translate(double x, [double y = 0.0, double z = 0.0]) {
-    _dx += x;
-    _dy += y;
+  bool isIdentity() {
+    for (var i = 0; i < 16; i++) {
+      if (_m[i] != (i % 5 == 0 ? 1 : 0)) return false;
+    }
+    return true;
   }
+
+  /// This followed by [other]: what is drawn is moved by [other] first.
+  void multiply(Matrix4 other) {
+    final a = List<double>.of(_m);
+    final b = other._m;
+    for (var column = 0; column < 4; column++) {
+      for (var row = 0; row < 4; row++) {
+        var sum = 0.0;
+        for (var k = 0; k < 4; k++) {
+          sum += a[k * 4 + row] * b[column * 4 + k];
+        }
+        _m[column * 4 + row] = sum;
+      }
+    }
+  }
+
+  /// A copy of this, [multiply]'d by [other].
+  Matrix4 multiplied(Matrix4 other) => clone()..multiply(other);
+
+  /// Shifts by ([x], [y], [z]) more, in the space this matrix has made.
+  void translate(double x, [double y = 0.0, double z = 0.0]) =>
+      multiply(Matrix4.translationValues(x, y, z));
 
   /// Flutter's newer spelling of [translate].
   void translateByDouble(double x, double y, double z, double w) =>
-      translate(x, y);
+      translate(x, y, z);
 
-  /// Scales by [x] more; [y] defaults to [x].
-  void scale(double x, [double? y, double? z]) {
-    _scaleX *= x;
-    _scaleY *= y ?? x;
-  }
+  /// Scales by [x] more - [y] and [z] being [x] where they are not said.
+  void scale(double x, [double? y, double? z]) =>
+      multiply(Matrix4.diagonal3Values(x, y ?? x, z ?? x));
 
   /// Flutter's newer spelling of [scale].
-  void scaleByDouble(double x, double y, double z, double w) => scale(x, y);
+  void scaleByDouble(double x, double y, double z, double w) => scale(x, y, z);
 
-  /// Turns by [radians] more.
-  void rotateZ(double radians) => _rotate += radians;
+  /// Turns by [radians] more about the z axis.
+  void rotateZ(double radians) {
+    final c = math.cos(radians), s = math.sin(radians);
+    multiply(
+      Matrix4.identity()
+        .._m[0] = c
+        .._m[1] = s
+        .._m[4] = -s
+        .._m[5] = c,
+    );
+  }
 
-  /// The larger of the two scales - how far an [InteractiveViewer] has been
-  /// zoomed.
-  double getMaxScaleOnAxis() => math.max(_scaleX.abs(), _scaleY.abs());
+  /// The shift this matrix makes.
+  Offset getTranslation() => Offset(_m[12], _m[13]);
+
+  /// The larger of the scales along the axes - how far an
+  /// [InteractiveViewer] has been zoomed.
+  double getMaxScaleOnAxis() => math.max(
+    math.sqrt(_m[0] * _m[0] + _m[1] * _m[1] + _m[2] * _m[2]),
+    math.sqrt(_m[4] * _m[4] + _m[5] * _m[5] + _m[6] * _m[6]),
+  );
 
   /// A copy, for a transform built up from another.
-  Matrix4 clone() => Matrix4.identity()
-    .._rotate = _rotate
-    .._scaleX = _scaleX
-    .._scaleY = _scaleY
-    .._dx = _dx
-    .._dy = _dy;
+  Matrix4 clone() => Matrix4.copy(this);
 
-  /// The node's `transform` prop: only what differs from doing nothing, and
-  /// null when nothing does.
-  Map<String, dynamic>? get _transform => isIdentity()
-      ? null
-      : {
-          if (_rotate != 0) 'rotate': _rotate,
-          if (_scaleX != 1) 'scale': _scaleX,
-          if (_dx != 0) 'dx': _dx,
-          if (_dy != 0) 'dy': _dy,
-        };
+  /// The scale across, read off the flat part.
+  double get _scaleX => math.sqrt(_m[0] * _m[0] + _m[1] * _m[1]);
+
+  /// The node's `transform` prop: the shift, the turn and the two scales,
+  /// only what differs from doing nothing, and null when nothing does.
+  Map<String, dynamic>? get _transform {
+    if (isIdentity()) return null;
+    final a = _m[0], b = _m[1], c = _m[4], d = _m[5];
+    final across = _scaleX;
+    final rotate = across == 0 ? 0.0 : math.atan2(b, a);
+    final down = across == 0 ? math.sqrt(c * c + d * d) : (a * d - b * c) / across;
+    double tidy(double v) => (v * 1e9).roundToDouble() / 1e9;
+    final map = {
+      if (tidy(rotate) != 0) 'rotate': tidy(rotate),
+      if (tidy(across) != 1) 'scale': tidy(across),
+      if (tidy(down) != tidy(across)) 'scaleY': tidy(down),
+      if (tidy(_m[12]) != 0) 'dx': tidy(_m[12]),
+      if (tidy(_m[13]) != 0) 'dy': tidy(_m[13]),
+    };
+    return map.isEmpty ? null : map;
+  }
 
   @override
-  bool operator ==(Object other) =>
-      other is Matrix4 &&
-      other._rotate == _rotate &&
-      other._scaleX == _scaleX &&
-      other._scaleY == _scaleY &&
-      other._dx == _dx &&
-      other._dy == _dy;
+  bool operator ==(Object other) {
+    if (other is! Matrix4) return false;
+    for (var i = 0; i < 16; i++) {
+      if (other._m[i] != _m[i]) return false;
+    }
+    return true;
+  }
+
   @override
-  int get hashCode => Object.hash(_rotate, _scaleX, _scaleY, _dx, _dy);
+  int get hashCode => Object.hashAll(_m);
 }
 
 // ---------------------------------------------------------------------------

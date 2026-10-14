@@ -1329,9 +1329,17 @@ class _InteractiveViewerState extends State<InteractiveViewer> {
       final middle = (_size ?? Size.zero).center(Offset.zero);
       final focal = details.localFocalPoint;
       shown
-        .._dx = (1 - by) * (focal.dx - middle.dx) + by * shown._dx
-        .._dy = (1 - by) * (focal.dy - middle.dy) + by * shown._dy
-        ..scale(by);
+        ..setEntry(
+          0,
+          3,
+          (1 - by) * (focal.dx - middle.dx) + by * shown.entry(0, 3),
+        )
+        ..setEntry(
+          1,
+          3,
+          (1 - by) * (focal.dy - middle.dy) + by * shown.entry(1, 3),
+        )
+        ..scale(by, by, 1);
     }
     _lastScale = details.scale;
     _controller.value = shown;

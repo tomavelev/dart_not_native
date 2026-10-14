@@ -268,7 +268,55 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     didSet { if oldValue != animatesSize { applyChildLayout(force: true) } }
   }
   var sizeSeconds: TimeInterval = 0
-  var sizeCurve: UIView.AnimationOptions = []
+  /// The protocol's name for the curve the size moves along.
+  var sizeCurve: String?
+  /// Told when a move to the child's size has got there.
+  var sizeEndEventId: String?
+
+  /// Whether the box stays at the top of the scroller it is in once the
+  /// content has scrolled past it (`sticky`).
+  var sticky = false {
+    didSet { if oldValue != sticky { watchScroller() } }
+  }
+  private var stickObservation: NSKeyValueObservation?
+  private var stuckBy: CGFloat = 0
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    watchScroller()
+  }
+
+  /// Follows the scroller round the box, while it is sticky and on screen.
+  private func watchScroller() {
+    stickObservation = nil
+    guard sticky, window != nil else {
+      stick(0)
+      return
+    }
+    var up = superview
+    while let view = up, !(view is UIScrollView) { up = view.superview }
+    guard let scroll = up as? UIScrollView else { return }
+    stickObservation = scroll.observe(\.contentOffset, options: [.new]) { [weak self] scroll, _ in
+      self?.follow(scroll)
+    }
+    follow(scroll)
+  }
+
+  /// Moves the box down by as far as its place has gone above the top of
+  /// what [scroll] shows.
+  private func follow(_ scroll: UIScrollView) {
+    let place = convert(CGPoint.zero, to: scroll).y - stuckBy
+    let top = scroll.contentOffset.y + scroll.adjustedContentInset.top
+    stick(max(0, top - place))
+  }
+
+  private func stick(_ down: CGFloat) {
+    guard abs(down - stuckBy) >= 0.5 || (down == 0 && stuckBy != 0) else { return }
+    stuckBy = down
+    transform = style.transform.concatenating(.init(translationX: 0, y: down))
+    // Over the rows that scroll beneath it: they come after it.
+    layer.zPosition = down > 0 ? 1 : 0
+  }
   private var sizePins: [NSLayoutConstraint] = []
 
   private var childPins: [NSLayoutConstraint] = []
@@ -332,6 +380,23 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   private var pinching = false
   private var panTold = false
   private var lastFocal = CGPoint.zero
+  private var angleFrom: CGFloat = 0
+
+  /// The angle of the line from the pinch's first finger to its second.
+  private func fingerAngle(_ recognizer: UIPinchGestureRecognizer) -> CGFloat? {
+    guard recognizer.numberOfTouches >= 2 else { return nil }
+    let a = recognizer.location(ofTouch: 0, in: nil)
+    let b = recognizer.location(ofTouch: 1, in: nil)
+    return atan2(b.y - a.y, b.x - a.x)
+  }
+
+  /// [radians] brought within half a turn either way.
+  private func turn(_ radians: CGFloat) -> CGFloat {
+    var turn = radians
+    while turn > .pi { turn -= 2 * .pi }
+    while turn < -.pi { turn += 2 * .pi }
+    return turn
+  }
 
   /// The pan and the pinch are one gesture to the app, and are heard together.
   func gestureRecognizer(
@@ -350,6 +415,7 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     case .began:
       pinching = true
       lastFocal = onScreen
+      angleFrom = fingerAngle(recognizer) ?? 0
       if !panTold {
         panTold = true
         onEvent?(
@@ -366,6 +432,7 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
           "dx": Double(onScreen.x - lastFocal.x), "dy": Double(onScreen.y - lastFocal.y),
           "vx": 0.0, "vy": 0.0,
           "scale": Double(recognizer.scale),
+          "rotation": Double(turn((fingerAngle(recognizer) ?? angleFrom) - angleFrom)),
           "pointers": recognizer.numberOfTouches,
         ])
       lastFocal = onScreen
@@ -444,7 +511,8 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     surface.backgroundColor = next.color
     applyGradient()
     alpha = min(max(next.opacity, 0), 1)
-    transform = next.transform
+    transform = stuckBy == 0
+      ? next.transform : next.transform.concatenating(.init(translationX: 0, y: stuckBy))
     isUserInteractionEnabled = !next.ignorePointer
     // What the box says of itself to a screen reader - whether it is an
     // element, its name, its traits - is worked out when it is asked for (see
@@ -1356,6 +1424,8 @@ struct DnnPaint {
   /// A blur's sigma; zero for none.
   var blur: CGFloat = 0
   var gradient: DnnPaintGradient?
+  /// How what it draws is laid over what is there.
+  var blend: CGBlendMode = .normal
   var color = UIColor.black
   var stroke = false
   var width: CGFloat = 0
@@ -1401,6 +1471,7 @@ final class DnnCanvasDrawingView: UIView {
       paint.color = dnnColor(map["color"]) ?? .black
       paint.gradient = DnnPaintGradient(map["gradient"])
       paint.blur = max(0, dnnNumber(map["blur"]) ?? 0)
+      paint.blend = dnnBlendMode(map["blend"] as? String)
       paint.stroke = (map["style"] as? String) == "stroke"
       paint.width = dnnNumber(map["strokeWidth"]) ?? 0
       switch map["cap"] as? String {
@@ -1471,6 +1542,9 @@ final class DnnCanvasDrawingView: UIView {
     evenOdd: Bool = false
   ) {
     let rule: CGPathFillRule = evenOdd ? .evenOdd : .winding
+    // In the paint's blend, and back to the plain one after.
+    context.setBlendMode(paint.blend)
+    defer { context.setBlendMode(.normal) }
     context.addPath(path)
     let stroked = paint.stroke || strokeOnly
     if stroked {
@@ -1653,6 +1727,8 @@ final class DnnCanvasDrawingView: UIView {
   override func draw(_ rect: CGRect) {
     guard let context = UIGraphicsGetCurrentContext() else { return }
     var saves = 0
+    // The depth each open layer was begun at, innermost last.
+    var layers: [Int] = []
     for raw in commands {
       guard let command = raw as? [Any], let name = command.first as? String else { continue }
       switch name {
@@ -1705,9 +1781,22 @@ final class DnnCanvasDrawingView: UIView {
       case "save":
         context.saveGState()
         saves += 1
+      case "saveLayer":
+        // Drawn on its own until the matching restore, then laid over the
+        // canvas at the paint's opacity and in its blend.
+        context.saveGState()
+        saves += 1
+        context.setAlpha(min(max(num(command, 1), 0), 1))
+        context.setBlendMode(dnnBlendMode(item(command, 2) as? String))
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        layers.append(saves)
       case "restore":
         // An unmatched restore would pop UIKit's own state.
         if saves > 0 {
+          if layers.last == saves {
+            layers.removeLast()
+            context.endTransparencyLayer()
+          }
           context.restoreGState()
           saves -= 1
         }
@@ -1738,6 +1827,10 @@ final class DnnCanvasDrawingView: UIView {
       }
     }
     while saves > 0 {
+      if layers.last == saves {
+        layers.removeLast()
+        context.endTransparencyLayer()
+      }
       context.restoreGState()
       saves -= 1
     }
@@ -2107,14 +2200,26 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
     NSLayoutConstraint.activate(next)
   }
 
-  private func setOffset(_ value: CGFloat, animated: Bool = false) {
+  private func setOffset(
+    _ value: CGFloat, animated: Bool = false, seconds: TimeInterval = 0,
+    points: (CGPoint, CGPoint)? = nil
+  ) {
     let target = horizontal ? CGPoint(x: value, y: 0) : CGPoint(x: 0, y: value)
-    if contentOffset != target { setContentOffset(target, animated: animated) }
+    DnnScrollTravel.stop(self)
+    guard contentOffset != target else { return }
+    if animated && seconds > 0 {
+      DnnScrollTravel.go(self, to: target, seconds: seconds, points: points)
+    } else {
+      setContentOffset(target, animated: animated)
+    }
   }
 
   /// Scrolls to [offset] now, or as soon as there is content to scroll -
   /// travelling there when [animated], if there is somewhere to travel from.
-  func jump(to offset: CGFloat, animated: Bool = false) {
+  func jump(
+    to offset: CGFloat, animated: Bool = false, seconds: TimeInterval = 0,
+    points: (CGPoint, CGPoint)? = nil
+  ) {
     if settled {
       let viewport = horizontal ? bounds.width : bounds.height
       let extent = horizontal ? contentSize.width : contentSize.height
@@ -2122,7 +2227,8 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
       // Reversed, an offset counts from the far end - as it does on the
       // other renderers, and as `onReport` says it.
       let held = min(max(0, offset), maxOffset)
-      setOffset(reverse ? maxOffset - held : held, animated: animated)
+      setOffset(
+        reverse ? maxOffset - held : held, animated: animated, seconds: seconds, points: points)
     } else {
       pendingJump = offset
     }
@@ -3091,5 +3197,122 @@ final class DnnRailView: UIView {
 
   @objc private func tapped(_ sender: UIButton) {
     onSelect?(sender.tag)
+  }
+}
+
+
+/// Moves a scroller to an offset over a time the app said, along its curve,
+/// a frame at a time - so that a windowed list hears every step, as it does
+/// under a finger. UIKit's own animated scroll keeps a pace of its own.
+final class DnnScrollTravel: NSObject {
+  private static let travels = NSMapTable<UIScrollView, DnnScrollTravel>.weakToStrongObjects()
+
+  private weak var view: UIScrollView?
+  private let from: CGPoint
+  private let to: CGPoint
+  private let seconds: TimeInterval
+  private let points: (CGPoint, CGPoint)?
+  private var start: CFTimeInterval?
+  private var link: CADisplayLink?
+
+  private init(
+    _ view: UIScrollView, to: CGPoint, seconds: TimeInterval, points: (CGPoint, CGPoint)?
+  ) {
+    self.view = view
+    self.from = view.contentOffset
+    self.to = to
+    self.seconds = seconds
+    self.points = points
+  }
+
+  /// Sends [view] to [target] over [seconds] along the cubic [points] -
+  /// straight, when there are none - in place of any travel it was on.
+  static func go(
+    _ view: UIScrollView, to target: CGPoint, seconds: TimeInterval,
+    points: (CGPoint, CGPoint)?
+  ) {
+    stop(view)
+    let travel = DnnScrollTravel(view, to: target, seconds: seconds, points: points)
+    travels.setObject(travel, forKey: view)
+    let link = CADisplayLink(target: travel, selector: #selector(step(_:)))
+    travel.link = link
+    link.add(to: .main, forMode: .common)
+  }
+
+  /// Ends the travel [view] is on, where it has got to.
+  static func stop(_ view: UIScrollView) {
+    travels.object(forKey: view)?.link?.invalidate()
+    travels.removeObject(forKey: view)
+  }
+
+  @objc private func step(_ link: CADisplayLink) {
+    guard let view = view else {
+      link.invalidate()
+      return
+    }
+    // A finger on it takes it from here.
+    if view.isTracking || view.isDragging {
+      DnnScrollTravel.stop(view)
+      return
+    }
+    let begun = start ?? link.timestamp
+    start = begun
+    let t = seconds <= 0 ? 1 : min(1, (link.timestamp - begun) / seconds)
+    let eased = points.map { dnnBezier($0.0, $0.1, CGFloat(t)) } ?? CGFloat(t)
+    view.contentOffset = CGPoint(
+      x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased)
+    if t >= 1 { DnnScrollTravel.stop(view) }
+  }
+}
+
+/// y at x = [t] on the cubic Bézier through (0,0), [one], [two] and (1,1).
+func dnnBezier(_ one: CGPoint, _ two: CGPoint, _ t: CGFloat) -> CGFloat {
+  func at(_ p1: CGFloat, _ p2: CGFloat, _ m: CGFloat) -> CGFloat {
+    3 * p1 * (1 - m) * (1 - m) * m + 3 * p2 * (1 - m) * m * m + m * m * m
+  }
+  var low: CGFloat = 0
+  var high: CGFloat = 1
+  var middle = t
+  for _ in 0..<30 {
+    middle = (low + high) / 2
+    let x = at(one.x, two.x, middle)
+    if abs(x - t) < 0.0001 { break }
+    if x < t { low = middle } else { high = middle }
+  }
+  return at(one.y, two.y, middle)
+}
+
+
+/// Core Graphics' blend for a Flutter `BlendMode` name: how what is drawn is
+/// laid over what is there.
+func dnnBlendMode(_ name: String?) -> CGBlendMode {
+  switch name {
+  case "clear": return .clear
+  case "src": return .copy
+  case "dstOver", "dst": return .destinationOver
+  case "srcIn": return .sourceIn
+  case "dstIn": return .destinationIn
+  case "srcOut": return .sourceOut
+  case "dstOut": return .destinationOut
+  case "srcATop": return .sourceAtop
+  case "dstATop": return .destinationAtop
+  case "xor": return .xor
+  case "plus": return .plusLighter
+  case "modulate", "multiply": return .multiply
+  case "screen": return .screen
+  case "overlay": return .overlay
+  case "darken": return .darken
+  case "lighten": return .lighten
+  case "colorDodge": return .colorDodge
+  case "colorBurn": return .colorBurn
+  case "hardLight": return .hardLight
+  case "softLight": return .softLight
+  case "difference": return .difference
+  case "exclusion": return .exclusion
+  case "hue": return .hue
+  case "saturation": return .saturation
+  case "color": return .color
+  case "luminosity": return .luminosity
+  default: return .normal
   }
 }

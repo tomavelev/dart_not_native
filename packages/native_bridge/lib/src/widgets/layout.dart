@@ -970,12 +970,11 @@ class Transform extends Widget {
     this.alignment = Alignment.center,
     this.child,
   }) : transform = null,
-       // One number is all the node has; two that differ are averaged, which
-       // keeps the size about right and gives up the stretch.
+       // A scale along each axis: the second only when it differs.
        _map = {
-         'scale':
-             scale ??
-             ((scaleX ?? 1.0) + (scaleY ?? 1.0)) / 2,
+         'scale': scale ?? scaleX ?? 1.0,
+         if ((scale ?? scaleY ?? 1.0) != (scale ?? scaleX ?? 1.0))
+           'scaleY': scale ?? scaleY ?? 1.0,
        };
 
   Transform.translate({super.key, required Offset offset, this.child})

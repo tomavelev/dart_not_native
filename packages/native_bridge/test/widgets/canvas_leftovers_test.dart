@@ -288,6 +288,40 @@ void main() {
     });
   });
 
+  test('a paint\'s blend mode travels with it; source-over is not said', () {
+    final drawn = _drawn((canvas, size) {
+      canvas
+        ..drawRect(
+          const Rect.fromLTWH(0, 0, 10, 10),
+          Paint()
+            ..color = _red
+            ..blendMode = BlendMode.multiply,
+        )
+        ..drawRect(const Rect.fromLTWH(0, 0, 10, 10), Paint()..color = _red);
+    });
+    expect(drawn.paints, hasLength(2), reason: 'a blend is a different paint');
+    expect(drawn.paints.first['blend'], 'multiply');
+    expect(drawn.paints.last.containsKey('blend'), isFalse);
+  });
+
+  test('saveLayer is a layer, with its opacity and blend', () {
+    final drawn = _drawn((canvas, size) {
+      canvas
+        ..saveLayer(
+          null,
+          Paint()
+            ..color = const Color(0x80000000)
+            ..blendMode = BlendMode.screen,
+        )
+        ..drawCircle(const Offset(20, 20), 10, Paint())
+        ..restore();
+    });
+    expect(drawn.commands.first.first, 'saveLayer');
+    expect(drawn.commands.first[1], closeTo(0.5, 0.01));
+    expect(drawn.commands.first[2], 'screen');
+    expect(drawn.commands.last, ['restore']);
+  });
+
   test('a path filled even-odd says so, and so does a clip', () {
     final drawn = _drawn((canvas, size) {
       final ring = Path()

@@ -34,4 +34,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 150));
     expect(said, [1]);
   });
+
+  testWidgets('a cubic curve is drawn as that cubic', (tester) async {
+    final renderer = FlutterUIRenderer();
+    await renderer.render(
+      const WidgetNode(
+        type: 'AnimatedOpacity',
+        props: {
+          'opacity': 0.5,
+          'durationMs': 200,
+          'curve': 'cubic(0.4,0.0,0.2,1.0)',
+        },
+        children: [WidgetNode(type: 'Text', props: {'content': 'hi'})],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: Builder(builder: renderer.build)),
+    );
+    final fade = tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity));
+    final cubic = fade.curve as Cubic;
+    expect([cubic.a, cubic.b, cubic.c, cubic.d], [0.4, 0.0, 0.2, 1.0]);
+  });
 }
