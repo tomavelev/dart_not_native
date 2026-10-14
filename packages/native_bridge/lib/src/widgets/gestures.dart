@@ -81,6 +81,79 @@ class DragEndDetails {
   final Offset localPosition;
 }
 
+/// A [GestureDetector] hearing a scale whose one finger moves along
+/// [axis] only, so that a movement the other way is the scroller's around
+/// it - an [InteractiveViewer] that pans one way.
+class _AxisScaleDetector extends GestureDetector {
+  const _AxisScaleDetector({
+    required this.axis,
+    super.onScaleStart,
+    super.onScaleUpdate,
+    super.onScaleEnd,
+    super.child,
+  });
+  final String? axis;
+
+  @override
+  String? get _scaleAxis => axis;
+}
+
+/// Where a scale - a pinch, or a pan, which is a scale of one - began.
+class ScaleStartDetails {
+  const ScaleStartDetails({
+    this.focalPoint = Offset.zero,
+    Offset? localFocalPoint,
+    this.pointerCount = 1,
+  }) : localFocalPoint = localFocalPoint ?? focalPoint;
+
+  /// The point between the fingers.
+  final Offset focalPoint;
+  final Offset localFocalPoint;
+  final int pointerCount;
+}
+
+/// How far a scale has gone: [scale] is the fingers' spread over what it was
+/// when they came down, and [focalPointDelta] how far the point between them
+/// moved since the last update.
+class ScaleUpdateDetails {
+  const ScaleUpdateDetails({
+    this.focalPoint = Offset.zero,
+    Offset? localFocalPoint,
+    this.scale = 1.0,
+    this.horizontalScale = 1.0,
+    this.verticalScale = 1.0,
+    this.rotation = 0.0,
+    this.pointerCount = 1,
+    this.focalPointDelta = Offset.zero,
+  }) : localFocalPoint = localFocalPoint ?? focalPoint;
+  final Offset focalPoint;
+  final Offset localFocalPoint;
+  final double scale;
+  final double horizontalScale;
+  final double verticalScale;
+
+  /// Always zero: no renderer reports a turn.
+  final double rotation;
+  final int pointerCount;
+  final Offset focalPointDelta;
+}
+
+/// How fast the point between the fingers was going when they lifted.
+class ScaleEndDetails {
+  const ScaleEndDetails({
+    this.velocity = Velocity.zero,
+    this.scaleVelocity = 0.0,
+    this.pointerCount = 0,
+  });
+  final Velocity velocity;
+  final double scaleVelocity;
+  final int pointerCount;
+}
+
+typedef GestureScaleStartCallback = void Function(ScaleStartDetails details);
+typedef GestureScaleUpdateCallback = void Function(ScaleUpdateDetails details);
+typedef GestureScaleEndCallback = void Function(ScaleEndDetails details);
+
 typedef GestureTapCallback = VoidCallback;
 typedef GestureTapDownCallback = void Function(TapDownDetails details);
 typedef GestureTapUpCallback = void Function(TapUpDetails details);
@@ -95,8 +168,12 @@ typedef GestureDragEndCallback = void Function(DragEndDetails details);
 /// [onTap] fire together, in that order, with the point of the tap. The three
 /// kinds of drag - a pan, a horizontal drag, a vertical drag - are all the one
 /// drag the platform reports; each handler given is called, with the movement
-/// along its axis as `primaryDelta`. [behavior] is accepted and not carried:
-/// a box takes the touches that land on it.
+/// along its axis as `primaryDelta`. [onScaleStart], [onScaleUpdate] and
+/// [onScaleEnd] hear the same drag with a second finger's pinch in it: one
+/// finger is a scale of one that moves its focal point, two spread or close
+/// it. As in Flutter, a detector listens for a scale or a drag, not both:
+/// with a scale handler, the drag handlers are not called. [behavior] is
+/// accepted and not carried: a box takes the touches that land on it.
 class GestureDetector extends Widget {
   const GestureDetector({
     super.key,
@@ -116,6 +193,9 @@ class GestureDetector extends Widget {
     this.onVerticalDragStart,
     this.onVerticalDragUpdate,
     this.onVerticalDragEnd,
+    this.onScaleStart,
+    this.onScaleUpdate,
+    this.onScaleEnd,
     this.behavior,
     this.excludeFromSemantics = false,
   });
@@ -137,10 +217,56 @@ class GestureDetector extends Widget {
   final GestureDragStartCallback? onVerticalDragStart;
   final GestureDragUpdateCallback? onVerticalDragUpdate;
   final GestureDragEndCallback? onVerticalDragEnd;
+  final GestureScaleStartCallback? onScaleStart;
+  final GestureScaleUpdateCallback? onScaleUpdate;
+  final GestureScaleEndCallback? onScaleEnd;
   final HitTestBehavior? behavior;
   final bool excludeFromSemantics;
 
   bool get _taps => onTap != null || onTapDown != null || onTapUp != null;
+
+  bool get _scales =>
+      onScaleStart != null || onScaleUpdate != null || onScaleEnd != null;
+
+  /// The one axis a scale's single finger moves along, when it is held to
+  /// one: none, for a detector the app made.
+  String? get _scaleAxis => null;
+
+  void _scale(String phase, Map<String, dynamic> data) {
+    double n(String key, [double fallback = 0]) =>
+        (data[key] as num?)?.toDouble() ?? fallback;
+    final at = Offset(n('x'), n('y'));
+    final fingers = (data['pointers'] as num?)?.toInt() ?? 1;
+    switch (phase) {
+      case 'start':
+        onScaleStart?.call(
+          ScaleStartDetails(
+            focalPoint: at,
+            localFocalPoint: at,
+            pointerCount: fingers,
+          ),
+        );
+      case 'update':
+        final scale = n('scale', 1);
+        onScaleUpdate?.call(
+          ScaleUpdateDetails(
+            focalPoint: at,
+            localFocalPoint: at,
+            scale: scale,
+            horizontalScale: scale,
+            verticalScale: scale,
+            pointerCount: fingers,
+            focalPointDelta: Offset(n('dx'), n('dy')),
+          ),
+        );
+      case 'end':
+        onScaleEnd?.call(
+          ScaleEndDetails(
+            velocity: Velocity(pixelsPerSecond: Offset(n('vx'), n('vy'))),
+          ),
+        );
+    }
+  }
 
   bool get _drags =>
       onPanStart != null ||
@@ -238,7 +364,12 @@ class GestureDetector extends Widget {
     final node = child == null ? null : _renderChild(owner, child!);
     final doubleTap = onDoubleTap;
     final longPress = onLongPress;
-    if (!_taps && !_drags && doubleTap == null && longPress == null) {
+    final scales = _scales;
+    if (!_taps &&
+        !_drags &&
+        !scales &&
+        doubleTap == null &&
+        longPress == null) {
       return node ?? UIBuilder.sizedBox();
     }
     return UIBuilder.box(
@@ -254,8 +385,9 @@ class GestureDetector extends Widget {
           : null,
       onDoubleTap: doubleTap == null ? null : (_, _) => doubleTap(),
       onLongPress: longPress == null ? null : (_, _) => longPress(),
-      onPan: _drags ? _pan : null,
-      panAxis: _drags ? _dragAxis : null,
+      onPan: scales ? _scale : (_drags ? _pan : null),
+      panAxis: scales ? _scaleAxis : (_drags ? _dragAxis : null),
+      panScale: scales,
       expand: _expandOfChild(node),
       id: _idOf(key),
       child: node,
@@ -343,14 +475,11 @@ class Draggable<T extends Object> extends Widget {
       owner._dragData[token] = _Dragged(data, onDragCompleted);
     }
     final away = childWhenDragging;
-    final listens =
-        away != null ||
-        onDragStarted != null ||
-        onDragEnd != null ||
-        onDraggableCanceled != null;
     return UIBuilder.box(
       dragData: token,
-      onDrag: listens ? (phase) => _dragged(owner, token, phase) : null,
+      // Heard whether or not the app listens: a target under the drag says
+      // what is over it from the drags in the air.
+      onDrag: (phase) => _dragged(owner, token, phase),
       id: _idOf(key),
       // The box is the one the platform lifted a picture of; what it holds
       // in the meantime is the app's to say.
@@ -467,6 +596,19 @@ class _DragTargetState<T extends Object> extends State<DragTarget<T>> {
     if (!over) widget.onLeave?.call(null);
   }
 
+  /// What is over the target: the data of the drags in the air that this
+  /// target takes - or, for one from outside the app, nothing it can name.
+  List<T?> _candidates(_Owner owner) {
+    if (!_hovering) return <T?>[];
+    final carried = [
+      for (final token in owner._dragging)
+        if ((owner._dragData[token] ?? owner._dragDataBefore[token])?.data
+            case final T data)
+          data,
+    ];
+    return carried.isEmpty ? <T?>[null] : carried;
+  }
+
   @override
   Widget build(BuildContext context) => _NodeWidget(
     (owner) => UIBuilder.box(
@@ -477,7 +619,7 @@ class _DragTargetState<T extends Object> extends State<DragTarget<T>> {
         'child',
         () => widget.builder(
           owner._context(),
-          _hovering ? <T?>[null] : <T?>[],
+          _candidates(owner),
           const <dynamic>[],
         )._render(owner),
       ),

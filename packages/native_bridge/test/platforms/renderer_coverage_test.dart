@@ -351,6 +351,11 @@ void main() {
         'NativeUIRenderer.kt';
     const swift =
         'ios/dart_not_native/Sources/dart_not_native/NativeUIRenderer.swift';
+    const views =
+        'android/src/main/kotlin/com/programtom/dart_not_native/'
+        'NativeUIViews.kt';
+    const swiftViews =
+        'ios/dart_not_native/Sources/dart_not_native/NativeUIViews.swift';
 
     /// What each renderer's function must still contain: a name for the
     /// test, the file, the function's opening, and the lines that do the job.
@@ -461,6 +466,102 @@ void main() {
         swift,
         'private func flyHeroes(',
         ['heroViews', 'snapshotView(afterScreenUpdates: true)'],
+      ),
+      // An image's tint, blended as `blend` says.
+      (
+        'Android (Kotlin) blends an image\'s tint as asked',
+        kotlin,
+        'private fun tintFilter(',
+        ['BlendModeColorFilter', 'PorterDuffColorFilter'],
+      ),
+      (
+        'iOS (Swift) blends an image\'s tint as asked',
+        swift,
+        'private func blended(',
+        ['context.fill(rect, blendMode: mode)'],
+      ),
+      // A moving node that asked is told when it has got there.
+      (
+        'Android (Kotlin) says when a move has finished',
+        kotlin,
+        'private fun endAnswer(',
+        ['"ask" to ask'],
+      ),
+      (
+        'Android (Kotlin) answers a box\'s move from its animator',
+        kotlin,
+        'private fun configureBox(',
+        ['onDone = endAnswer(box, node)', 'box.sizeMs'],
+      ),
+      (
+        'iOS (Swift) says when a move has finished',
+        swift,
+        'private func endAnswer(',
+        ['"ask": ask'],
+      ),
+      (
+        'iOS (Swift) answers a box\'s move when the animation completes',
+        swift,
+        'private func patchBox(',
+        ['completion: { finished in if finished { done?() } }'],
+      ),
+      // A box that moves to the size its child comes to.
+      (
+        'Android (Kotlin) moves a box to its child\'s new size',
+        views,
+        'private fun shownSize(',
+        ['ValueAnimator.ofFloat', 'requestLayout()'],
+      ),
+      (
+        'iOS (Swift) moves a box to its child\'s new size',
+        swift,
+        'private func moveSizes(',
+        ['pinSize(old)', 'unpinSize()'],
+      ),
+      // A canvas path and clip by the even-odd rule, and a blurred gradient.
+      (
+        'Android (Kotlin) fills and clips a path by the even-odd rule',
+        views,
+        'private fun canvasPath(',
+        ['Path.FillType.EVEN_ODD'],
+      ),
+      (
+        'iOS (Swift) fills a path by the even-odd rule',
+        swiftViews,
+        'private func fillOrStroke(',
+        ['.evenOdd', 'blurredGradient('],
+      ),
+      (
+        'iOS (Swift) blurs a gradient rather than drawing it sharp',
+        swiftViews,
+        'private func blurredGradient(',
+        ['CIGaussianBlur'],
+      ),
+      // A pan that hears a second finger reports the pinch.
+      (
+        'Android (Kotlin) reports a pinch',
+        views,
+        'private fun movePinch(',
+        ['"scale" to', '"pointers" to 2'],
+      ),
+      (
+        'iOS (Swift) reports a pinch',
+        swiftViews,
+        '@objc private func handlePinch(',
+        ['recognizer.scale', '"pointers"'],
+      ),
+      // What a drag is over is said to the target round the box listening.
+      (
+        'Android (Kotlin) hands a drag over a box to the target round it',
+        views,
+        'private val dropListener: OnDragListener',
+        ['target.dropListener.onDrag(target, event)'],
+      ),
+      (
+        'iOS (Swift) lets a scroller take the width a column offers',
+        swift,
+        'private func fillsWidth(',
+        ['case "Scroll", "LazyList":'],
       ),
       (
         'iOS (Swift) reports hardware keys',

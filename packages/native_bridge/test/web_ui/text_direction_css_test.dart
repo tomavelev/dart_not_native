@@ -141,10 +141,20 @@ void main() {
       expect(blockOf(selector), contains('justify-self: stretch'));
     });
 
-    test('and an Expanded in a column around it', () {
+    test('and an Expanded in a column around it - or around a scroller', () {
       expect(
         blockOf(
-          '.dnn-column > .dnn-expanded:has(> :is(.dnn-row--size-max, .dnn-fill-w))',
+          '.dnn-column > .dnn-expanded:has(> :is(.dnn-row--size-max, '
+          '.dnn-fill-w, .dnn-scroll, .dnn-lazylist))',
+        ),
+        contains('align-self: stretch'),
+      );
+    });
+
+    test('and a box with only a height round a child that fills', () {
+      expect(
+        blockOf(
+          '.dnn-column > .dnn-box:not([style*="width"]):has(> .dnn-fill-w)',
         ),
         contains('align-self: stretch'),
       );

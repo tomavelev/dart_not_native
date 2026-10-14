@@ -959,10 +959,11 @@ typedef ReorderCallback = void Function(int oldIndex, int newIndex);
 ///
 /// Built on the platform's drag and drop: a row is picked up (after a long
 /// press on a touch screen) and dropped on the row whose place it takes.
-/// The rows do not part to show where it will land - the row under it is
-/// what says so, by what the app draws there - and there is no drag handle:
-/// the whole row is what is held.
-class ReorderableListView extends StatelessWidget {
+/// While it is over a row, the rows part there - a gap as tall as the row
+/// being moved opens on the side it will land - and close again when it
+/// moves on. There is no drag handle: the whole row is what is held, and it
+/// stays in its place, dimmed by the platform, until it is dropped.
+class ReorderableListView extends StatefulWidget {
   const ReorderableListView({
     super.key,
     required List<Widget> this.children,
@@ -1026,40 +1027,59 @@ class ReorderableListView extends StatelessWidget {
   final Object? proxyDecorator;
 
   @override
+  State<ReorderableListView> createState() => _ReorderableListViewState();
+}
+
+class _ReorderableListViewState extends State<ReorderableListView> {
+  /// How long - along the list - each row came out, by index, as the
+  /// renderer reported: the size of the gap a row being moved needs.
+  final Map<int, double> _lengths = {};
+
+  @override
   Widget build(BuildContext context) {
-    final count = children?.length ?? itemCount!;
-    Widget rowAt(int index) => children?[index] ?? itemBuilder!(context, index);
+    final widget = this.widget;
+    final count = widget.children?.length ?? widget.itemCount!;
+    Widget rowAt(int index) =>
+        widget.children?[index] ?? widget.itemBuilder!(context, index);
     return ListView(
-      padding: padding,
-      reverse: reverse,
-      controller: scrollController,
-      physics: physics,
-      shrinkWrap: shrinkWrap,
-      scrollDirection: scrollDirection,
+      padding: widget.padding,
+      reverse: widget.reverse,
+      controller: widget.scrollController,
+      physics: widget.physics,
+      shrinkWrap: widget.shrinkWrap,
+      scrollDirection: widget.scrollDirection,
       children: [
-        ?header,
+        ?widget.header,
         for (var index = 0; index < count; index++)
           _ReorderRow(
             key: rowAt(index).key,
             index: index,
-            onReorder: onReorder,
-            onStart: onReorderStart,
-            onEnd: onReorderEnd,
+            onReorder: widget.onReorder,
+            onStart: widget.onReorderStart,
+            onEnd: widget.onReorderEnd,
+            vertical: widget.scrollDirection == Axis.vertical,
+            // Higher up the screen is the end of a reversed list.
+            reverse: widget.reverse,
+            lengths: _lengths,
             child: rowAt(index),
           ),
-        ?footer,
+        ?widget.footer,
       ],
     );
   }
 }
 
-/// A row that can be picked up, and dropped on.
+/// A row that can be picked up, and dropped on - and that parts from its
+/// neighbour while a row is over it, on the side that row will land.
 class _ReorderRow extends StatelessWidget {
   const _ReorderRow({
     super.key,
     required this.index,
     required this.onReorder,
     required this.child,
+    required this.vertical,
+    required this.reverse,
+    required this.lengths,
     this.onStart,
     this.onEnd,
   });
@@ -1067,7 +1087,12 @@ class _ReorderRow extends StatelessWidget {
   final ReorderCallback onReorder;
   final void Function(int index)? onStart;
   final void Function(int index)? onEnd;
+  final bool vertical;
+  final bool reverse;
+  final Map<int, double> lengths;
   final Widget child;
+
+  static const Duration _parting = Duration(milliseconds: 160);
 
   @override
   Widget build(BuildContext context) => DragTarget<_Reordered>(
@@ -1078,14 +1103,63 @@ class _ReorderRow extends StatelessWidget {
       // the place after it once the row itself has gone.
       onReorder(from, from < index ? index + 1 : index);
     },
-    builder: (context, candidates, rejected) => Draggable<_Reordered>(
-      data: _Reordered(index),
-      feedback: const SizedBox.shrink(),
-      onDragStarted: onStart == null ? null : () => onStart!(index),
-      onDragEnd: onEnd == null ? null : (_) => onEnd!(index),
-      // Something is over this row: it is where the dragged one will go.
-      child: candidates.isEmpty ? child : Opacity(opacity: 0.5, child: child),
-    ),
+    builder: (context, candidates, rejected) {
+      final from = candidates.firstOrNull?.index;
+      // Coming from before, the row lands after this one; from after, before
+      // it - so the gap opens on that side.
+      final after = from != null && from < index;
+      final before = from != null && from > index;
+      final length = from == null ? 0.0 : lengths[from] ?? 48.0;
+      Widget gap(bool open) => AnimatedContainer(
+        duration: _parting,
+        curve: Curves.easeOut,
+        width: vertical ? null : (open ? length : 0),
+        height: vertical ? (open ? length : 0) : null,
+      );
+      final row = Draggable<_Reordered>(
+        data: _Reordered(index),
+        feedback: const SizedBox.shrink(),
+        onDragStarted: onStart == null ? null : () => onStart!(index),
+        onDragEnd: onEnd == null ? null : (_) => onEnd!(index),
+        child: _Measured(
+          onSize: (size) =>
+              lengths[index] = vertical ? size.height : size.width,
+          child: child,
+        ),
+      );
+      // Always both gaps, closed at rest, so that opening one moves nothing
+      // but the rows after it.
+      final parts = [
+        gap(reverse ? after : before),
+        row,
+        gap(reverse ? before : after),
+      ];
+      // As wide as the list, as a row of a list is.
+      return vertical
+          ? SizedBox(
+              width: double.infinity,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: parts,
+              ),
+            )
+          : Row(mainAxisSize: MainAxisSize.min, children: parts);
+    },
+  );
+}
+
+/// [child], and what the renderer says its size came to.
+class _Measured extends Widget {
+  const _Measured({required this.onSize, required this.child});
+  final void Function(Size size) onSize;
+  final Widget child;
+
+  @override
+  WidgetNode _render(_Owner owner) => UIBuilder.box(
+    onSize: (width, height) => onSize(Size(width, height)),
+    expand: owner._unboundedHeight ? 'width' : null,
+    child: _renderChild(owner, child),
   );
 }
 
@@ -1132,12 +1206,12 @@ class TransformationController extends ValueNotifier<Matrix4> {
     : super(value ?? Matrix4.identity());
 }
 
-/// A child that is dragged about, and zoomed by its controller.
+/// A child that is dragged about and pinched to zoom.
 ///
-/// A finger pans the child. **Two fingers do not zoom it:** no renderer
-/// reports a pinch, so the scale is whatever the [transformationController]
-/// says - which is how an app gives it zoom buttons - held between
-/// [minScale] and [maxScale]. The child is not kept inside the viewer:
+/// A finger pans the child; two spread or close to scale it about the point
+/// between them ([scaleEnabled]), held between [minScale] and [maxScale] -
+/// as is a scale the [transformationController] is given, which is how an
+/// app gives it zoom buttons. The child is not kept inside the viewer:
 /// [boundaryMargin] is accepted and not carried.
 class InteractiveViewer extends StatefulWidget {
   const InteractiveViewer({
@@ -1221,6 +1295,49 @@ class _InteractiveViewerState extends State<InteractiveViewer> {
     widget.onInteractionUpdate?.call(details);
   }
 
+  /// The viewer's size, as the renderer said: the transform turns about the
+  /// child's middle, which a scale about the fingers has to allow for.
+  Size? _size;
+
+  /// The spread the last update was at, to scale by the change since.
+  double _lastScale = 1;
+
+  void _scaleStart(ScaleStartDetails details) {
+    _lastScale = 1;
+    widget.onInteractionStart?.call(details);
+  }
+
+  void _scaleUpdate(ScaleUpdateDetails details) {
+    final shown = _controller.value.clone();
+    if (widget.panEnabled) {
+      final across = widget.panAxis != PanAxis.vertical;
+      final down = widget.panAxis != PanAxis.horizontal;
+      shown.translate(
+        across ? details.focalPointDelta.dx : 0,
+        down ? details.focalPointDelta.dy : 0,
+      );
+    }
+    if (widget.scaleEnabled && details.pointerCount > 1 && _lastScale > 0) {
+      final was = shown._scaleX;
+      final wanted = (was * details.scale / _lastScale)
+          .clamp(widget.minScale, widget.maxScale)
+          .toDouble();
+      final by = was == 0 ? 1.0 : wanted / was;
+      // Scaled about the point between the fingers: the one place on the
+      // child that does not move. The box turns about its middle, so the
+      // shift makes up the difference.
+      final middle = (_size ?? Size.zero).center(Offset.zero);
+      final focal = details.localFocalPoint;
+      shown
+        .._dx = (1 - by) * (focal.dx - middle.dx) + by * shown._dx
+        .._dy = (1 - by) * (focal.dy - middle.dy) + by * shown._dy
+        ..scale(by);
+    }
+    _lastScale = details.scale;
+    _controller.value = shown;
+    widget.onInteractionUpdate?.call(details);
+  }
+
   @override
   Widget build(BuildContext context) {
     final shown = _controller.value.clone();
@@ -1232,6 +1349,24 @@ class _InteractiveViewerState extends State<InteractiveViewer> {
     final clipped = widget.clipBehavior == Clip.none
         ? moved as Widget
         : ClipRect(child: moved);
+    if (widget.scaleEnabled) {
+      return _Measured(
+        onSize: (size) => _size = size,
+        child: _AxisScaleDetector(
+          axis: !widget.panEnabled
+              ? null
+              : switch (widget.panAxis) {
+                  PanAxis.horizontal => 'horizontal',
+                  PanAxis.vertical => 'vertical',
+                  _ => null,
+                },
+          onScaleStart: _scaleStart,
+          onScaleUpdate: _scaleUpdate,
+          onScaleEnd: widget.onInteractionEnd,
+          child: clipped,
+        ),
+      );
+    }
     if (!widget.panEnabled) return clipped;
     final across = widget.panAxis == PanAxis.horizontal;
     final down = widget.panAxis == PanAxis.vertical;

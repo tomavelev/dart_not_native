@@ -830,6 +830,7 @@ class UIBuilder {
     double? height,
     String fit = 'cover',
     String? color,
+    String? blend,
     WidgetNode? fallback,
     String? eventId,
     void Function(bool loaded)? onLoad,
@@ -852,6 +853,9 @@ class UIBuilder {
         // A tint: the picture's shape, filled with this one colour - what an
         // icon kept as an image is drawn with.
         if (color != null) 'color': color,
+        // How the tint meets the picture, by Flutter's `BlendMode` name -
+        // `srcIn` when there is none.
+        if (color != null && blend != null && blend != 'srcIn') 'blend': blend,
         // How the load ended: the renderer sends `{state: 'loaded'}` once
         // the picture is showing - at once, for one it already holds - or
         // `{state: 'failed'}` when it has given up. Sent each time the
@@ -1228,7 +1232,10 @@ class UIBuilder {
   /// it was given.
   ///
   /// **Motion.** With [animateMs], a change to size, colour, opacity or
-  /// transform moves there over that long instead of landing at once.
+  /// transform moves there over that long instead of landing at once. With
+  /// [animateSize] as well, so does a change to the size the box comes to
+  /// round its child - a child that grew or shrank in this render - which
+  /// is clipped to the box on the way when [clip] says so.
   ///
   /// **Accessibility.** A box that takes a tap is announced as a button named
   /// by the text inside it; [semanticLabel] names it instead, and names a box
@@ -1273,6 +1280,7 @@ class UIBuilder {
     void Function(double x, double y)? onLongPress,
     void Function(String phase, Map<String, dynamic> data)? onPan,
     String? panAxis,
+    bool panScale = false,
     bool ripple = false,
     String? dragData,
     void Function(String phase)? onDrag,
@@ -1291,6 +1299,7 @@ class UIBuilder {
     String? tooltip,
     bool ignorePointer = false,
     String? hero,
+    bool animateSize = false,
     String? id,
   }) {
     double n(Map<String, dynamic> d, String k) =>
@@ -1401,6 +1410,12 @@ class UIBuilder {
         // box from where the old one stood to its own place, over the
         // transition's time, and shows neither of the two meanwhile.
         if (hero != null) 'hero': hero,
+        if (animateSize) 'animateSize': true,
+        // A pan that hears a second finger: while two are down, an update
+        // also carries `scale` - their spread over what it was when the
+        // second came down - with `x`, `y` and `dx`, `dy` the point between
+        // them, and `pointers`, how many there are.
+        if (panScale && onPan != null) 'panScale': true,
         if (id != null) 'id': id,
       },
       children: [if (child != null) child],

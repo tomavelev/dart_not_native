@@ -290,7 +290,8 @@ void main() {
     final ended = <String>[];
     final hostKey = GlobalKey<_ValueHostState>();
 
-    Future<void> wait([int ms = 90]) =>
+    // Past the duration and the time a silent renderer is given to answer.
+    Future<void> wait([int ms = 330]) =>
         Future<void>.delayed(Duration(milliseconds: ms));
 
     AppTester mount(Widget Function(double value) builder) =>
@@ -355,13 +356,71 @@ void main() {
       );
 
       set(0.5);
-      await wait(40);
+      await wait(200);
       set(0.2);
-      await wait(60);
+      await wait(200);
       expect(ended, isEmpty, reason: 'the second change is still running');
-      await wait(80);
+      await wait(200);
 
       expect(ended, ['opacity']);
+    });
+
+    group('as the renderer says', () {
+      WidgetNode faded() => tester.nodes.firstWhere(
+        (n) => n.type == 'AnimatedOpacity',
+      );
+
+      AppTester fade() => mount(
+        (value) => AnimatedOpacity(
+          opacity: value,
+          duration: const Duration(seconds: 5),
+          onEnd: () => ended.add('opacity'),
+        ),
+      );
+
+      test('a node asks only while a move is on its way', () async {
+        tester = fade();
+        expect(faded().props.containsKey('endEventId'), isFalse);
+
+        set(0.5);
+        expect(faded().props['endAsk'], 1);
+        expect(faded().props['endEventId'], isA<String>());
+
+        await tester.emit(faded().props['endEventId'] as String, {'ask': 1});
+        set(0.5);
+        expect(faded().props.containsKey('endAsk'), isFalse);
+      });
+
+      test('the answer ends it, long before the duration', () async {
+        tester = fade();
+        set(0.5);
+        await tester.emit(faded().props['endEventId'] as String, {'ask': 1});
+
+        expect(ended, ['opacity']);
+      });
+
+      test('an answer about a move since overtaken ends nothing', () async {
+        tester = fade();
+        set(0.5);
+        final id = faded().props['endEventId'] as String;
+        set(0.2);
+        expect(faded().props['endAsk'], 2);
+
+        await tester.emit(id, {'ask': 1});
+        expect(ended, isEmpty);
+        await tester.emit(id, {'ask': 2});
+        expect(ended, ['opacity']);
+      });
+
+      test('an answer said twice ends it once', () async {
+        tester = fade();
+        set(0.5);
+        final id = faded().props['endEventId'] as String;
+        await tester.emit(id, {'ask': 1});
+        await tester.emit(id, {'ask': 1});
+
+        expect(ended, ['opacity']);
+      });
     });
 
     test('a widget that goes away ends nothing', () async {

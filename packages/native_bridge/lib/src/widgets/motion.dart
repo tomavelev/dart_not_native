@@ -231,9 +231,9 @@ const Animation<double> kAlwaysDismissedAnimation = _FixedAnimation(
 /// )
 /// ```
 ///
-/// [onEnd] is called [duration] after a build that changed what this shows.
-/// That is the app's own clock: no renderer reports an animation finishing,
-/// so it is when the animation was asked to end, not when it was seen to.
+/// [onEnd] is called when the renderer says the move a build started has
+/// finished - or, from a renderer that never says, a little after
+/// [duration].
 class AnimatedOpacity extends Widget {
   const AnimatedOpacity({
     super.key,
@@ -283,9 +283,9 @@ class AnimatedOpacity extends Widget {
 /// )
 /// ```
 ///
-/// [onEnd] is called [duration] after a build that changed what this shows.
-/// That is the app's own clock: no renderer reports an animation finishing,
-/// so it is when the animation was asked to end, not when it was seen to.
+/// [onEnd] is called when the renderer says the move a build started has
+/// finished - or, from a renderer that never says, a little after
+/// [duration].
 class AnimatedContainer extends Widget {
   AnimatedContainer({
     super.key,
@@ -641,6 +641,7 @@ class _Switch extends StatefulWidget {
     required this.inCurve,
     required this.outCurve,
     required this.alignment,
+    this.leavingOver = false,
   });
   final Object? identity;
   final Widget? child;
@@ -649,6 +650,10 @@ class _Switch extends StatefulWidget {
   final Curve inCurve;
   final Curve outCurve;
   final AlignmentGeometry alignment;
+
+  /// Whether a child that is leaving is laid over the stack rather than in
+  /// it, so the stack is the size of the child coming in alone.
+  final bool leavingOver;
 
   @override
   State<_Switch> createState() => _SwitchState();
@@ -684,6 +689,24 @@ class _SwitchState extends State<_Switch> {
     super.dispose();
   }
 
+  Widget _gone(_Leaving gone) {
+    final fading = KeyedSubtree(
+      key: _keyOf(gone.serial),
+      child: IgnorePointer(
+        child: _FadeTo(
+          from: 1,
+          to: 0,
+          duration: widget.reverseDuration,
+          curve: widget.outCurve,
+          child: gone.child ?? const SizedBox.shrink(),
+        ),
+      ),
+    );
+    return widget.leavingOver
+        ? Positioned(left: 0, top: 0, right: 0, child: fading)
+        : fading;
+  }
+
   // A key of its own for each child that has been here, so a child's state
   // stays with it while the ones around it come and go.
   Key _keyOf(int serial) => ValueKey('switch-${identityHashCode(this)}-$serial');
@@ -707,19 +730,7 @@ class _SwitchState extends State<_Switch> {
     return Stack(
       alignment: widget.alignment,
       children: [
-        for (final gone in _leaving)
-          KeyedSubtree(
-            key: _keyOf(gone.serial),
-            child: IgnorePointer(
-              child: _FadeTo(
-                from: 1,
-                to: 0,
-                duration: widget.reverseDuration,
-                curve: widget.outCurve,
-                child: gone.child ?? const SizedBox.shrink(),
-              ),
-            ),
-          ),
+        for (final gone in _leaving) _gone(gone),
         current,
       ],
     );
@@ -780,8 +791,15 @@ class _FadeToState extends State<_FadeTo> {
   );
 }
 
-/// Flutter animates its own size as its child's changes. Here the child is
-/// shown at its new size at once.
+/// Moves to the size its child comes to - Flutter's `AnimatedSize`.
+///
+/// When the child grows or shrinks, the box goes from the size it was to the
+/// new one over [duration], the child placed at [alignment] inside it and
+/// clipped to it on the way unless [clipBehavior] is [Clip.none]. The
+/// renderer does the moving, since only it knows how big the child came
+/// out; a child that changes size between renders - a picture arriving - is
+/// not moved to. [reverseDuration] is accepted and not carried, and
+/// [onEnd] is not called.
 class AnimatedSize extends Widget {
   const AnimatedSize({
     super.key,
@@ -802,9 +820,39 @@ class AnimatedSize extends Widget {
   final VoidCallback? onEnd;
 
   @override
-  WidgetNode _render(_Owner owner) =>
-      _renderChild(owner, child ?? const SizedBox.shrink());
+  WidgetNode _render(_Owner owner) => _sizing(
+    owner,
+    child: owner.inSlot('child', () => _renderChild(
+      owner,
+      child ?? const SizedBox.shrink(),
+    )),
+    alignment: alignment,
+    duration: duration,
+    curve: curve,
+    clip: clipBehavior != Clip.none,
+    id: _idOf(key),
+  );
 }
+
+/// A box that hugs [child] and moves to its new size when the child's
+/// changes - what [AnimatedSize] and [AnimatedCrossFade] are drawn with.
+WidgetNode _sizing(
+  _Owner owner, {
+  required WidgetNode child,
+  required AlignmentGeometry alignment,
+  required Duration duration,
+  required Curve curve,
+  bool clip = true,
+  String? id,
+}) => UIBuilder.box(
+  alignment: alignment._resolved._xy,
+  clip: clip,
+  animateSize: duration > Duration.zero,
+  animateMs: duration > Duration.zero ? duration.inMilliseconds : null,
+  curve: curve.name,
+  id: id,
+  child: child,
+);
 
 /// Which child an [AnimatedCrossFade] shows.
 enum CrossFadeState { showFirst, showSecond }
@@ -812,11 +860,11 @@ enum CrossFadeState { showFirst, showSecond }
 /// Fades between two children - Flutter's `AnimatedCrossFade`.
 ///
 /// The child [crossFadeState] names is shown; when it changes, the other
-/// fades out under it as it fades in, over [duration]. The two are stacked at
-/// [alignment], so while they cross the space is the larger one's; it then
-/// becomes the new child's at once - the size is not animated, and
-/// [sizeCurve] is not consulted. A child that is not showing is not built,
-/// so it starts again when it comes back.
+/// fades out under it as it fades in, over [duration], while the space moves
+/// from the size of the one going to the size of the one coming, along
+/// [sizeCurve] - the one going laid over it at the top, as wide as it, and
+/// clipped to it. A child that is not showing is not built, so it starts
+/// again when it comes back.
 class AnimatedCrossFade extends StatelessWidget {
   const AnimatedCrossFade({
     super.key,
@@ -846,14 +894,43 @@ class AnimatedCrossFade extends StatelessWidget {
     // Flutter runs one animation forwards to the second child and back to
     // the first, so the reverse duration is the way back.
     final time = first ? (reverseDuration ?? duration) : duration;
-    return _Switch(
-      identity: crossFadeState,
-      duration: time,
-      reverseDuration: time,
-      inCurve: first ? firstCurve : secondCurve,
-      outCurve: first ? secondCurve : firstCurve,
+    return _SizeBox(
       alignment: alignment,
-      child: first ? firstChild : secondChild,
+      duration: time,
+      curve: sizeCurve,
+      child: _Switch(
+        identity: crossFadeState,
+        duration: time,
+        reverseDuration: time,
+        inCurve: first ? firstCurve : secondCurve,
+        outCurve: first ? secondCurve : firstCurve,
+        alignment: alignment,
+        leavingOver: true,
+        child: first ? firstChild : secondChild,
+      ),
     );
   }
+}
+
+/// [child] in a box that moves to the child's new size - see [_sizing].
+class _SizeBox extends Widget {
+  const _SizeBox({
+    required this.alignment,
+    required this.duration,
+    required this.curve,
+    required this.child,
+  });
+  final AlignmentGeometry alignment;
+  final Duration duration;
+  final Curve curve;
+  final Widget child;
+
+  @override
+  WidgetNode _render(_Owner owner) => _sizing(
+    owner,
+    child: _renderChild(owner, child),
+    alignment: alignment,
+    duration: duration,
+    curve: curve,
+  );
 }

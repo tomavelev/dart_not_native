@@ -404,6 +404,82 @@ void main() {
       expect(events[3].$2.keys, containsAll(['x', 'y', 'vx', 'vy']));
     });
 
+    group('with a second finger (panScale)', () {
+      test('two spreading are a pinch: how far, and where between', () async {
+        listen(['pan_start', 'pan_update', 'pan_end']);
+        await renderer.render(
+          placed({'panEventId': 'pan', 'panScale': true}),
+        );
+        final rect = box().getBoundingClientRect();
+        final x = rect.left + 50, y = rect.top + 50;
+
+        box().dispatchEvent(pointer('pointerdown', x, y, kind: 'touch'));
+        box().dispatchEvent(
+          pointer('pointerdown', x + 20, y, kind: 'touch', id: 2),
+        );
+        box().dispatchEvent(
+          pointer('pointermove', x + 40, y, kind: 'touch', id: 2),
+        );
+        box().dispatchEvent(
+          pointer('pointerup', x + 40, y, kind: 'touch', id: 2),
+        );
+        box().dispatchEvent(pointer('pointerup', x, y, kind: 'touch'));
+
+        expect(events.map((e) => e.$1), [
+          'pan_start',
+          'pan_update',
+          'pan_end',
+        ]);
+        final pinch = events[1].$2;
+        expect(pinch['scale'], closeTo(2, 0.01));
+        expect(pinch['pointers'], 2);
+        // Between (50, 50) and (90, 50), and moved from between (50, 50)
+        // and (70, 50).
+        expect(pinch['x'], closeTo(70, 1));
+        expect(pinch['dx'], closeTo(10, 1));
+      });
+
+      test('the finger left goes on panning from where it is', () async {
+        listen(['pan_start', 'pan_update', 'pan_end']);
+        await renderer.render(
+          placed({'panEventId': 'pan', 'panScale': true}),
+        );
+        final rect = box().getBoundingClientRect();
+        final x = rect.left + 50, y = rect.top + 50;
+
+        box().dispatchEvent(pointer('pointerdown', x, y, kind: 'touch'));
+        box().dispatchEvent(
+          pointer('pointerdown', x + 20, y, kind: 'touch', id: 2),
+        );
+        box().dispatchEvent(
+          pointer('pointerup', x + 20, y, kind: 'touch', id: 2),
+        );
+        box().dispatchEvent(pointer('pointermove', x + 5, y, kind: 'touch'));
+
+        final last = events.last;
+        expect(last.$1, 'pan_update');
+        expect(last.$2['dx'], closeTo(5, 1));
+        expect(last.$2.containsKey('scale'), isFalse);
+      });
+
+      test('without panScale a second finger is not heard', () async {
+        listen(['pan_start', 'pan_update', 'pan_end']);
+        await renderer.render(placed({'panEventId': 'pan'}));
+        final rect = box().getBoundingClientRect();
+        final x = rect.left + 50, y = rect.top + 50;
+
+        box().dispatchEvent(pointer('pointerdown', x, y, kind: 'touch'));
+        box().dispatchEvent(
+          pointer('pointerdown', x + 20, y, kind: 'touch', id: 2),
+        );
+        box().dispatchEvent(
+          pointer('pointermove', x + 40, y, kind: 'touch', id: 2),
+        );
+
+        expect(events, isEmpty);
+      });
+    });
+
     test('a pointer that barely moves is not a pan', () async {
       listen(['pan_start', 'pan_update', 'pan_end']);
       await renderer.render(placed({'panEventId': 'pan'}));

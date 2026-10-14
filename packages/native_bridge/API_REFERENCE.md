@@ -201,11 +201,11 @@ Each `UIBuilder` method's doc comment is the specification; in brief:
 
 | Builder | What it is |
 |---|---|
-| `UIBuilder.box` | One decorated box around at most one child. Size (`width`/`height`, min/max, `expand`, `aspectRatio`), space (`padding`, `margin`, `alignment`), paint (`color`, `gradient`, border, `borderRadius`/`borderRadii`, `shape: 'circle'`, `shadow`, `clip`, `opacity`, `transform`), touch (`onTap`, `onDoubleTap`, `onLongPress`, `onPan`, `ripple`), drag and drop (`dragData`, `onDrop`, `onDropHover`), measuring (`onSize`), and motion (`animateMs`, `curve`) |
+| `UIBuilder.box` | One decorated box around at most one child. Size (`width`/`height`, min/max, `expand`, `aspectRatio`), space (`padding`, `margin`, `alignment`), paint (`color`, `gradient`, border, `borderRadius`/`borderRadii`, `shape: 'circle'`, `shadow`, `clip`, `opacity`, `transform`), touch (`onTap`, `onDoubleTap`, `onLongPress`, `onPan` - with `panScale` a pinch too - `ripple`), drag and drop (`dragData`, `onDrop`, `onDropHover`), measuring (`onSize`), and motion (`animateMs`, `curve`, `animateSize`) |
 | `UIBuilder.stack`, `positioned` | Children drawn over one another; a `Positioned` child is pinned to the edges it names |
 | `UIBuilder.scroll` | A scroller on either axis, with `shrinkWrap`, `reverse`, pull-to-refresh (`onRefresh`, `refreshing`), a scroll-to (`scrollOffset` + `scrollVersion`) and `onScroll`: the node carries a `scrollEventId` and the renderer sends `{offset, maxExtent, viewport}` when the scroller comes to rest and at most every 100 ms on the way |
 | `UIBuilder.icon` | One glyph of an icon font, by codepoint |
-| `UIBuilder.canvas` | A surface drawn by a command list - `rect`, `rrect`, `circle`, `oval`, `line`, `arc`, `path`, `text`, `save`/`restore`, `translate`, `rotate`, `scale`, `clipRect`, `clipRRect`, `clipPath` - against a table of paints. A render that changes only the commands repaints in place |
+| `UIBuilder.canvas` | A surface drawn by a command list - `rect`, `rrect`, `circle`, `oval`, `line`, `arc`, `path`, `text`, `save`/`restore`, `translate`, `rotate`, `scale`, `clipRect`, `clipRRect`, `clipPath` - against a table of paints. A `path` or `clipPath` ending in `'evenOdd'` is filled or clipped by that rule. A render that changes only the commands repaints in place |
 | `UIBuilder.dropdown` | One of a list, from the platform's own menu |
 | `UIBuilder.datePicker`, `timePicker` | The platform's pickers, as overlays; dates are `yyyy-mm-dd` |
 | `UIBuilder.bottomBar` | Pins its child along a scaffold's bottom edge |
@@ -250,12 +250,16 @@ coordinates) does not.
 | `RendererEvents.slotRect` (`dnn:slotRect`) | `{slotId, x, y, width, height, visible}` - where a `FlutterSlot` is |
 | `RendererEvents.lifecycle` (`dnn:lifecycle`) | `{state}` - `resumed`, `inactive`, `paused`, `detached` |
 
-Two props a node carries for the renderer to act on by itself:
+Props a node carries for the renderer to act on by itself:
 
 | Prop | On | What the renderer does |
 |---|---|---|
 | `eventId` | `Image` | Sends `{state: 'loaded'}` once the picture is showing, or `{state: 'failed'}` when it has given up - each time it makes the image anew, so the same answer may come twice. `loadAsk` beside it is a number that changes when a new asker takes the place of an old one |
 | `hero` | `Box` | On a page transition (`RootProps.pageTransition`), flies the new page's box of this name from where the old page's stood to its own place, over the transition's time, and shows neither meanwhile |
+| `endEventId`, `endAsk` | `Box`, `AnimatedOpacity` | Sends `{ask}` once the move this tree asked for has finished - at once, if nothing moved - and nothing for a move a newer ask overtook. `endAsk` is a number for the change; one already answered is not answered again |
+| `animateSize` | `Box` | With `animateMs`, moves the box from the size it was to the size its child came to in this render, the child laid out once at its new size and clipped to the box on the way when `clip` says so |
+| `panScale` | `Box` with `panEventId` | Hears a second finger: while two are down, a pan update also carries `scale` (their spread over what it was when the second came down) and `pointers`, with `x`, `y`, `dx`, `dy` the point between them |
+| `blend` | `Image` with `color` | How the tint meets the picture, by Flutter's `BlendMode` name; `srcIn` when absent |
 
 An event is answered by the build it was raised against: the tree travels
 with its build number, both native renderers hand it back with each event,
@@ -290,7 +294,7 @@ Flutter's names, signatures and semantics; pure Dart.
 | Scrolling and lists | `lib/src/widgets/scrolling.dart` | `SingleChildScrollView`, `ListView` (+ `.builder`, `.separated`), `GridView` (+ `.count`, `.builder`, `.extent`), `ScrollController`, `RefreshIndicator`, `ListTile`, `ExpansionTile`, `CheckboxListTile`, `SwitchListTile`, `RadioListTile` |
 | Navigation and chrome | `lib/src/widgets/navigation.dart` | `MaterialApp` (+ `.router`), `Navigator`/`NavigatorState`, `MaterialPageRoute`, `PageRouteBuilder`, `Scaffold`, `AppBar`, `BackButton`, `NavigationBar`, `BottomNavigationBar`, `NavigationRail`, `TabBar`/`TabBarView`/`TabController`/`DefaultTabController`, `showDialog`, `AlertDialog`, `SimpleDialog`, `showModalBottomSheet`, `ScaffoldMessenger`, `SnackBar` |
 | Gestures | `lib/src/widgets/gestures.dart` | `GestureDetector`, `Draggable`, `LongPressDraggable`, `DragTarget`, `Dismissible` |
-| Motion | `lib/src/widgets/motion.dart` | `Curves`, `AnimatedOpacity`, `AnimatedContainer`, `AnimatedScale`, `AnimatedRotation`, `AnimatedSlide`, `AnimatedSwitcher` and `AnimatedCrossFade` (a fade from the old child to the new), `AnimatedPadding`, `AnimatedAlign`, and - without its animation - `AnimatedSize` |
+| Motion | `lib/src/widgets/motion.dart` | `Curves`, `AnimatedOpacity`, `AnimatedContainer`, `AnimatedScale`, `AnimatedRotation`, `AnimatedSlide`, `AnimatedSwitcher` and `AnimatedCrossFade` (a fade from the old child to the new, the cross-fade's size moving with it), `AnimatedPadding`, `AnimatedAlign` and `AnimatedSize` |
 | Drawing | `lib/src/widgets/custom_paint.dart` | `CustomPaint`, `CustomPainter`, `Canvas`, `Paint`, `Path`, `TextPainter` |
 | Platform views | `lib/src/widgets/platform_views.dart` | `SwipeActions`, `WebView`, `MapView`, `CameraPreview`, `Badge`, `Alert`, `FlutterSlot` |
 | Steppers and tables | `lib/src/widgets/data.dart` | `Stepper`, `Step`, `StepState`, `StepperType`, `ControlsDetails`, `DataTable`, `DataColumn`, `DataRow`, `DataCell`, `Table`, `TableRow`, `TableCell`, `TableBorder`, the column widths, `ReorderableListView`, `InteractiveViewer`, `TransformationController` |

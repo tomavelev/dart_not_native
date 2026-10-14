@@ -2076,20 +2076,23 @@ notice.
    swaps transitions since 2026-10-12 (`announcePageTransition`, for any
    `RouterConfig` that calls it).
 3. ~~**`onEnd` is never called** on any implicit animation.~~ Called since
-   2026-10-10, a `duration` after a build that changed what the widget
-   shows - by the app's own clock, since the protocol gap in §6.3 is still
-   there. Not for `AnimatedSize`, which is not told when its child's size
-   changes.
+   2026-10-10, and since 2026-10-14 when the renderer says the move has
+   finished (§6.3 item 1) - by the app's own clock only where a renderer
+   never answers. Not for `AnimatedSize`, which is not told when its child's
+   size changes.
 4. **Implicit animation: what is left.** Padding, margin and alignment
    move since 2026-10-11 (`AnimatedPadding`, `AnimatedAlign`, and an
    `AnimatedContainer`'s own) - on Android, in the Flutter host and, for an
    alignment, in the browser, which were the renderers that did not; seen on
    an iOS simulator and an Android emulator. `AnimatedSwitcher` and `AnimatedCrossFade` fade since
    2026-10-11 (the old child fades out under the new one); the fade is the
-   only transition - a `transitionBuilder` is handed a finished animation -
-   and a cross-fade's size is not animated. `AnimatedSize` shows the new
-   size at once: nothing can lay a child out at a size its parent is not
-   yet. All curves collapse to the five every renderer has.
+   only transition - a `transitionBuilder` is handed a finished animation.
+   ~~`AnimatedSize` shows the new size at once~~, and ~~a cross-fade's size
+   is not animated~~: both move since 2026-10-14, the renderer moving a box
+   (`animateSize`) to the size its child came to - seen on an iOS simulator,
+   an Android emulator and in Chrome. A child that changes size between
+   renders (a picture arriving) is not moved to. All curves collapse to the
+   five every renderer has.
 5. **A `ScrollController` hears scrolling a step behind.** A scroller - a
    windowed list included, since 2026-10-11 - reports its offset when it
    comes to rest and at most every 100 ms on the way, so `offset` and
@@ -2107,9 +2110,10 @@ notice.
    came on 2026-10-11, built in the widget layer: `Table` (columns are a
    stated width or a share of the rest - nothing measures a cell),
    `ReorderableListView` (on the platform's drag and drop: the whole row is
-   held, and the rows do not part to show where it will land),
-   `InteractiveViewer` (a finger pans; no renderer reports a pinch, so the
-   scale is the controller's) and `CustomScrollView` with `SliverList`,
+   held; since 2026-10-14 the rows part where it will land - seen on an
+   Android emulator and in Chrome), `InteractiveViewer` (a finger pans, and
+   since 2026-10-14 two pinch it - in Chrome and the Flutter host's tests;
+   not tried on a phone, which cannot be given two fingers from here) and `CustomScrollView` with `SliverList`,
    `SliverGrid`, `SliverToBoxAdapter`, `SliverPadding`, `SliverAppBar`,
    `SliverPersistentHeader`, `SliverFillRemaining` and a few more (a sliver
    is the boxes it would lay out: nothing is lazy, nothing collapses and a
@@ -2126,9 +2130,9 @@ notice.
    same day, over it; on an app's first screen its "yes" cannot close the
    app. `PageView`, `PageView.builder` and `PageController` came on
    2026-10-11: a swipe along either axis moves to the page beside the one
-   showing when the finger lifts - the page does not follow the finger, and
-   `animateToPage` arrives at once - swiped in Chrome and on an iOS
-   simulator. `Stepper` and `DataTable` came the same day, built in the
+   showing. Since 2026-10-14 the page follows the finger, slides on from
+   where it was let go or back, and `animateToPage` travels - seen on an
+   iOS simulator, an Android emulator and in Chrome. `Stepper` and `DataTable` came the same day, built in the
    widget layer from rows, columns and boxes and seen on an iOS simulator,
    an Android emulator and in Chrome. A `DataTable`'s columns share its
    width equally - nothing here measures a column by its widest cell - and
@@ -2179,10 +2183,11 @@ notice.
     `Path.addRRect` and `arcToPoint` are their real shapes, since
     2026-10-11. A `SweepGradient` and a blur (`MaskFilter.blur`) are drawn
     since 2026-10-12, seen on an iOS simulator, an Android emulator and in
-    Chrome; on iOS a blur over a gradient is drawn sharp. Still not
-    carried: `dart:ui`'s own `Gradient.linear`, tile modes other than
-    clamp, blur styles other than normal, blend modes and `saveLayer`
-    paints.
+    Chrome. Since 2026-10-14 `dart:ui`'s own `Gradient.linear`, `.radial`
+    and `.sweep`, every tile mode, every blur style (`outer` and `inner` on
+    a fill only), an even-odd `Path.fillType` and - on iOS - a blur over a
+    gradient are drawn too, seen on all three. Still not carried: blend
+    modes on a paint and `saveLayer` paints.
 13. ~~**An image's wait is never seen.**~~ It is since 2026-10-13: the
     renderer says how a load ended, so `loadingBuilder`'s widget stands in
     while a picture loads, `errorBuilder` is called only after a failure and
@@ -2190,7 +2195,8 @@ notice.
     Android emulator and in Chrome. What is left: the progress is never a
     number (the bytes are counted in the renderer), and while loading the
     builder's `child` is an empty box. `color` tints the picture since
-    2026-10-11, as `BlendMode.srcIn`; `colorBlendMode` is not carried
+    2026-10-11, and since 2026-10-14 in whatever `colorBlendMode` says; on
+    the web the picture's clear parts stay clear whatever the mode
     (`text.dart`).
 14. **Focus is text fields only.** ~~Every `KeyboardListener` on screen
     hears every key~~ - since 2026-10-10 the one whose `FocusNode` was asked
@@ -2219,10 +2225,12 @@ notice.
 Things no widget can do because no node can say them. Each needs a prop or an
 event, and then the same work in four renderers.
 
-1. **No animation-finished event.** A renderer animates the difference
-   between two trees and never reports the end, which is why `onEnd` is
-   timed by the app and not reported by the renderer (`AnimatedOpacity`'s
-   doc comment). The first thing an explicit-animation design needs.
+1. ~~**No animation-finished event.**~~ There is one since 2026-10-14: a
+   node on its way carries `endEventId` and `endAsk`, and the renderer
+   answers `{ask}` when the move has finished - iOS from the animation's
+   completion, Android from its animator, the browser and the Flutter host
+   the duration after they applied the tree. `onEnd` is called on it. What
+   an explicit-animation design would start from.
 2. ~~**No colours on `Toggle`, `Checkbox`, `Radio`, `Slider` or
    `FloatingActionButton`.**~~ Carried since 2026-10-10: `activeColor`,
    `checkColor`, the switch's thumb and its two off colours, the slider's
@@ -2351,8 +2359,9 @@ real apps on an Android emulator" has each. What is left:
    Since 2026-10-12 the widget layer tells it: a floating bar is given the
    room of a button (56) and a gap above its own margin when a nested
    scaffold drew one. A button of another size is cleared by that much all
-   the same, and a nested bottom bar is cleared since 2026-10-13, at the height such a
-   bar usually is rather than a measured one.
+   the same, and a nested bottom bar is cleared since 2026-10-13 - at the
+   height it measures since 2026-10-14, seen on an iOS simulator, an Android
+   emulator and in Chrome.
 3. ~~**`ElevatedButton` is drawn as a filled primary button**~~ Under
    Material 3 it is the surface, raised, with the primary for its label
    (2026-10-10) - a new `elevated` variant that all four renderers draw.
@@ -2378,9 +2387,9 @@ real apps on an Android emulator" has each. What is left:
    until then, Android sent each twice), the date and time pickers, a slot
    inside a scroller, and the image disk cache offline - fresh, and expired,
    where a stale copy is now shown rather than nothing.
-7. **A stand-in's size differs.** What an image shows in its place - an
-   `errorBuilder`'s widget - fills the image's width and height on iOS and
-   only its width on Android and the web.
+7. ~~**A stand-in's size differs.**~~ Since 2026-10-14 what an image shows
+   in its place fills the image's box on all three, an icon or a spinner in
+   the middle of it.
 
 All of the above was an emulator. §6.5 item 8 is the phone.
 
@@ -2429,10 +2438,10 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2437 tests
-  (1431 in the package, 388 for the example apps and goldens, 575 in the browser,
+  contracts, the plugin system and the design system are covered by 2524 tests
+  (1499 in the package, 388 for the example apps and goldens, 594 in the browser,
   43 in the bloc package,
-  counted 2026-10-13), plus 20 integration tests that run on a real Android and
+  counted 2026-10-14), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native
   renderers drawing the whole node vocabulary and every example app. (Four of
   the eighteen - the free-form tree and the two pickers, added 2026-10-09, and

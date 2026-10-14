@@ -311,6 +311,8 @@ internal data class BoxEvents(
     val pan: String? = null,
     /** 'horizontal' or 'vertical' for a pan along that axis alone. */
     val panAxis: String? = null,
+    /** Whether the pan hears a second finger, and reports the pinch. */
+    val panScale: Boolean = false,
     val drop: String? = null,
     val size: String? = null,
     val dragData: String? = null,
@@ -365,6 +367,49 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
 
     private var animator: ValueAnimator? = null
 
+    /**
+     * How long the box takes to move to the size its child comes to - an
+     * `animateSize` box's `animateMs` - and along what; 0 lands there at once.
+     */
+    var sizeMs: Long = 0
+    var sizeCurve: Interpolator? = null
+    private var sizeShown: Pair<Int, Int>? = null
+    private var sizeTarget: Pair<Int, Int>? = null
+    private var sizeAnimator: ValueAnimator? = null
+
+    /**
+     * The size to show for a box that has come to [width] by [height] round
+     * its child: that, or - when it moves to its size and was showing another
+     * - wherever the move from that one has got to.
+     */
+    private fun shownSize(width: Int, height: Int): Pair<Int, Int> {
+        val now = width to height
+        if (sizeMs <= 0 || !isLaidOut || sizeTarget == null) {
+            sizeAnimator?.cancel()
+            sizeAnimator = null
+            sizeTarget = now
+            sizeShown = now
+            return now
+        }
+        if (now != sizeTarget) {
+            val from = sizeShown ?: sizeTarget!!
+            sizeTarget = now
+            sizeAnimator?.cancel()
+            sizeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = sizeMs
+                sizeCurve?.let { interpolator = it }
+                addUpdateListener {
+                    val t = it.animatedValue as Float
+                    sizeShown = (from.first + (now.first - from.first) * t).roundToInt() to
+                        (from.second + (now.second - from.second) * t).roundToInt()
+                    requestLayout()
+                }
+                start()
+            }
+        }
+        return sizeShown ?: now
+    }
+
     /** The decorated rectangle - the view's bounds less the margin. */
     protected val box = RectF()
     private val shape = Path()
@@ -388,14 +433,29 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
 
     /**
      * Moves the box to [next]: at once, or over [animateMs] when the tree asked
-     * for motion and there is something on screen to move from.
+     * for motion and there is something on screen to move from. [onDone] hears
+     * when it is there - at once, if it did not move - and not if a newer style
+     * takes over first.
      */
-    fun setStyle(next: BoxStyle, animateMs: Long = 0, curve: Interpolator? = null) {
-        animator?.cancel()
+    fun setStyle(
+        next: BoxStyle,
+        animateMs: Long = 0,
+        curve: Interpolator? = null,
+        onDone: (() -> Unit)? = null,
+    ) {
+        // Forgotten before it is cancelled, so its end - which a cancel also
+        // reports - is not taken for this one's, and the new move starts from
+        // wherever the old one had got to.
+        val running = animator
         animator = null
-        if (next == style) return
+        running?.cancel()
+        if (next == style) {
+            onDone?.invoke()
+            return
+        }
         if (animateMs <= 0 || !isLaidOut) {
             show(next)
+            onDone?.invoke()
             return
         }
         // A box that was hugging has no stated size to travel from, so it
@@ -412,7 +472,11 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                 override fun onAnimationEnd(animation: Animator) {
                     // Only if it ran to the end: a cancel is a newer style
                     // taking over, and that one is the truth now.
-                    if (animator === animation) show(next)
+                    if (animator === animation) {
+                        animator = null
+                        show(next)
+                        onDone?.invoke()
+                    }
                 }
             })
             start()
@@ -634,7 +698,8 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                 if (child.visibility != GONE) child.measure(exactW, exactH)
             }
         }
-        setMeasuredDimension(finalW + marginH, finalH + marginV)
+        val (shownW, shownH) = shownSize(finalW, finalH)
+        setMeasuredDimension(shownW + marginH, shownH + marginV)
     }
 
     /** One axis's size where something settles it, or null to hug the child. */
@@ -845,6 +910,54 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
     private var lastY = 0f
     private var panning = false
     private var panRefused = false
+
+    /**
+     * A pinch in a pan that hears one: whether two fingers are down, how far
+     * apart they were when the second came, where the point between them was
+     * last reported, and whether the finger left after one lifts has still to
+     * be picked up from where it is.
+     */
+    private var pinching = false
+    private var spreadFrom = 1f
+    private var focalX = 0f
+    private var focalY = 0f
+    private var resync = false
+
+    /** Where finger [i] is on the screen - what `getRawX(i)` says from Android 10. */
+    private fun rawX(ev: MotionEvent, i: Int) = ev.getX(i) + (ev.rawX - ev.x)
+    private fun rawY(ev: MotionEvent, i: Int) = ev.getY(i) + (ev.rawY - ev.y)
+
+    private fun beginPinch(ev: MotionEvent) {
+        if (!panning) beginPan(ev)
+        pinching = true
+        val ax = rawX(ev, 0); val ay = rawY(ev, 0)
+        val bx = rawX(ev, 1); val by = rawY(ev, 1)
+        spreadFrom = max(1f, kotlin.math.hypot(bx - ax, by - ay))
+        focalX = (ax + bx) / 2
+        focalY = (ay + by) / 2
+    }
+
+    private fun movePinch(ev: MotionEvent) {
+        val eventId = events.pan ?: return
+        val ax = rawX(ev, 0); val ay = rawY(ev, 0)
+        val bx = rawX(ev, 1); val by = rawY(ev, 1)
+        val x = (ax + bx) / 2
+        val y = (ay + by) / 2
+        val d = host.density.toDouble()
+        host.send(
+            "${eventId}_update",
+            mapOf(
+                // The focal point in the box, from where it is on the screen.
+                "x" to logicalX(x - (ev.rawX - ev.x)), "y" to logicalY(y - (ev.rawY - ev.y)),
+                "dx" to (x - focalX) / d, "dy" to (y - focalY) / d,
+                "vx" to 0.0, "vy" to 0.0,
+                "scale" to (kotlin.math.hypot(bx - ax, by - ay) / spreadFrom).toDouble(),
+                "pointers" to 2,
+            ),
+        )
+        focalX = x
+        focalY = y
+    }
     private var velocity: VelocityTracker? = null
 
     private val detector = GestureDetector(
@@ -948,6 +1061,12 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         if (events.pan == null) return false
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> beginTouch(ev)
+            // A second finger on a pan that hears one is the box's, whatever
+            // the first landed on.
+            MotionEvent.ACTION_POINTER_DOWN -> if (events.panScale && ev.pointerCount == 2) {
+                beginPinch(ev)
+                return true
+            }
             MotionEvent.ACTION_MOVE -> {
                 track(ev)
                 if (!panning && movedPastSlop(ev)) {
@@ -972,8 +1091,29 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                 drawableHotspotChanged(ev.x, ev.y)
                 isPressed = true
             }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (events.panScale && ev.pointerCount == 2 && !pinching) beginPinch(ev)
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                // The pinch is over; the pan goes on with the finger left,
+                // from wherever it is when it next moves.
+                if (pinching) {
+                    pinching = false
+                    resync = true
+                }
+            }
             MotionEvent.ACTION_MOVE -> {
                 track(ev)
+                if (pinching && ev.pointerCount >= 2) {
+                    movePinch(ev)
+                    return true
+                }
+                if (resync) {
+                    resync = false
+                    lastX = ev.rawX
+                    lastY = ev.rawY
+                    return true
+                }
                 if (events.pan != null) {
                     if (!panning && movedPastSlop(ev)) beginPan(ev)
                     if (panning) {
@@ -995,6 +1135,8 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                     panning = false
                     parent?.requestDisallowInterceptTouchEvent(false)
                 }
+                pinching = false
+                resync = false
                 velocity?.recycle()
                 velocity = null
                 isPressed = false
@@ -1234,7 +1376,7 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         }
     }
 
-    private val dropListener = OnDragListener { _, event ->
+    private val dropListener: OnDragListener = OnDragListener { _, event ->
         // The end of a drag reaches every view that answered its start: the
         // box that was carried says so here, after any drop it made.
         if (event.action == DragEvent.ACTION_DRAG_ENDED) {
@@ -1242,7 +1384,18 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
             carried = null
         }
         val eventId = events.drop
-            ?: return@OnDragListener event.action == DragEvent.ACTION_DRAG_STARTED
+        if (eventId == null) {
+            // Listening only to hear its own drag end. The platform hands what
+            // a drag passes over to the innermost view listening, so what this
+            // box is over is said to the target round it - a row being moved
+            // inside the row it can be dropped on.
+            if (event.action == DragEvent.ACTION_DRAG_STARTED) return@OnDragListener true
+            if (event.action == DragEvent.ACTION_DRAG_ENDED) return@OnDragListener true
+            var up = parent
+            while (up != null && !(up is BoxLayout && up.events.drop != null)) up = up.parent
+            val target = up as? BoxLayout ?: return@OnDragListener false
+            return@OnDragListener target.dropListener.onDrag(target, event)
+        }
         when (event.action) {
             // Answering true is what subscribes this view to the rest.
             DragEvent.ACTION_DRAG_STARTED -> true
@@ -1426,7 +1579,7 @@ internal fun compileCanvas(
                 ops += CanvasOp { it.drawArc(r, start, sweep, useCenter, p) }
             }
             "path" -> {
-                val path = canvasPath(c.getOrNull(1) as? List<*> ?: emptyList<Any?>())
+                val path = canvasPath(c.getOrNull(1) as? List<*> ?: emptyList<Any?>(), c.getOrNull(3))
                 val p = paint(2)
                 ops += CanvasOp { it.drawPath(path, p) }
             }
@@ -1464,7 +1617,7 @@ internal fun compileCanvas(
                 ops += CanvasOp { it.clipPath(path) }
             }
             "clipPath" -> {
-                val path = canvasPath(c.getOrNull(1) as? List<*> ?: emptyList<Any?>())
+                val path = canvasPath(c.getOrNull(1) as? List<*> ?: emptyList<Any?>(), c.getOrNull(2))
                 ops += CanvasOp { it.clipPath(path) }
             }
         }
@@ -1531,8 +1684,10 @@ private fun canvasShader(spec: Map<*, *>?): Shader? {
         Shader.TileMode.CLAMP)
 }
 
-private fun canvasPath(segments: List<*>): Path {
+/** The path [segments] trace, filled by the even-odd rule when [rule] says so. */
+private fun canvasPath(segments: List<*>, rule: Any? = null): Path {
     val path = Path()
+    if (rule == "evenOdd") path.fillType = Path.FillType.EVEN_ODD
     for (raw in segments) {
         val s = raw as? List<*> ?: continue
         fun f(i: Int) = (s.getOrNull(i) as? Number)?.toFloat() ?: 0f

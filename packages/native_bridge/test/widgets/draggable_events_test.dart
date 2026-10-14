@@ -125,10 +125,11 @@ void main() {
     expect(app.hasText('Empty square'), isFalse);
   });
 
-  test('a draggable nobody listens to asks for no events', () {
+  test('a draggable nobody listens to still says when it is picked up', () {
+    // A target under it names what is over it from the drags in the air.
     final app = AppTester.widget(board(listens: false));
 
-    expect(piece(app).props.containsKey('dragEventId'), isFalse);
+    expect(piece(app).props['dragEventId'], isA<String>());
     expect(piece(app).props['dragData'], isA<String>());
   });
 }

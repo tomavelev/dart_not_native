@@ -2325,8 +2325,10 @@ class BoxShadow extends Shadow {
 /// Whether a box is a rectangle or a circle.
 enum BoxShape { rectangle, circle }
 
-/// What a gradient does beyond its ends. Accepted for compatibility; the
-/// renderers clamp.
+/// What a gradient does beyond its ends. On a canvas every one is drawn - a
+/// gradient that repeats is sent as the copies of it that cover the canvas,
+/// and one that stops is sent with a clear colour at each end. A box's
+/// gradient is clamped.
 enum TileMode { clamp, repeated, mirror, decal }
 
 /// A fill that changes colour across the box.
@@ -2342,6 +2344,64 @@ abstract class Gradient {
   /// The node's `gradient` prop.
   Map<String, dynamic> get _json;
 
+  /// A gradient along the line from [from] to [to], in the canvas's own
+  /// coordinates - `dart:ui`'s `Gradient.linear`, which a painter written
+  /// for Flutter reaches as `ui.Gradient.linear`: drop the `ui.` and it is
+  /// this. [matrix4] is accepted and not carried.
+  factory Gradient.linear(
+    Offset from,
+    Offset to,
+    List<Color> colors, [
+    List<double>? colorStops,
+    TileMode tileMode = TileMode.clamp,
+    Object? matrix4,
+  ]) => _CanvasGradient(colors, colorStops, {
+    'type': 'linear',
+    'from': [from.dx, from.dy],
+    'to': [to.dx, to.dy],
+    'colors': [for (final color in colors) color._hex],
+    'stops': ?colorStops,
+    if (tileMode != TileMode.clamp) 'tile': tileMode.name,
+  });
+
+  /// A gradient outwards from [center] to [radius], in the canvas's own
+  /// coordinates - `dart:ui`'s `Gradient.radial`. A [focal] point and
+  /// [matrix4] are accepted and not carried.
+  factory Gradient.radial(
+    Offset center,
+    double radius,
+    List<Color> colors, [
+    List<double>? colorStops,
+    TileMode tileMode = TileMode.clamp,
+    Object? matrix4,
+    Offset? focal,
+    double focalRadius = 0.0,
+  ]) => _CanvasGradient(colors, colorStops, {
+    'type': 'radial',
+    'center': [center.dx, center.dy],
+    'radius': radius,
+    'colors': [for (final color in colors) color._hex],
+    'stops': ?colorStops,
+    if (tileMode != TileMode.clamp) 'tile': tileMode.name,
+  });
+
+  /// A gradient round [center] from [startAngle] to [endAngle], in the
+  /// canvas's own coordinates - `dart:ui`'s `Gradient.sweep`. [matrix4] is
+  /// accepted and not carried.
+  factory Gradient.sweep(
+    Offset center,
+    List<Color> colors, [
+    List<double>? colorStops,
+    TileMode tileMode = TileMode.clamp,
+    double startAngle = 0.0,
+    double endAngle = math.pi * 2,
+    Object? matrix4,
+  ]) => _CanvasGradient(
+    colors,
+    colorStops,
+    _sweep(center, colors, colorStops, tileMode, startAngle, endAngle),
+  );
+
   /// This gradient laid over [rect], for a [Paint] on a canvas:
   /// `paint.shader = gradient.createShader(rect)`. [textDirection] resolves a
   /// directional alignment; left out, it reads from the left.
@@ -2351,12 +2411,190 @@ abstract class Gradient {
 }
 
 /// What a [Paint] draws with in place of one colour: a gradient, placed in
-/// the canvas's own coordinates. Made by [Gradient.createShader].
+/// the canvas's own coordinates. Made by [Gradient.createShader], or by
+/// [Gradient.linear] and its kin, which are shaders themselves.
 class Shader {
-  const Shader._(this._json);
+  const Shader._(this._paintJson);
 
-  /// The paint's `gradient` entry.
-  final Map<String, dynamic> _json;
+  /// The paint's `gradient` entry. One with a `tile` other than clamp is
+  /// spelled out by the canvas, which knows how far it has to reach.
+  final Map<String, dynamic> _paintJson;
+}
+
+/// A gradient made in the canvas's own coordinates - `dart:ui`'s, which is
+/// a shader to Flutter. As a box's gradient it is the same colours left to
+/// right.
+class _CanvasGradient extends Gradient implements Shader {
+  _CanvasGradient(List<Color> colors, List<double>? stops, this._paintJson)
+    : super(colors: colors, stops: stops);
+
+  @override
+  final Map<String, dynamic> _paintJson;
+
+  @override
+  Map<String, dynamic> get _json => {
+    'type': 'linear',
+    'colors': _hexes,
+    'stops': ?stops,
+    'begin': const [-1.0, 0.0],
+    'end': const [1.0, 0.0],
+  };
+
+  @override
+  Shader createShader(Rect rect, {TextDirection? textDirection}) => this;
+}
+
+/// A sweep's `gradient` entry: the colours as fractions of a whole turn
+/// from [startAngle], which is what every renderer's own sweep takes. A
+/// [tileMode] other than clamp is spelled out here, over the rest of the
+/// turn.
+Map<String, dynamic> _sweep(
+  Offset center,
+  List<Color> colors,
+  List<double>? given,
+  TileMode tileMode,
+  double startAngle,
+  double endAngle,
+) {
+  final share = ((endAngle - startAngle) / (math.pi * 2)).clamp(0.0, 1.0);
+  final hexes = [for (final color in colors) color._hex];
+  final stops = _evenStops(colors.length, given);
+  final out = <String>[];
+  final at = <double>[];
+  if (tileMode == TileMode.clamp || share <= 0) {
+    out.addAll(hexes);
+    at.addAll([for (final stop in stops) stop * share]);
+  } else if (tileMode == TileMode.decal) {
+    out.addAll(hexes);
+    at.addAll([for (final stop in stops) stop * share]);
+    final clear = _clear(hexes.last);
+    out.addAll([clear, clear]);
+    at.addAll([math.min(1, share + 1e-4), 1]);
+  } else {
+    for (var copy = 0; copy * share < 1; copy++) {
+      final back = tileMode == TileMode.mirror && copy.isOdd;
+      for (var i = 0; i < hexes.length; i++) {
+        final j = back ? hexes.length - 1 - i : i;
+        final stop = back ? 1 - stops[j] : stops[j];
+        out.add(hexes[j]);
+        at.add(math.min(1, (copy + stop) * share));
+      }
+    }
+  }
+  return {
+    'type': 'sweep',
+    'center': [center.dx, center.dy],
+    'angle': startAngle,
+    'colors': out,
+    'stops': at,
+  };
+}
+
+/// Where each of [count] colours sits: as [given], or evenly spaced.
+List<double> _evenStops(int count, List<double>? given) => [
+  for (var i = 0; i < count; i++)
+    given != null && i < given.length
+        ? given[i]
+        : (count == 1 ? 0.0 : i / (count - 1)),
+];
+
+/// [hex] with nothing of it showing - the colour a gradient that stops
+/// fades to, so that it does not fade through black.
+String _clear(String hex) {
+  final digits = hex.substring(1);
+  return '#00${digits.length == 8 ? digits.substring(2) : digits}';
+}
+
+/// [gradient], a linear or radial `gradient` entry whose `tile` is not
+/// clamp, spelled out as plain one that clamps: the copies of it that reach
+/// [reach] from its start, or - for a decal - the gradient with a clear
+/// colour just beyond each end.
+Map<String, dynamic> _tiledGradient(
+  Map<String, dynamic> gradient,
+  double reach,
+) {
+  final tile = gradient['tile'];
+  final plain = Map<String, dynamic>.of(gradient)..remove('tile');
+  final hexes = [for (final color in gradient['colors'] as List) '$color'];
+  if (hexes.isEmpty) return plain;
+  final stops = _evenStops(hexes.length, [
+    for (final stop in (gradient['stops'] as List?) ?? const [])
+      (stop as num).toDouble(),
+  ]);
+  final radial = gradient['type'] == 'radial';
+  final double length;
+  if (radial) {
+    length = (gradient['radius'] as num).toDouble();
+  } else {
+    final from = gradient['from'] as List, to = gradient['to'] as List;
+    length = math.sqrt(
+      math.pow((to[0] as num) - (from[0] as num), 2) +
+          math.pow((to[1] as num) - (from[1] as num), 2),
+    );
+  }
+  if (length <= 0) return plain;
+
+  // Copies of the gradient before its start and after its end: a radial one
+  // has no before. A decal is a sliver of a copy, clear, at each end.
+  final int before, after;
+  final double sliver = 1e-4;
+  if (tile == 'decal') {
+    before = radial ? 0 : 1;
+    after = 1;
+  } else {
+    after = math.min(64, (reach / length).ceil());
+    before = radial ? 0 : after;
+  }
+  final out = <String>[];
+  final at = <double>[];
+  void add(String hex, double unit) {
+    out.add(hex);
+    at.add(unit);
+  }
+
+  if (tile == 'decal') {
+    if (!radial) add(_clear(hexes.first), 0);
+    final offset = radial ? 0.0 : sliver;
+    for (var i = 0; i < hexes.length; i++) {
+      add(hexes[i], offset + stops[i]);
+    }
+    add(_clear(hexes.last), offset + 1 + sliver);
+  } else {
+    for (var copy = -before; copy <= after; copy++) {
+      final back = tile == 'mirror' && copy.isOdd;
+      final base = (copy + before).toDouble();
+      // Each copy is whole: its first colour from its start, its last to its
+      // end, whatever stops it was given.
+      for (var i = 0; i < hexes.length; i++) {
+        final j = back ? hexes.length - 1 - i : i;
+        if (i == 0) add(hexes[j], base);
+        add(hexes[j], base + (back ? 1 - stops[j] : stops[j]));
+        if (i == hexes.length - 1) add(hexes[j], base + 1);
+      }
+    }
+  }
+  final units = tile == 'decal'
+      ? (radial ? 1 + sliver : 1 + 2 * sliver)
+      : (before + after + 1).toDouble();
+  final lead = tile == 'decal' ? (radial ? 0.0 : sliver) : before.toDouble();
+  if (radial) {
+    plain['radius'] = length * units;
+  } else {
+    final from = gradient['from'] as List, to = gradient['to'] as List;
+    final dx = (to[0] as num) - (from[0] as num);
+    final dy = (to[1] as num) - (from[1] as num);
+    plain['from'] = [
+      (from[0] as num) - dx * lead,
+      (from[1] as num) - dy * lead,
+    ];
+    plain['to'] = [
+      (from[0] as num) + dx * (units - lead),
+      (from[1] as num) + dy * (units - lead),
+    ];
+  }
+  plain['colors'] = out;
+  plain['stops'] = [for (final unit in at) unit / units];
+  return plain;
 }
 
 /// A gradient along a line from [begin] to [end].
@@ -2392,6 +2630,7 @@ class LinearGradient extends Gradient {
       'to': [to.dx, to.dy],
       'colors': _hexes,
       if (stops != null) 'stops': stops,
+      if (tileMode != TileMode.clamp) 'tile': tileMode.name,
     });
   }
 }
@@ -2437,6 +2676,7 @@ class RadialGradient extends Gradient {
       'radius': radius * math.min(rect.width, rect.height),
       'colors': _hexes,
       if (stops != null) 'stops': stops,
+      if (tileMode != TileMode.clamp) 'tile': tileMode.name,
     });
   }
 }
@@ -2446,7 +2686,8 @@ class RadialGradient extends Gradient {
 ///
 /// On a canvas (`paint.shader = gradient.createShader(rect)`) it is drawn as
 /// it is: the colours turn about the centre, and beyond [endAngle] the last
-/// one holds until the turn comes round to the first. A box has no word for
+/// one holds until the turn comes round to the first - or, by [tileMode],
+/// the colours come round again, turn back, or stop. A box has no word for
 /// a sweep, so as a [BoxDecoration]'s gradient it is drawn as a linear one of
 /// the same colours.
 class SweepGradient extends Gradient {
@@ -2474,28 +2715,16 @@ class SweepGradient extends Gradient {
   };
 
   @override
-  Shader createShader(Rect rect, {TextDirection? textDirection}) {
-    final middle = center.resolve(textDirection).withinRect(rect);
-    // Said as fractions of a whole turn from the start angle, which is what
-    // every renderer's own sweep takes; the stretch between the two angles
-    // is worked out once, here.
-    final share = ((endAngle - startAngle) / (math.pi * 2)).clamp(0.0, 1.0);
-    final count = colors.length;
-    final given = stops;
-    return Shader._({
-      'type': 'sweep',
-      'center': [middle.dx, middle.dy],
-      'angle': startAngle,
-      'colors': _hexes,
-      'stops': [
-        for (var i = 0; i < count; i++)
-          (given != null && i < given.length
-                  ? given[i]
-                  : (count == 1 ? 0.0 : i / (count - 1))) *
-              share,
-      ],
-    });
-  }
+  Shader createShader(Rect rect, {TextDirection? textDirection}) => Shader._(
+    _sweep(
+      center.resolve(textDirection).withinRect(rect),
+      colors,
+      stops,
+      tileMode,
+      startAngle,
+      endAngle,
+    ),
+  );
 }
 
 /// How a box is painted. [BoxDecoration] is the one the facade draws.
@@ -2697,6 +2926,10 @@ class Matrix4 {
   /// Turns by [radians] more.
   void rotateZ(double radians) => _rotate += radians;
 
+  /// The larger of the two scales - how far an [InteractiveViewer] has been
+  /// zoomed.
+  double getMaxScaleOnAxis() => math.max(_scaleX.abs(), _scaleY.abs());
+
   /// A copy, for a transform built up from another.
   Matrix4 clone() => Matrix4.identity()
     .._rotate = _rotate
@@ -2803,7 +3036,8 @@ enum FontStyle { normal, italic }
 enum TextBaseline { alphabetic, ideographic }
 
 /// How a paint is combined with what is under it. Accepted where Flutter
-/// takes one; the renderers always draw source-over.
+/// takes one; the renderers draw source-over, except for an image's tint
+/// (`Image.colorBlendMode`), which is blended as asked.
 enum BlendMode {
   clear,
   src,
@@ -2823,8 +3057,17 @@ enum BlendMode {
   overlay,
   darken,
   lighten,
+  colorDodge,
+  colorBurn,
+  hardLight,
+  softLight,
+  difference,
+  exclusion,
   multiply,
+  hue,
+  saturation,
   color,
+  luminosity,
 }
 
 /// How tightly a component is packed. Accepted for compatibility: each

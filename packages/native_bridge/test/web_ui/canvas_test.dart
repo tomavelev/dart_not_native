@@ -202,6 +202,59 @@ void main() {
     expect(pixel(60, 60), [0, 0, 0, 0]);
   });
 
+  test('a frame stretched past its stated size keeps the picture\'s', () async {
+    await renderer.render(picture([
+      ['circle', 50, 40, 30, 0],
+    ]));
+    final frame = root.querySelector('.dnn-canvas')! as web.HTMLElement;
+    // What a scaffold's body does to the one child it has.
+    frame.style.height = '300px';
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    final rect = surface().getBoundingClientRect();
+    expect(rect.width, 100);
+    expect(rect.height, 80);
+  });
+
+  group('the even-odd rule', () {
+    const ring = [
+      ['R', 0, 0, 100, 80],
+      ['R', 30, 20, 40, 40],
+    ];
+
+    test('a path filled by it is a frame round a hole', () async {
+      await renderer.render(
+        picture([
+          ['path', ring, 0, 'evenOdd'],
+        ]),
+      );
+      expect(pixel(10, 10), [255, 0, 0, 255]);
+      expect(pixel(50, 40), [0, 0, 0, 0]);
+    });
+
+    test('and filled without it, whole', () async {
+      await renderer.render(
+        picture([
+          ['path', ring, 0],
+        ]),
+      );
+      expect(pixel(50, 40), [255, 0, 0, 255]);
+    });
+
+    test('a clip by it keeps the frame and not the hole', () async {
+      await renderer.render(
+        picture([
+          ['save'],
+          ['clipPath', ring, 'evenOdd'],
+          ['rect', 0, 0, 100, 80, 0],
+          ['restore'],
+        ]),
+      );
+      expect(pixel(10, 10), [255, 0, 0, 255]);
+      expect(pixel(50, 40), [0, 0, 0, 0]);
+    });
+  });
+
   test('a new list of commands repaints the same canvas', () async {
     await renderer.render(
       picture([

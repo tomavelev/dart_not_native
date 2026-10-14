@@ -2547,15 +2547,28 @@ class _ScaffoldFrame extends Widget {
     if (floatingActionButton != null && owner._hidden == 0) {
       owner._nestedFab = true;
     }
-    // Nor does one know this scaffold's bottom bar, which nothing measures:
-    // a navigation bar is as tall as it says or as Material makes it, and
-    // anything else is taken to be a bar of the usual height.
-    final under = bottomNavigationBar;
-    if (under != null && owner._hidden == 0) {
-      owner._nestedBar = switch (under) {
-        NavigationBar(:final height) => height ?? 80,
-        _ => 56,
-      };
+    // Nor does one know this scaffold's bottom bar, so the bar is measured.
+    // Until it has been, a navigation bar is as tall as it says or as
+    // Material makes it, and anything else a bar of the usual height.
+    var under = bottom;
+    if (under != null) {
+      final place = owner._positionId('NestedBar');
+      if (owner._hidden == 0) {
+        owner._nestedBar =
+            owner._barHeights[place] ??
+            switch (bottomNavigationBar) {
+              NavigationBar(:final height) => height ?? 80,
+              _ => 56,
+            };
+      }
+      under = UIBuilder.box(
+        onSize: (width, height) {
+          if ((owner._barHeights[place] ?? -1) == height) return;
+          owner._barHeights[place] = height;
+          owner._requestRebuild();
+        },
+        child: under,
+      );
     }
     final node = UIBuilder.column(
       crossAxisAlignment: 'stretch',
@@ -2566,7 +2579,7 @@ class _ScaffoldFrame extends Widget {
         UIBuilder.expanded(
           child: _body(owner, above: _underBar(owner), fab: _fab(owner)),
         ),
-        if (bottom != null) bottom,
+        ?under,
       ],
     );
     final fill = backgroundColor;
@@ -3157,15 +3170,20 @@ const double _swipeSpeed = 300;
 
 /// [page] in a box that hears a swipe along [axis] and calls [onStep] with
 /// +1 for the page after and -1 for the page before, once the finger lifts
-/// having gone far enough or fast enough. A movement that sets off across
-/// the axis is not the box's, so a list in the page still scrolls.
+/// having gone far enough or fast enough - or [onStep] with 0, when it
+/// did neither and [onMove] was following it. [onMove] hears how far the
+/// finger has gone, in pixels along the axis, as it goes. A movement that
+/// sets off across the axis is not the box's, so a list in the page still
+/// scrolls.
 WidgetNode _swipePages(
   _Owner owner,
   WidgetNode page, {
   required Object token,
-  required void Function(int step) onStep,
+  required void Function(int step)? onStep,
   Axis axis = Axis.horizontal,
   bool reverse = false,
+  void Function(double width, double height)? onSize,
+  void Function(double moved)? onMove,
 }) {
   final vertical = axis == Axis.vertical;
   // Towards the start of the line - or up the page - is the next one,
@@ -3177,13 +3195,19 @@ WidgetNode _swipePages(
     // room the view has - and none is invented where there is no end to the
     // height.
     expand: owner._unboundedHeight ? 'width' : 'both',
-    panAxis: vertical ? 'vertical' : 'horizontal',
-    onPan: (phase, data) {
+    // A page sliding in or out is drawn beyond the view's edges.
+    clip: onSize != null,
+    onSize: onSize,
+    panAxis: onStep == null ? null : (vertical ? 'vertical' : 'horizontal'),
+    onPan: onStep == null ? null : (phase, data) {
       double n(String key) => (data[key] as num?)?.toDouble() ?? 0;
       final at = n(vertical ? 'y' : 'x');
       switch (phase) {
         case 'start':
           _swipeFrom[token] = at;
+        case 'update':
+          final from = _swipeFrom[token];
+          if (from != null) onMove?.call(at - from);
         case 'end':
           final from = _swipeFrom[token];
           _swipeFrom[token] = null;
@@ -3194,7 +3218,10 @@ WidgetNode _swipePages(
           // went is a change of mind.
           final far = moved.abs() > _swipeDistance;
           final flung = speed.abs() > _swipeSpeed && speed.sign == moved.sign;
-          if (!far && !flung) return;
+          if (!far && !flung) {
+            if (onMove != null) onStep(0);
+            return;
+          }
           onStep(moved.sign.toInt() * forward);
       }
     },
@@ -3204,8 +3231,9 @@ WidgetNode _swipePages(
 
 /// Which page a [PageView] shows.
 ///
-/// [page] is always a whole number here: a page changes when the finger
-/// lifts, and does not pass through the places in between.
+/// [page] is always a whole number here: the view slides from one page to
+/// the next, and [page] is the one it is going to from the moment it sets
+/// off.
 class PageController extends ChangeNotifier {
   PageController({
     this.initialPage = 0,
@@ -3224,6 +3252,16 @@ class PageController extends ChangeNotifier {
   int _attachedPass = -1;
   _Owner? _owner;
 
+  /// How the next change of page travels, when it is to: set by
+  /// [animateToPage] and taken by the view that shows the change.
+  ({Duration duration, Curve curve, Completer<void> arrived})? _travel;
+
+  ({Duration duration, Curve curve, Completer<void> arrived})? _takeTravel() {
+    final travel = _travel;
+    _travel = null;
+    return travel;
+  }
+
   /// The page showing, as Flutter spells it.
   double? get page => _page.toDouble();
 
@@ -3240,6 +3278,12 @@ class PageController extends ChangeNotifier {
 
   /// Shows [page] at once.
   void jumpToPage(int page) {
+    _travel?.arrived.complete();
+    _travel = null;
+    _move(page);
+  }
+
+  void _move(int page) {
     final count = _count;
     final held = count == null ? math.max(0, page) : page.clamp(0, count - 1);
     if (held == _page) return;
@@ -3247,13 +3291,26 @@ class PageController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Shows [page]. It arrives at once: [duration] and [curve] are accepted
-  /// and not carried.
+  /// Slides to [page] over [duration], and completes when it is there. The
+  /// pages between are not passed through: the one showing slides out as
+  /// [page] slides in.
   Future<void> animateToPage(
     int page, {
     required Duration duration,
     required Curve curve,
-  }) async => jumpToPage(page);
+  }) {
+    final arrived = Completer<void>();
+    _travel?.arrived.complete();
+    _travel = (duration: duration, curve: curve, arrived: arrived);
+    final before = _page;
+    _move(page);
+    // Nowhere to go, or no view to show it going: it is there already.
+    if (_page == before || !hasClients) {
+      _travel = null;
+      arrived.complete();
+    }
+    return arrived.future;
+  }
 
   Future<void> nextPage({required Duration duration, required Curve curve}) =>
       animateToPage(_page + 1, duration: duration, curve: curve);
@@ -3274,8 +3331,9 @@ class PageController extends ChangeNotifier {
 ///
 /// A swipe along [scrollDirection] moves to the page beside the one showing,
 /// and [onPageChanged] says which. As with a [TabBarView], the page changes
-/// when the finger lifts - it does not follow the finger, and
-/// [PageController.animateToPage] arrives at once.
+/// when the finger lifts - it does not follow the finger - and then slides
+/// in, as it does for [PageController.animateToPage]; a
+/// [PageController.jumpToPage] arrives at once.
 ///
 /// With [children] every page keeps its `State` while another is in front.
 /// With [PageView.builder] only the page showing is built, so a page's state
@@ -3329,21 +3387,261 @@ class PageView extends StatefulWidget {
   State<PageView> createState() => _PageViewState();
 }
 
+/// A [PageView] on its way from one page to another.
+class _PageSlide {
+  _PageSlide(
+    this.from,
+    this.to,
+    this.duration,
+    this.curve,
+    this.arrived, {
+    this.start = 0,
+    this.beside,
+  });
+  final int from;
+  final int to;
+  final Duration duration;
+  final Curve curve;
+  final Completer<void>? arrived;
+
+  /// Where the page left stands when the slide sets off, in pixels along the
+  /// axis: where the finger let go of it, for a swipe.
+  final double start;
+
+  /// For a page that goes back to its place ([from] is [to]): the page the
+  /// finger had pulled in beside it, which goes back out.
+  final int? beside;
+
+  /// Drawn at the start first, so that a renderer has somewhere to move it
+  /// from; set once that has been drawn.
+  bool moving = false;
+  final List<Timer> timers = [];
+
+  void end() {
+    for (final timer in timers) {
+      timer.cancel();
+    }
+    if (!(arrived?.isCompleted ?? true)) arrived!.complete();
+  }
+}
+
 class _PageViewState extends State<PageView> {
   PageController? _own;
 
   PageController get _controller =>
       widget.controller ?? (_own ??= PageController());
 
+  /// The view's length along its axis, as the renderer last reported it -
+  /// how far a page slides.
+  double? _extent;
+
+  /// The page drawn last, to tell a change of page by.
+  int? _shown;
+  _PageSlide? _slide;
+
+  /// Whether the change of page coming is a swipe's, which slides as a
+  /// page let go of does.
+  bool _swiped = false;
+
+  /// How far the finger has pulled the page, in pixels along the axis, while
+  /// it is on it; null when it is not.
+  double? _drag;
+
+  // A renderer that is handed both ends in one frame shows only the last.
+  static const _settle = Duration(milliseconds: 32);
+  static const _swipeTravel = Duration(milliseconds: 300);
+
   @override
   void dispose() {
+    _slide?.end();
     _own?.dispose();
     super.dispose();
+  }
+
+  /// Sets off from page [from] to page [to], if there is room known to
+  /// slide across and time to do it in; otherwise the page is simply there.
+  void _setOff(int from, int to) {
+    final travel = _controller._takeTravel();
+    final swiped = _swiped;
+    _swiped = false;
+    _slide?.end();
+    _slide = null;
+    final drag = swiped ? (_drag ?? 0) : 0.0;
+    _drag = null;
+    // A swipe has only the rest of the way to go.
+    final rest = _extent == null || _extent! <= 0
+        ? 1.0
+        : (1 - drag.abs() / _extent!).clamp(0.3, 1.0);
+    final duration =
+        travel?.duration ?? (swiped ? _swipeTravel * rest : null);
+    if (duration == null ||
+        duration <= Duration.zero ||
+        _extent == null ||
+        _extent! <= 0) {
+      travel?.arrived.complete();
+      return;
+    }
+    final slide = _PageSlide(
+      from,
+      to,
+      duration,
+      travel?.curve ?? Curves.easeOut,
+      travel?.arrived,
+      start: drag,
+    );
+    _run(slide);
+  }
+
+  /// Draws [slide] where it starts, then sets it moving.
+  void _run(_PageSlide slide) {
+    _slide = slide;
+    slide.timers
+      ..add(
+        Timer(_settle, () {
+          if (!mounted || _slide != slide) return;
+          setState(() => slide.moving = true);
+        }),
+      )
+      ..add(
+        Timer(_settle + slide.duration, () {
+          if (!mounted || _slide != slide) return;
+          slide.end();
+          setState(() => _slide = null);
+        }),
+      );
+  }
+
+  void _measured(double width, double height) {
+    _extent = widget.scrollDirection == Axis.vertical ? height : width;
+  }
+
+  /// Page [index]'s node, kept in its own slot.
+  WidgetNode _pageNode(_Owner owner, int index) {
+    final children = widget.children;
+    if (children != null) {
+      return index >= 0 && index < children.length
+          ? owner.inSlot(index, () => children[index]._render(owner))
+          : UIBuilder.sizedBox();
+    }
+    final built = widget.itemBuilder!(owner._context(), index);
+    return built == null
+        ? UIBuilder.sizedBox()
+        : owner.inSlot(index, () => built._render(owner));
+  }
+
+  /// The two pages of [slide] side by side, moved along the axis: at the
+  /// start the one left in place and the one arriving just beyond it, then
+  /// the one arriving in place and the one left just beyond the other side.
+  WidgetNode _sliding(_Owner owner, _PageSlide slide) {
+    final vertical = widget.scrollDirection == Axis.vertical;
+    // Which way the page after comes from: the end of the line, which is
+    // the left in a right-to-left one, or the bottom.
+    var after = !vertical && owner._direction == TextDirection.rtl ? -1 : 1;
+    if (widget.reverse) after = -after;
+    final extent = _extent!;
+    final children = widget.children;
+    final beside = slide.beside;
+    final other = slide.from == slide.to ? beside : slide.to;
+    if (children != null) {
+      for (var i = 0; i < children.length; i++) {
+        if (i != slide.from && i != other) owner._offstage(i, children[i]);
+      }
+    }
+    WidgetNode at(int index, double offset) => UIBuilder.box(
+      expand: owner._unboundedHeight ? 'width' : 'both',
+      transform: {vertical ? 'dy' : 'dx': offset},
+      animateMs: slide.moving ? slide.duration.inMilliseconds : 0,
+      curve: slide.curve.name,
+      id: 'page-${identityHashCode(this)}-$index',
+      child: _pageNode(owner, index),
+    );
+    final start = slide.start;
+    if (slide.from == slide.to) {
+      // Back to its place, and the page beside it back out of sight.
+      final out = start > 0 ? -extent : extent;
+      return UIBuilder.stack(
+        fit: 'expand',
+        children: [
+          at(slide.from, slide.moving ? 0 : start),
+          if (beside != null) at(beside, slide.moving ? out : start + out),
+        ],
+      );
+    }
+    final sign = (slide.to > slide.from ? 1 : -1) * after;
+    return UIBuilder.stack(
+      fit: 'expand',
+      children: [
+        at(slide.from, slide.moving ? -sign * extent : start),
+        at(slide.to, slide.moving ? 0 : start + sign * extent),
+      ],
+    );
+  }
+
+  /// The page the finger pulls in beside page [now] when it has gone
+  /// [moved] pixels - the one after, from the end of the line, or the one
+  /// before - or null at either end.
+  int? _besideFor(_Owner owner, int now, double moved) {
+    if (moved == 0) return null;
+    final vertical = widget.scrollDirection == Axis.vertical;
+    var after = !vertical && owner._direction == TextDirection.rtl ? -1 : 1;
+    if (widget.reverse) after = -after;
+    // A finger going towards the start of the line brings in the page after.
+    final index = now + (moved < 0 ? after : -after);
+    final count = widget.children?.length ?? widget.itemCount;
+    if (index < 0 || (count != null && index >= count)) return null;
+    if (widget.children == null &&
+        widget.itemBuilder!(owner._context(), index) == null) {
+      return null;
+    }
+    return index;
+  }
+
+  /// The page under the finger at [moved], and the one it pulls in beside.
+  WidgetNode _following(_Owner owner, int now, double moved) {
+    final extent = _extent ?? 0;
+    final beside = _besideFor(owner, now, moved);
+    // At either end the page gives a little and no more.
+    final shown = beside == null ? moved / 3 : moved;
+    final vertical = widget.scrollDirection == Axis.vertical;
+    final children = widget.children;
+    if (children != null) {
+      for (var i = 0; i < children.length; i++) {
+        if (i != now && i != beside) owner._offstage(i, children[i]);
+      }
+    }
+    WidgetNode at(int index, double offset) => UIBuilder.box(
+      expand: owner._unboundedHeight ? 'width' : 'both',
+      transform: {vertical ? 'dy' : 'dx': offset},
+      id: 'page-${identityHashCode(this)}-$index',
+      child: _pageNode(owner, index),
+    );
+    return UIBuilder.stack(
+      fit: 'expand',
+      children: [
+        at(now, shown),
+        if (beside != null)
+          at(beside, shown + (shown < 0 ? extent : -extent)),
+      ],
+    );
+  }
+
+  void _moved(double moved) {
+    if (_extent == null || _extent! <= 0) return;
+    // A page still sliding is where it was going.
+    if (_slide != null) {
+      _slide!.end();
+      _slide = null;
+    }
+    setState(() => _drag = moved);
   }
 
   void _step(int step) {
     final controller = _controller;
     final before = controller._page;
+    if (step == 0) {
+      _settleBack();
+      return;
+    }
     // Pages built without a count end where the builder has none to give.
     final builder = widget.itemBuilder;
     if (builder != null &&
@@ -3352,10 +3650,40 @@ class _PageViewState extends State<PageView> {
         builder(context, before + step) == null) {
       return;
     }
+    _swiped = true;
     controller.jumpToPage(before + step);
     if (controller._page != before) {
       widget.onPageChanged?.call(controller._page);
+    } else {
+      _swiped = false;
+      _settleBack();
     }
+  }
+
+  /// Puts a page the finger let go of short of the next back where it was.
+  void _settleBack() {
+    final drag = _drag;
+    _drag = null;
+    if (drag == null || drag == 0 || _extent == null) {
+      setState(() {});
+      return;
+    }
+    final owner = _owner;
+    final now = _controller._page;
+    final beside = owner == null ? null : _besideFor(owner, now, drag);
+    final rest = (drag.abs() / _extent!).clamp(0.3, 1.0);
+    _run(
+      _PageSlide(
+        now,
+        now,
+        _swipeTravel * rest,
+        Curves.easeOut,
+        null,
+        start: beside == null ? drag / 3 : drag,
+        beside: beside,
+      ),
+    );
+    setState(() {});
   }
 
   @override
@@ -3365,25 +3693,53 @@ class _PageViewState extends State<PageView> {
     final count = children?.length ?? widget.itemCount;
     controller._attach(owner, count);
     owner._watch(controller);
-    final WidgetNode page;
-    if (children != null) {
-      page =
-          _renderOneOf(owner, children, controller._page) ??
-          UIBuilder.sizedBox();
+    final now = controller._page;
+    final shown = _shown;
+    if (shown != null && shown != now) {
+      _setOff(_slide?.to ?? shown, now);
     } else {
-      final built = widget.itemBuilder!(owner._context(), controller._page);
-      page = built == null
-          ? UIBuilder.sizedBox()
-          : owner.inSlot(controller._page, () => built._render(owner));
+      // A jump that went nowhere, or the first build: nothing travels.
+      controller._takeTravel()?.arrived.complete();
+      _swiped = false;
     }
-    if (count == 1 || (widget.physics?._never ?? false)) return page;
+    _shown = now;
+    final slide = _slide;
+    final drag = _drag;
+    final WidgetNode page;
+    if (slide != null) {
+      page = _sliding(owner, slide);
+    } else if (drag != null) {
+      page = _following(owner, now, drag);
+    } else {
+      // At rest as on the move: the page in its own box in a stack, so that
+      // the finger setting off changes what is in the stack and not what the
+      // finger is on - a renderer that made that anew would lose the touch.
+      if (children != null) {
+        for (var i = 0; i < children.length; i++) {
+          if (i != now) owner._offstage(i, children[i]);
+        }
+      }
+      page = UIBuilder.stack(
+        fit: 'expand',
+        children: [
+          UIBuilder.box(
+            expand: owner._unboundedHeight ? 'width' : 'both',
+            id: 'page-${identityHashCode(this)}-$now',
+            child: _pageNode(owner, now),
+          ),
+        ],
+      );
+    }
+    final still = count == 1 || (widget.physics?._never ?? false);
     return _swipePages(
       owner,
       page,
       token: controller,
       axis: widget.scrollDirection,
       reverse: widget.reverse,
-      onStep: _step,
+      onStep: still ? null : _step,
+      onSize: _measured,
+      onMove: still ? null : _moved,
     );
   });
 }

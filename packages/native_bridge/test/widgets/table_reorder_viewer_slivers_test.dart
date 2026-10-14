@@ -182,6 +182,68 @@ void main() {
       expect(heard, ['start 1', 'end 1']);
     });
 
+    group('while a row is over another', () {
+      /// The heights of the gaps round each row, in order: before a, after
+      /// a, before b, and so on.
+      List<num> gaps(AppTester app) => [
+        for (final column in app.ofType('Column'))
+          if ((column.children ?? const []).length == 3 &&
+              column.children!.first.props.containsKey('animateMs'))
+            for (final i in const [0, 2])
+              (column.children![i].props['height'] as num?) ?? 0,
+      ];
+
+      Future<void> hover(AppTester app, int from, int over) async {
+        final id = carried(app)[from].props['dragEventId'] as String;
+        await app.emit('${id}_start');
+        await app.emit(
+          '${targets(app)[over].props['dropEventId']}_hover',
+          {'over': true},
+        );
+      }
+
+      Future<void> measure(AppTester app, double height) async {
+        for (final node in app.nodes.toList()) {
+          final id = node.props['sizeEventId'];
+          if (id is String) {
+            await app.emit(id, {'width': 300.0, 'height': height});
+          }
+        }
+      }
+
+      test('at rest the rows do not part', () {
+        final app = AppTester.widget(list());
+        expect(gaps(app), everyElement(0));
+      });
+
+      test('coming from above, a gap opens after it', () async {
+        final app = AppTester.widget(list());
+        await measure(app, 56);
+        await hover(app, 0, 2);
+
+        expect(gaps(app), [0, 0, 0, 0, 0, 56]);
+      });
+
+      test('coming from below, before it', () async {
+        final app = AppTester.widget(list());
+        await measure(app, 64);
+        await hover(app, 2, 1);
+
+        expect(gaps(app), [0, 0, 64, 0, 0, 0]);
+      });
+
+      test('and the gap closes when it moves on', () async {
+        final app = AppTester.widget(list());
+        await hover(app, 0, 1);
+        await app.emit(
+          '${targets(app)[1].props['dropEventId']}_hover',
+          {'over': false},
+        );
+
+        expect(gaps(app), everyElement(0));
+      });
+    });
+
     test('the builder form builds the same rows', () {
       final app = AppTester.widget(
         _app(
@@ -254,12 +316,87 @@ void main() {
       expect(moved(app)!['scale'], 3);
     });
 
-    test('with panning off there is nothing to hear', () {
+    test('with panning and scaling off there is nothing to hear', () {
       final app = AppTester.widget(
-        _app(const InteractiveViewer(panEnabled: false, child: Text('Map'))),
+        _app(
+          const InteractiveViewer(
+            panEnabled: false,
+            scaleEnabled: false,
+            child: Text('Map'),
+          ),
+        ),
       );
 
       expect(app.nodes.any((n) => n.props['panEventId'] is String), isFalse);
+    });
+
+    group('two fingers', () {
+      /// A viewer 200 by 100, measured, and the pan it hears on.
+      Future<(AppTester, String)> viewer({
+        bool panEnabled = true,
+        double maxScale = 2.5,
+      }) async {
+        final app = AppTester.widget(
+          _app(
+            InteractiveViewer(
+              panEnabled: panEnabled,
+              maxScale: maxScale,
+              child: const Text('Map'),
+            ),
+          ),
+        );
+        for (final node in app.nodes.toList()) {
+          final id = node.props['sizeEventId'];
+          if (id is String) {
+            await app.emit(id, {'width': 200.0, 'height': 100.0});
+          }
+        }
+        final pan = app.nodes.firstWhere((n) => n.props['panEventId'] is String);
+        expect(pan.props['panScale'], isTrue);
+        return (app, pan.props['panEventId'] as String);
+      }
+
+      test('spread, zoom it about the point between them', () async {
+        final (app, pan) = await viewer();
+        await app.emit('${pan}_start', {'x': 50.0, 'y': 25.0});
+        await app.emit('${pan}_update', {
+          'x': 50.0,
+          'y': 25.0,
+          'scale': 2.0,
+          'pointers': 2,
+        });
+
+        // The middle is (100, 50): twice as big about (50, 25), the point
+        // under the fingers stays where it was.
+        expect(moved(app), {'scale': 2.0, 'dx': 50.0, 'dy': 25.0});
+      });
+
+      test('no further than it allows', () async {
+        final (app, pan) = await viewer(maxScale: 1.5);
+        await app.emit('${pan}_start', {'x': 100.0, 'y': 50.0});
+        await app.emit('${pan}_update', {
+          'x': 100.0,
+          'y': 50.0,
+          'scale': 4.0,
+          'pointers': 2,
+        });
+
+        expect(moved(app)!['scale'], 1.5);
+      });
+
+      test('with panning off they still zoom, and do not pan', () async {
+        final (app, pan) = await viewer(panEnabled: false);
+        await app.emit('${pan}_start', {'x': 100.0, 'y': 50.0});
+        await app.emit('${pan}_update', {
+          'x': 100.0,
+          'y': 50.0,
+          'dx': 20.0,
+          'scale': 1.5,
+          'pointers': 2,
+        });
+
+        expect(moved(app), {'scale': 1.5});
+      });
     });
 
     test('a pan along one axis says which', () {
@@ -281,6 +418,31 @@ void main() {
   });
 
   group('a CustomScrollView', () {
+    test('a bar\'s title is at the start of the line, either way', () {
+      List<Object?> titleAlignment(TextDirection reading) {
+        final app = AppTester.widget(
+          _app(
+            Directionality(
+              textDirection: reading,
+              child: const CustomScrollView(
+                slivers: [SliverAppBar(pinned: true, title: Text('Bar'))],
+              ),
+            ),
+          ),
+        );
+        bool holdsTitle(WidgetNode node) =>
+            (node.type == 'Text' && node.props['content'] == 'Bar') ||
+            (node.children ?? const <WidgetNode>[]).any(holdsTitle);
+        final aligned = app.nodes.lastWhere(
+          (n) => n.props['alignment'] is List && holdsTitle(n),
+        );
+        return aligned.props['alignment'] as List;
+      }
+
+      expect(titleAlignment(TextDirection.ltr).first, -1);
+      expect(titleAlignment(TextDirection.rtl).first, 1);
+    });
+
     test('is one scroller, with every sliver\'s boxes in order', () {
       final app = AppTester.widget(
         _app(

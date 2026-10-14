@@ -20,6 +20,7 @@ import 'dart:math' as math;
 
 import 'package:web/web.dart' as web;
 
+import '../src/animation_ends.dart';
 import '../src/app_theme.dart';
 import '../src/contrast.dart';
 import '../src/event_binding.dart';
@@ -173,6 +174,70 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   /// A page transition some tree asked for and no drawn tree has shown yet.
   Map<dynamic, dynamic>? _owedTransition;
 
+  /// The boxes that move to their new size (`animateSize`), and the size
+  /// each is before a patch - null when there are none.
+  Map<web.HTMLElement, (double, double)>? _sizesBefore() {
+    final boxes = rootElement.querySelectorAll('[data-animate-size]');
+    if (boxes.length == 0) return null;
+    return {
+      for (var i = 0; i < boxes.length; i++)
+        if (boxes.item(i) case final web.HTMLElement box)
+          box: (box.offsetWidth.toDouble(), box.offsetHeight.toDouble()),
+    };
+  }
+
+  /// Moves each box in [before] from the size it was to the size the patch
+  /// left it at: the browser has no transition to or from a size nobody
+  /// stated, so the two are stated for it, and let go of at the end.
+  void _moveSizes(Map<web.HTMLElement, (double, double)> before) {
+    for (final MapEntry(key: box, value: (width, height)) in before.entries) {
+      if (!box.isConnected) continue;
+      final ms = _num(_nodes[box]?.props['animateMs']) ?? 0;
+      final nowWidth = box.offsetWidth.toDouble();
+      final nowHeight = box.offsetHeight.toDouble();
+      if (ms <= 0 ||
+          ((nowWidth - width).abs() < 0.5 && (nowHeight - height).abs() < 0.5)) {
+        continue;
+      }
+      // The child is laid out once, at the size it has come to, and the box
+      // moves over it: held at that width, it does not wrap again at every
+      // width the box passes through.
+      final child = box.firstElementChild;
+      final held = child is web.HTMLElement ? child : null;
+      if (held != null) {
+        held.style
+          ..setProperty('min-width', '${held.offsetWidth}px')
+          ..setProperty('flex-shrink', '0');
+      }
+      final motion = box.animate(
+        [
+          {'width': '${width}px', 'height': '${height}px'},
+          {'width': '${nowWidth}px', 'height': '${nowHeight}px'},
+        ].jsify() as JSObject,
+        {
+          'duration': ms.toDouble(),
+          'easing': _timing(_nodes[box]?.props ?? const {}),
+        }.jsify()!,
+      );
+      if (held != null) {
+        void release(web.Event _) {
+          held.style
+            ..removeProperty('min-width')
+            ..removeProperty('flex-shrink');
+        }
+
+        motion
+          ..addEventListener('finish', release.toJS)
+          ..addEventListener('cancel', release.toJS);
+      }
+    }
+  }
+
+  /// Says when a box's transition has run its course, to a node that asked.
+  late final AnimationEnds _ends = AnimationEnds(
+    (eventId, data) => handleEvent(eventId, data),
+  );
+
   /// The node types this pass could not draw, filled in as the DOM is built.
   final Set<String> _unknownTypes = {};
 
@@ -188,10 +253,13 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       // Where the heroes of the page that is going stand, before it goes.
       final heroes = moving ? _heroRects() : const <String, web.DOMRect>{};
       final leaving = moving ? _pictureOfScreen() : null;
+      final sized = animations ? _sizesBefore() : null;
       _syncChildren(rootElement, [
         tree,
       ], _currentTree == null ? const [] : [_currentTree!]);
       _currentTree = tree;
+      if (sized != null) _moveSizes(sized);
+      _ends.follow(tree, animating: animations);
       if (leaving != null) {
         final ms = (_num((transition as Map)['ms']) ?? 300).toDouble();
         // Before the pages move, while the new one is where it will rest.
@@ -1593,31 +1661,83 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     return frame;
   }
 
-  /// Draws [image] as its own shape in the node's `color`, when it has one.
+  /// Draws [image] tinted with the node's `color`, when it has one: as its
+  /// own shape in the colour, or blended with it as the node's `blend` says.
   ///
-  /// The picture is used twice: as a mask over a fill of the colour, laid
-  /// out the way `object-fit` lays the picture out, and as the element's own
-  /// content - which is what gives the element its size, and is moved out of
-  /// sight so that only the fill shows.
+  /// The picture is used as a mask over the colour - laid out the way
+  /// `object-fit` lays the picture out - and, for a blend, under it too; and
+  /// as the element's own content, which is what gives the element its size
+  /// and is moved out of sight so that only the fill shows. So whatever the
+  /// mode, the picture's transparent parts stay clear.
   void _tint(web.HTMLImageElement image, Map<String, dynamic> p) {
     final color = _optStr(p['color']);
     if (color == null) return;
-    final src = _str(p['src']).replaceAll('"', '%22');
+    final blend = _optStr(p['blend']) ?? 'srcIn';
+    // The colour lands on the picture and leaves it as it was.
+    if (const {'dst', 'dstOver', 'dstIn', 'dstATop'}.contains(blend)) return;
+    final src = 'url("${_str(p['src']).replaceAll('"', '%22')}")';
     final size = switch (_str(p['fit'], 'cover')) {
       'contain' || 'scaleDown' => 'contain',
       'fill' => '100% 100%',
       'none' => 'auto',
       _ => 'cover',
     };
+    // Where the colour shows: inside the picture's shape, or - for the
+    // modes that keep the colour only where the picture is not - outside it.
+    final outside = blend == 'srcOut' || blend == 'xor';
     for (final prefix in const ['-webkit-', '']) {
-      _style(image, '${prefix}mask-image', 'url("$src")');
-      _style(image, '${prefix}mask-size', size);
+      _style(
+        image,
+        '${prefix}mask-image',
+        outside ? 'linear-gradient(#000, #000), $src' : src,
+      );
+      _style(image, '${prefix}mask-size', outside ? '100% 100%, $size' : size);
       _style(image, '${prefix}mask-position', 'center');
       _style(image, '${prefix}mask-repeat', 'no-repeat');
     }
-    _style(image, 'background-color', cssColor(color));
+    if (outside) {
+      _style(image, '-webkit-mask-composite', 'xor');
+      _style(image, 'mask-composite', 'exclude');
+    }
+    final css = _cssBlend(blend);
+    if (css == null || outside) {
+      _style(image, 'background-color', cssColor(color));
+    } else if (blend == 'clear' || blend == 'dstOut') {
+      _style(image, 'visibility', 'hidden');
+    } else {
+      // The colour over the picture, blended the way the mode says.
+      final fill = cssColor(color);
+      _style(image, 'background-image', 'linear-gradient($fill, $fill), $src');
+      _style(image, 'background-size', '100% 100%, $size');
+      _style(image, 'background-position', 'center');
+      _style(image, 'background-repeat', 'no-repeat');
+      _style(image, 'background-blend-mode', '$css, normal');
+    }
     _style(image, 'object-position', '-100000px 0');
   }
+
+  /// CSS's name for a Flutter `BlendMode` that blends a tint with what it
+  /// lands on; null for the modes that are the colour in the picture's shape.
+  static String? _cssBlend(String blend) => switch (blend) {
+    'modulate' || 'multiply' => 'multiply',
+    'plus' => 'plus-lighter',
+    'clear' || 'dstOut' => 'normal',
+    'screen' ||
+    'overlay' ||
+    'darken' ||
+    'lighten' ||
+    'difference' ||
+    'exclusion' ||
+    'hue' ||
+    'saturation' ||
+    'color' ||
+    'luminosity' => blend,
+    'colorDodge' => 'color-dodge',
+    'colorBurn' => 'color-burn',
+    'hardLight' => 'hard-light',
+    'softLight' => 'soft-light',
+    _ => null,
+  };
 
   static String _objectFit(String fit) => switch (fit) {
     'contain' => 'contain',
@@ -3371,6 +3491,9 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     if (!fresh || p['hero'] != null) {
       _attr(box, 'data-hero', _optStr(p['hero']));
     }
+    if (!fresh || p['animateSize'] == true) {
+      _attr(box, 'data-animate-size', p['animateSize'] == true ? '' : null);
+    }
     final ignored = p['ignorePointer'] == true;
     put('pointer-events', ignored ? 'none' : null);
     // `pointer-events` only turns the mouse and the finger away. The keyboard
@@ -4219,6 +4342,14 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final pan = p['panEventId'] is String;
     final draggable = p['dragData'] is String;
     if (!longPress && !pan && !draggable) return;
+    if (state.pointer != null &&
+        pan &&
+        p['panScale'] == true &&
+        state.second == null &&
+        event.pointerId != state.pointer) {
+      _beginPinch(box, state, event);
+      return;
+    }
     // Only the main button, and only one pointer at a time.
     if (event.button != 0 || state.pointer != null) return;
     if (!_owns(box, event.target, '[data-gesture], input, select, textarea')) {
@@ -4231,6 +4362,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ..downY = event.placeY
       ..lastX = event.placeX
       ..lastY = event.placeY
+      ..nowX = event.placeX
+      ..nowY = event.placeY
       ..lastTime = event.timeStamp.toDouble()
       ..vx = 0
       ..vy = 0
@@ -4269,14 +4402,93 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
   }
 
+  /// A second finger on a pan that hears one: the pan - begun now, if the
+  /// first finger had not got going - becomes a pinch.
+  void _beginPinch(web.Element box, _NodeState state, web.PointerEvent event) {
+    final eventId = state.props['panEventId'] as String;
+    try {
+      (box as web.HTMLElement).setPointerCapture(event.pointerId);
+    } catch (_) {}
+    state
+      ..second = event.pointerId
+      ..secondX = event.placeX
+      ..secondY = event.placeY
+      ..holdTimer?.cancel();
+    state.spreadFrom = math.max(
+      1,
+      math.sqrt(
+        math.pow(state.secondX - state.nowX, 2) +
+            math.pow(state.secondY - state.nowY, 2),
+      ),
+    );
+    state
+      ..focalX = (state.nowX + state.secondX) / 2
+      ..focalY = (state.nowY + state.secondY) / 2;
+    if (!state.panning) {
+      state
+        ..moved = true
+        ..panning = true;
+      handleEvent('${eventId}_start', {
+        ..._local(box, state.focalX, state.focalY),
+        'dx': 0.0,
+        'dy': 0.0,
+        'vx': 0.0,
+        'vy': 0.0,
+        'pointers': 2,
+      });
+    }
+  }
+
+  /// One of two fingers moved: says how far apart they are now, over how
+  /// far they were, and where the point between them went.
+  void _movePinch(web.Element box, _NodeState state, web.PointerEvent event) {
+    if (event.pointerId == state.second) {
+      state
+        ..secondX = event.placeX
+        ..secondY = event.placeY;
+    } else {
+      state
+        ..nowX = event.placeX
+        ..nowY = event.placeY;
+    }
+    final eventId = state.props['panEventId'];
+    if (eventId is! String) return;
+    final focalX = (state.nowX + state.secondX) / 2;
+    final focalY = (state.nowY + state.secondY) / 2;
+    final spread = math.sqrt(
+      math.pow(state.secondX - state.nowX, 2) +
+          math.pow(state.secondY - state.nowY, 2),
+    );
+    handleEvent('${eventId}_update', {
+      ..._local(box, focalX, focalY),
+      'dx': focalX - state.focalX,
+      'dy': focalY - state.focalY,
+      'vx': 0.0,
+      'vy': 0.0,
+      'scale': spread / state.spreadFrom,
+      'pointers': 2,
+    });
+    state
+      ..focalX = focalX
+      ..focalY = focalY;
+  }
+
   void _onPointerMove(
     web.Element box,
     _NodeState state,
     web.PointerEvent event,
   ) {
+    if (state.second != null &&
+        (event.pointerId == state.second || event.pointerId == state.pointer)) {
+      _movePinch(box, state, event);
+      return;
+    }
     if (state.pointer != event.pointerId || _drag != null) return;
     final x = event.placeX;
     final y = event.placeY;
+    state
+      ..nowX = x
+      ..nowY = y;
     final p = state.props;
     if (!state.moved) {
       final travelled = math.sqrt(
@@ -4348,6 +4560,25 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     web.PointerEvent event, {
     bool cancelled = false,
   }) {
+    // One of two fingers lifted: the pinch is over and the pan goes on with
+    // the finger that is left, from where it is.
+    if (state.second != null &&
+        (event.pointerId == state.second || event.pointerId == state.pointer)) {
+      if (event.pointerId == state.pointer) {
+        state
+          ..pointer = state.second
+          ..nowX = state.secondX
+          ..nowY = state.secondY;
+      }
+      state
+        ..second = null
+        ..lastX = state.nowX
+        ..lastY = state.nowY
+        ..lastTime = event.timeStamp.toDouble()
+        ..vx = 0
+        ..vy = 0;
+      return;
+    }
     if (state.pointer != event.pointerId) return;
     state.pointer = null;
     state.holdTimer?.cancel();
@@ -4606,6 +4837,11 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final pixelHeight = (height * ratio).round();
     if (surface.width != pixelWidth) surface.width = pixelWidth;
     if (surface.height != pixelHeight) surface.height = pixelHeight;
+    // The picture is as big as it was painted: a frame the page stretches
+    // past a stated size - a scaffold's body does - gets room round it, not
+    // a picture pulled out of shape.
+    _style(surface, 'width', '${width}px');
+    _style(surface, 'height', '${height}px');
     state
       ..paintedWidth = width
       ..paintedHeight = height;
@@ -5325,6 +5561,20 @@ class _NodeState {
   bool panning = false;
   bool held = false;
 
+  /// Where the pointer being followed is now, panning or not.
+  double nowX = 0;
+  double nowY = 0;
+
+  /// A second finger on a pan that hears one (`panScale`): which, where it
+  /// is, how far apart the two were when it came down, and the point
+  /// between them last reported.
+  int? second;
+  double secondX = 0;
+  double secondY = 0;
+  double spreadFrom = 0;
+  double focalX = 0;
+  double focalY = 0;
+
   /// Set when a gesture ends, for the click the browser sends after it.
   bool swallowClick = false;
   Timer? holdTimer;
@@ -5457,8 +5707,13 @@ void _replayCanvasCommands(
     return paint is Map ? paint : null;
   }
 
-  /// Fills or strokes the current path the way [paint] says.
-  void draw(Map<dynamic, dynamic>? paint, {bool stroke = false}) {
+  /// Fills or strokes the current path the way [paint] says - a fill by
+  /// the even-odd rule when [evenOdd].
+  void draw(
+    Map<dynamic, dynamic>? paint, {
+    bool stroke = false,
+    bool evenOdd = false,
+  }) {
     final color = paint?['color'];
     final css =
         _canvasGradient(context, paint?['gradient']) ??
@@ -5489,9 +5744,12 @@ void _replayCanvasCommands(
         }
         ..stroke();
     } else {
-      context
-        ..fillStyle = css
-        ..fill();
+      context.fillStyle = css;
+      if (evenOdd) {
+        context.fill('evenodd'.toJS);
+      } else {
+        context.fill();
+      }
     }
     if (blurred) context.filter = 'none';
   }
@@ -5662,7 +5920,7 @@ void _replayCanvasCommands(
         draw(paintAt(c, 8));
       case 'path':
         trace(c);
-        draw(paintAt(c, 2));
+        draw(paintAt(c, 2), evenOdd: c.length > 3 && c[3] == 'evenOdd');
       case 'text':
         text(c);
       case 'save':
@@ -5691,7 +5949,11 @@ void _replayCanvasCommands(
         context.clip();
       case 'clipPath':
         trace(c);
-        context.clip();
+        if (c.length > 2 && c[2] == 'evenOdd') {
+          context.clip('evenodd'.toJS);
+        } else {
+          context.clip();
+        }
     }
   }
   for (; saved >= 0; saved--) {

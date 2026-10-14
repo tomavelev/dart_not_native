@@ -26,6 +26,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import '../src/animation_ends.dart';
 import '../src/app_theme.dart';
 import '../src/contrast.dart' as contrast;
 import '../src/event_binding.dart';
@@ -114,6 +115,12 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   /// the render after it. One render late, and the alternative is never.
   final Set<String> _unknownTypes = {};
 
+  /// Says when a node's implicit animation has run its course, to a node
+  /// that asked. The animation starts with the frame that builds this tree.
+  late final AnimationEnds _ends = AnimationEnds(
+    (eventId, data) => handleEvent(eventId, data),
+  );
+
   @override
   Future<RenderError?> render(WidgetNode tree) async {
     this.tree = tree;
@@ -134,6 +141,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // field's value twice before then (typing, then a submit that clears it)
     // must still end up with the value it asked for.
     _syncTextFields(tree);
+    _ends.follow(tree, animating: true);
     // A FlutterSlot this renderer drew and the tree no longer holds is done
     // with; its builder goes with it.
     FlutterSlots.instance.sync(this, tree);
@@ -1031,10 +1039,9 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             width: width,
             height: height,
             // The alt text below is the image's name whichever of the two is
-            // showing, so the stand-in is not announced as well.
-            child: ExcludeSemantics(
-              child: Center(child: buildNode(children.first, context)),
-            ),
+            // showing, so the stand-in is not announced as well. It fills
+            // the image's box, as it does on the other three renderers.
+            child: ExcludeSemantics(child: buildNode(children.first, context)),
           );
 
     // An image that asked is told how its load ended - after the frame,
@@ -1070,6 +1077,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
           };
 
     final tint = _color(p['color']);
+    final blend = BlendMode.values.asNameMap()[p['blend']] ?? BlendMode.srcIn;
     final image =
         src.startsWith('http://') ||
             src.startsWith('https://') ||
@@ -1080,7 +1088,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             height: height,
             fit: fit,
             color: tint,
-            colorBlendMode: tint == null ? null : BlendMode.srcIn,
+            colorBlendMode: tint == null ? null : blend,
             frameBuilder: whileLoading,
             errorBuilder: onError,
           )
@@ -1090,7 +1098,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             height: height,
             fit: fit,
             color: tint,
-            colorBlendMode: tint == null ? null : BlendMode.srcIn,
+            colorBlendMode: tint == null ? null : blend,
             frameBuilder: whileLoading,
             errorBuilder: onError,
           );
@@ -1894,6 +1902,16 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
               curve: curve,
               child: content,
             );
+    }
+    // A box that moves to the size its child comes to: Flutter's own.
+    if (content != null && duration != null && p['animateSize'] == true) {
+      content = AnimatedSize(
+        duration: duration,
+        curve: curve,
+        alignment: alignment ?? Alignment.center,
+        clipBehavior: clip ? Clip.hardEdge : Clip.none,
+        child: content,
+      );
     }
     // A Container with no child grows to fill its parent, and a box with none
     // hugs nothing instead.
@@ -4036,7 +4054,13 @@ class _NodeBoxState extends State<_NodeBox> {
     widget.renderer.handleEvent(eventId, {'x': at.dx, 'y': at.dy});
   }
 
-  void _panned(String phase, Offset? global, {Offset velocity = Offset.zero}) {
+  void _panned(
+    String phase,
+    Offset? global, {
+    Offset velocity = Offset.zero,
+    double? scale,
+    int? pointers,
+  }) {
     final eventId = _id('panEventId');
     if (eventId == null) return;
     // The end of a pan has no position of its own; it ends where it last was.
@@ -4050,8 +4074,19 @@ class _NodeBoxState extends State<_NodeBox> {
       'dy': moved.dy,
       'vx': velocity.dx,
       'vy': velocity.dy,
+      'scale': ?scale,
+      'pointers': ?pointers,
     });
   }
+
+  /// A pan that hears a second finger (`panScale`): Flutter's scale, whose
+  /// focal point is the pan's position.
+  void _scaled(ScaleUpdateDetails details) => _panned(
+    '_update',
+    details.focalPoint,
+    scale: details.scale,
+    pointers: details.pointerCount,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -4097,6 +4132,25 @@ class _NodeBoxState extends State<_NodeBox> {
     void end(DragEndDetails details) =>
         _panned('_end', null, velocity: details.velocity.pixelsPerSecond);
     if (ripple && pan == null) return box;
+    // Flutter's scale is a pan with a pinch in it, and the two cannot both
+    // listen: the scale stands for both.
+    final scales = pan != null && widget.props['panScale'] == true;
+    if (scales) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: tapsHere && tap != null
+            ? (details) => _point(tap, details.globalPosition)
+            : null,
+        onScaleStart: (details) => _panned('_start', details.focalPoint),
+        onScaleUpdate: _scaled,
+        onScaleEnd: (details) => _panned(
+          '_end',
+          null,
+          velocity: details.velocity.pixelsPerSecond,
+        ),
+        child: box,
+      );
+    }
     return GestureDetector(
       // A box takes touches over all of itself, painted or not.
       behavior: HitTestBehavior.opaque,
@@ -4457,7 +4511,9 @@ class _CommandPainter extends CustomPainter {
         );
       case 'path':
         final segments = c.length > 1 ? c[1] : null;
-        if (segments is List) canvas.drawPath(_path(segments), _paintAt(c, 2));
+        if (segments is List) {
+          canvas.drawPath(_path(segments, c.elementAtOrNull(3)), _paintAt(c, 2));
+        }
       case 'text':
         _text(canvas, c);
       case 'save':
@@ -4480,12 +4536,17 @@ class _CommandPainter extends CustomPainter {
         );
       case 'clipPath':
         final segments = c.length > 1 ? c[1] : null;
-        if (segments is List) canvas.clipPath(_path(segments));
+        if (segments is List) {
+          canvas.clipPath(_path(segments, c.elementAtOrNull(2)));
+        }
     }
   }
 
-  static Path _path(List<Object?> segments) {
-    final path = Path();
+  /// The path [segments] trace, filled by the even-odd rule when [rule]
+  /// says so.
+  static Path _path(List<Object?> segments, [Object? rule]) {
+    final path = Path()
+      ..fillType = rule == 'evenOdd' ? PathFillType.evenOdd : PathFillType.nonZero;
     for (final s in segments) {
       if (s is! List || s.isEmpty) continue;
       switch (s.first) {

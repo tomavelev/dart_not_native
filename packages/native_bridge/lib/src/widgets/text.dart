@@ -856,6 +856,7 @@ class Image extends Widget {
     this.width,
     this.height,
     this.color,
+    this.colorBlendMode,
     this.fit,
     this.alignment = Alignment.center,
     this.errorBuilder,
@@ -871,6 +872,7 @@ class Image extends Widget {
     this.width,
     this.height,
     this.color,
+    this.colorBlendMode,
     this.fit,
     this.alignment = Alignment.center,
     this.errorBuilder,
@@ -887,6 +889,7 @@ class Image extends Widget {
     this.width,
     this.height,
     this.color,
+    this.colorBlendMode,
     this.fit,
     this.alignment = Alignment.center,
     this.errorBuilder,
@@ -903,6 +906,7 @@ class Image extends Widget {
     this.width,
     this.height,
     this.color,
+    this.colorBlendMode,
     this.fit,
     this.alignment = Alignment.center,
     this.errorBuilder,
@@ -916,10 +920,14 @@ class Image extends Widget {
   final double? width;
   final double? height;
 
-  /// A tint: the picture is drawn as its own shape filled with this colour,
-  /// which is Flutter's default way of blending the two (`BlendMode.srcIn`)
-  /// and the only one carried.
+  /// A tint: blended with the picture as [colorBlendMode] says.
   final Color? color;
+
+  /// How [color] is blended with the picture - left null, as its own shape
+  /// filled with the colour (`BlendMode.srcIn`), as in Flutter. Every mode
+  /// is carried; on the web the picture's transparent parts stay clear
+  /// whichever is asked, where Flutter would fill them for some.
+  final BlendMode? colorBlendMode;
 
   /// How the picture fills its box. Left null it is fitted inside, whole,
   /// which is the nearest thing to Flutter's default.
@@ -954,6 +962,9 @@ class Image extends Widget {
     width: width,
     height: height,
     color: color?._hex,
+    blend: color == null || colorBlendMode == null
+        ? null
+        : colorBlendMode!.name,
     fit: switch (fit) {
       null || BoxFit.contain || BoxFit.fitWidth || BoxFit.fitHeight => 'contain',
       BoxFit.cover => 'cover',

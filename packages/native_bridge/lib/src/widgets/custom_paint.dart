@@ -39,8 +39,11 @@ enum ClipOp { difference, intersect }
 /// each renderer fills with its platform's default rule.
 enum PathFillType { nonZero, evenOdd }
 
-/// How a blur treats the shape it blurs. Every one is drawn as [normal]:
-/// blurred inside and out.
+/// How a blur treats the shape it blurs: [normal] blurs it inside and out,
+/// [solid] keeps it sharp inside the blur, [outer] leaves only the blur
+/// outside it and [inner] only the blur within it. A stroked shape is
+/// blurred [normal] or [solid]; asked for either of the other two, it is
+/// blurred [normal].
 enum BlurStyle { normal, solid, outer, inner }
 
 /// A blur for a [Paint] - a glow, a soft shadow.
@@ -64,7 +67,8 @@ class MaskFilter {
 /// What travels is [color], [style], [strokeWidth], [strokeCap],
 /// [strokeJoin], a [shader] that is a gradient
 /// (`LinearGradient(...).createShader(rect)`, a `RadialGradient`'s or a
-/// `SweepGradient`'s) and a [maskFilter] that is a blur. [colorFilter],
+/// `SweepGradient`'s, or one made by [Gradient.linear] and its kin) and a
+/// [maskFilter] that is a blur, in any [BlurStyle]. [colorFilter],
 /// [blendMode] and [isAntiAlias] can be set, so a painter written for
 /// Flutter compiles, and are not carried.
 class Paint {
@@ -97,6 +101,15 @@ class Paint {
   /// Ignored: a mitred corner is each platform's default limit.
   double strokeMiterLimit = 4;
 
+  /// This paint without its blur.
+  Paint get _sharp => Paint()
+    ..color = color
+    ..style = style
+    ..strokeWidth = strokeWidth
+    ..strokeCap = strokeCap
+    ..strokeJoin = strokeJoin
+    ..shader = shader;
+
   /// The paint as the protocol spells it, defaults left out so two paints
   /// that draw the same are the same entry. [stroke] forces an outline, for a
   /// line - which has no inside to fill, whatever [style] says.
@@ -106,7 +119,7 @@ class Paint {
     final blur = maskFilter;
     return {
       'color': color._hex,
-      if (shader is Shader) 'gradient': shader._json,
+      if (shader is Shader) 'gradient': shader._paintJson,
       if (blur is MaskFilter && blur._sigma > 0) 'blur': blur._sigma,
       if (stroked) 'style': 'stroke',
       if (stroked) 'strokeWidth': strokeWidth <= 0 ? 1.0 : strokeWidth,
@@ -132,7 +145,9 @@ class Path {
   double _x = 0;
   double _y = 0;
 
-  /// Accepted and ignored - see [PathFillType].
+  /// Which parts of the path are inside: by default every part the outline
+  /// goes round, and with [PathFillType.evenOdd] - a ring, a frame - the
+  /// parts it goes round an odd number of times.
   PathFillType fillType = PathFillType.nonZero;
 
   void _seen(double x, double y) {
@@ -450,6 +465,12 @@ class Canvas {
 
   int _paint(Paint paint, {bool? stroke}) {
     final json = paint._json(stroke: stroke);
+    final gradient = json['gradient'];
+    if (gradient is Map<String, dynamic> && gradient['tile'] != null) {
+      // Far enough to cover the canvas from anywhere on it, at any turn.
+      final reach = 2 * (_size.width.abs() + _size.height.abs()) + 1;
+      json['gradient'] = _tiledGradient(gradient, reach);
+    }
     final key =
         '${json['color']}|${json['style']}|${json['strokeWidth']}|'
         '${json['cap']}|${json['join']}|${json['gradient']}|${json['blur']}';
@@ -459,48 +480,93 @@ class Canvas {
     });
   }
 
-  void drawRect(Rect rect, Paint paint) => _commands.add([
-    'rect',
-    rect.left,
-    rect.top,
-    rect.width,
-    rect.height,
-    _paint(paint),
-  ]);
+  /// Adds the command [build] makes for [paint]'s index - drawn in the
+  /// paint's [BlurStyle]: [solid] is the blur with the shape drawn sharp
+  /// over it, and [inner] and [outer] are the blur clipped to [outline], or
+  /// to everything but it.
+  void _draw(
+    Paint paint,
+    List<Object?> Function(int paint) build, {
+    Path Function()? outline,
+    bool? stroke,
+  }) {
+    final blur = paint.maskFilter;
+    final stroked = stroke ?? paint.style == PaintingStyle.stroke;
+    if (blur is! MaskFilter ||
+        blur._sigma <= 0 ||
+        blur.style == BlurStyle.normal) {
+      _commands.add(build(_paint(paint, stroke: stroke)));
+      return;
+    }
+    if (blur.style == BlurStyle.solid) {
+      _commands
+        ..add(build(_paint(paint, stroke: stroke)))
+        ..add(build(_paint(paint._sharp, stroke: stroke)));
+      return;
+    }
+    if (stroked || outline == null) {
+      _commands.add(build(_paint(paint, stroke: stroke)));
+      return;
+    }
+    final shape = outline();
+    final Path clip;
+    if (blur.style == BlurStyle.inner) {
+      clip = shape;
+    } else {
+      // Everything but the shape: a frame far wider than any blur, with the
+      // shape cut out of it.
+      clip = Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRect(Rect.fromLTRB(-1e5, -1e5, 1e5, 1e5))
+        ..addPath(shape, Offset.zero);
+    }
+    save();
+    clipPath(clip);
+    _commands.add(build(_paint(paint, stroke: stroke)));
+    restore();
+  }
+
+  void drawRect(Rect rect, Paint paint) => _draw(
+    paint,
+    (index) => ['rect', rect.left, rect.top, rect.width, rect.height, index],
+    outline: () => Path()..addRect(rect),
+  );
 
   /// A rounded rectangle. The protocol rounds every corner alike, so the
   /// top-left radius speaks for all four.
-  void drawRRect(RRect rrect, Paint paint) => _commands.add([
-    'rrect',
-    rrect.left,
-    rrect.top,
-    rrect.width,
-    rrect.height,
-    rrect.tlRadiusX,
-    _paint(paint),
-  ]);
+  void drawRRect(RRect rrect, Paint paint) => _draw(
+    paint,
+    (index) => [
+      'rrect',
+      rrect.left,
+      rrect.top,
+      rrect.width,
+      rrect.height,
+      rrect.tlRadiusX,
+      index,
+    ],
+    outline: () => Path()..addRRect(rrect),
+  );
 
-  void drawCircle(Offset c, double radius, Paint paint) =>
-      _commands.add(['circle', c.dx, c.dy, radius, _paint(paint)]);
+  void drawCircle(Offset c, double radius, Paint paint) => _draw(
+    paint,
+    (index) => ['circle', c.dx, c.dy, radius, index],
+    outline: () =>
+        Path()..addOval(Rect.fromCircle(center: c, radius: radius)),
+  );
 
-  void drawOval(Rect rect, Paint paint) => _commands.add([
-    'oval',
-    rect.left,
-    rect.top,
-    rect.width,
-    rect.height,
-    _paint(paint),
-  ]);
+  void drawOval(Rect rect, Paint paint) => _draw(
+    paint,
+    (index) => ['oval', rect.left, rect.top, rect.width, rect.height, index],
+    outline: () => Path()..addOval(rect),
+  );
 
   /// A line is always stroked, as in Flutter, whatever the paint's style.
-  void drawLine(Offset p1, Offset p2, Paint paint) => _commands.add([
-    'line',
-    p1.dx,
-    p1.dy,
-    p2.dx,
-    p2.dy,
-    _paint(paint, stroke: true),
-  ]);
+  void drawLine(Offset p1, Offset p2, Paint paint) => _draw(
+    paint,
+    (index) => ['line', p1.dx, p1.dy, p2.dx, p2.dy, index],
+    stroke: true,
+  );
 
   void drawArc(
     Rect rect,
@@ -508,25 +574,42 @@ class Canvas {
     double sweepAngle,
     bool useCenter,
     Paint paint,
-  ) => _commands.add([
-    'arc',
-    rect.left,
-    rect.top,
-    rect.width,
-    rect.height,
-    startAngle,
-    sweepAngle,
-    useCenter,
-    _paint(paint),
-  ]);
+  ) => _draw(
+    paint,
+    (index) => [
+      'arc',
+      rect.left,
+      rect.top,
+      rect.width,
+      rect.height,
+      startAngle,
+      sweepAngle,
+      useCenter,
+      index,
+    ],
+    outline: () {
+      final path = Path();
+      if (useCenter) path.moveTo(rect.center.dx, rect.center.dy);
+      path.arcTo(rect, startAngle, sweepAngle, !useCenter);
+      return path..close();
+    },
+  );
 
   /// The path's segments are copied, so a painter can go on to reuse or
   /// reset the path without changing what was already drawn.
-  void drawPath(Path path, Paint paint) => _commands.add([
-    'path',
-    [for (final segment in path._segments) List<Object?>.of(segment)],
-    _paint(paint),
-  ]);
+  void drawPath(Path path, Paint paint) {
+    final segments = [
+      for (final segment in path._segments) List<Object?>.of(segment),
+    ];
+    final evenOdd = path.fillType == PathFillType.evenOdd;
+    _draw(
+      paint,
+      (index) => ['path', segments, index, if (evenOdd) 'evenOdd'],
+      outline: () => Path()
+        ..fillType = path.fillType
+        ..addPath(path, Offset.zero),
+    );
+  }
 
   /// Dots or segments. There is no points command, so [PointMode.points]
   /// draws each as a filled circle as wide as the stroke, and the other two
@@ -620,6 +703,7 @@ class Canvas {
   void clipPath(Path path, {bool doAntiAlias = true}) => _commands.add([
     'clipPath',
     [for (final segment in path._segments) List<Object?>.of(segment)],
+    if (path.fillType == PathFillType.evenOdd) 'evenOdd',
   ]);
 }
 

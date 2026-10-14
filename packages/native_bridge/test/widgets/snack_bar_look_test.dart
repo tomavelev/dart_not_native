@@ -119,6 +119,7 @@ void main() {
       Widget bottom, {
       bool button = false,
       SnackBar bar = const SnackBar(content: Text('Hi')),
+      double? measured,
     }) async {
       final app = AppTester.widget(
         MaterialApp(
@@ -143,6 +144,16 @@ void main() {
           ),
         ),
       );
+      if (measured != null) {
+        // The renderer says how tall the bar came out.
+        final bar = app.nodes.lastWhere(
+          (n) => n.props['sizeEventId'] != null,
+        );
+        await app.emit(bar.props['sizeEventId'] as String, {
+          'width': 360.0,
+          'height': measured,
+        });
+      }
       await app.tap('show');
       return app.ofType('Snackbar').single.props;
     }
@@ -174,6 +185,16 @@ void main() {
       );
 
       expect(props['margin'], [16.0, 0.0, 16.0, 72.0]);
+    });
+
+    test('once the bar has been measured, at the height it came to',
+        () async {
+      final props = await shownOver(
+        const SizedBox(height: 56, child: Text('a bar of the app\'s own')),
+        measured: 73,
+      );
+
+      expect(props['margin'], [16.0, 0.0, 16.0, 89.0]);
     });
 
     test('and above the button as well when there are both', () async {

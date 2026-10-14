@@ -286,7 +286,21 @@ class _AnimationRun {
   _AnimationRun(this.target);
   Object? target;
   VoidCallback? onEnd;
+
+  /// Ends the run if the renderer has not said it has.
   Timer? timer;
+
+  /// Which change of target this is: what the renderer is asked to name
+  /// when it says the move has finished, so an answer about a move since
+  /// overtaken ends nothing.
+  int ask = 0;
+
+  void end(int answered) {
+    if (answered != ask || timer == null) return;
+    timer!.cancel();
+    timer = null;
+    onEnd?.call();
+  }
 }
 
 /// Something a [State] read from above it, and how to tell it has changed.
@@ -845,13 +859,18 @@ class _Owner {
   Set<String> _animationsUsed = {};
 
   /// Notes what an implicit animation is showing in this build, and returns
-  /// [node] as it was given.
+  /// [node] - asking the renderer, while a move is on its way, to say when
+  /// it has finished.
   ///
-  /// No renderer says when an animation has finished, but the app knows how
-  /// long it asked for: when [target] is not what this place showed last
-  /// time, [onEnd] is called [duration] after this build. A change before
-  /// then starts the wait again, as the animation itself starts again. The
-  /// first build shows the target outright and ends nothing.
+  /// When [target] is not what this place showed last time, [onEnd] is
+  /// called once the renderer says the move it started has finished: the
+  /// node carries `endEventId` and `endAsk`, a number for this change, and a
+  /// renderer that moves the node answers `{ask}` when it is there - at
+  /// once, when it moved nothing. A change before then starts the wait
+  /// again, as the animation itself starts again. A renderer that never
+  /// answers - or a node it does not move - is ended a little after
+  /// [duration] all the same. The first build shows the target outright and
+  /// ends nothing.
   WidgetNode _animated(
     WidgetNode node,
     Object? target,
@@ -871,14 +890,29 @@ class _Owner {
     run.onEnd = onEnd;
     if (run.target != target) {
       run.target = target;
+      run.ask++;
       run.timer?.cancel();
-      run.timer = Timer(duration, () {
-        run.timer = null;
-        run.onEnd?.call();
-      });
+      final ask = run.ask;
+      run.timer = Timer(duration + _endGrace, () => run.end(ask));
     }
-    return node;
+    if (run.timer == null) return node;
+    final bindings = EventBindings.current;
+    if (bindings == null) return node;
+    final eventId = bindings.allocate(key: 'end:$place');
+    bindings.on(eventId, (data) {
+      final ask = data['ask'];
+      if (ask is num) run.end(ask.toInt());
+    });
+    return WidgetNode(
+      type: node.type,
+      props: {...node.props, 'endEventId': eventId, 'endAsk': run.ask},
+      children: node.children,
+    );
   }
+
+  /// How long past its duration an animation is waited for before it is
+  /// taken to have ended without a word from the renderer.
+  static const Duration _endGrace = Duration(milliseconds: 250);
 
   /// A [FocusNode] for each text field that was not given one, by its place
   /// in the tree, so the keyboard can be sent to a field nobody named.
@@ -940,9 +974,13 @@ class _Owner {
   /// build - one no renderer knows is there.
   bool _nestedFab = false;
 
-  /// How tall the bottom bar of a scaffold inside another's body is taken to
-  /// be, when one was drawn in this build - no renderer knows that either.
+  /// How tall the bottom bar of a scaffold inside another's body is, when
+  /// one was drawn in this build - no renderer knows that either.
   double _nestedBar = 0;
+
+  /// The heights renderers have reported for such bars, by where each bar
+  /// sits.
+  final Map<String, double> _barHeights = {};
 
   /// The listenables the last build depended on, and the listener watching
   /// each. A subscription belongs to the tree rather than to a widget: this
@@ -1013,6 +1051,10 @@ class _Owner {
   /// What a [Draggable] carries, by the token that crosses to the renderer:
   /// the wire holds a string, and a drop hands back the object it stood for.
   final Map<String, _Dragged> _dragData = {};
+
+  /// [_dragData] as the last build left it: what a target built before the
+  /// draggable in this build reads.
+  Map<String, _Dragged> _dragDataBefore = {};
 
   /// The tokens of the [Draggable]s in the air, and of those a target has
   /// taken since they were picked up - which is how a drag's end knows
@@ -1188,6 +1230,7 @@ class _Owner {
     _scrollDepth = 0;
     _scaffoldDepth = 0;
     _keyListeners.clear();
+    _dragDataBefore = Map.of(_dragData);
     _dragData.clear();
     _navigators.clear();
     _popScopes.clear();

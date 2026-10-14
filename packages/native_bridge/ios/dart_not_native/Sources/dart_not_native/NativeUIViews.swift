@@ -1,3 +1,4 @@
+import CoreImage
 import UIKit
 
 // The views behind the free-form nodes - Box, Stack, Positioned, Scroll,
@@ -193,6 +194,8 @@ struct DnnBoxStyle {
   var panEventId: String?
   /// 'horizontal' or 'vertical' for a pan along that axis alone.
   var panAxis: String?
+  /// Whether the pan hears a second finger, and reports the pinch.
+  var panScale = false
   var ripple = false
   var dragData: String?
   /// Told `_start` when the box is picked up and `_end` when it is let go.
@@ -258,6 +261,49 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
 
   private(set) var style = DnnBoxStyle()
 
+  /// Whether the box moves to the size its child comes to (`animateSize`),
+  /// over how long and along what. While it moves, the child may stand past
+  /// its edges - clipped there, when the box clips.
+  var animatesSize = false {
+    didSet { if oldValue != animatesSize { applyChildLayout(force: true) } }
+  }
+  var sizeSeconds: TimeInterval = 0
+  var sizeCurve: UIView.AnimationOptions = []
+  private var sizePins: [NSLayoutConstraint] = []
+
+  private var childPins: [NSLayoutConstraint] = []
+
+  /// Holds the box at [size] - the one it is moving from, then the one it is
+  /// moving to - against what its child would make it. The child is held at
+  /// the size it has come to, so that it is laid out once and the box moves
+  /// over it: text squeezed to the old width would wrap again, and keep the
+  /// narrow width as its own once let go.
+  func pinSize(_ size: CGSize) {
+    NSLayoutConstraint.deactivate(sizePins)
+    sizePins = [
+      surface.widthAnchor.constraint(equalToConstant: size.width),
+      surface.heightAnchor.constraint(equalToConstant: size.height),
+    ]
+    for pin in sizePins { pin.priority = UILayoutPriority(999) }
+    NSLayoutConstraint.activate(sizePins)
+    if childPins.isEmpty, let child = content.subviews.first {
+      let natural = child.bounds.size
+      childPins = [
+        child.widthAnchor.constraint(equalToConstant: natural.width),
+        child.heightAnchor.constraint(equalToConstant: natural.height),
+      ]
+      for pin in childPins { pin.priority = UILayoutPriority(998) }
+      NSLayoutConstraint.activate(childPins)
+    }
+  }
+
+  /// Leaves the box to its child again.
+  func unpinSize() {
+    NSLayoutConstraint.deactivate(sizePins + childPins)
+    sizePins = []
+    childPins = []
+  }
+
   private var marginConstraints: [NSLayoutConstraint] = []
   private var sizeConstraints: [NSLayoutConstraint] = []
   private var childConstraints: [NSLayoutConstraint] = []
@@ -277,6 +323,69 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   private var dragger: UIDragInteraction?
   private var dropper: UIDropInteraction?
   private var lastPan = CGPoint.zero
+
+  /// The pinch a pan that hears one (`panScale`) is watching for, whether it
+  /// is going, whether the app has been told a pan began - by the pan or by
+  /// the pinch, whichever came first - and where the point between the
+  /// fingers was last reported, on the screen.
+  private var pinchRecognizer: UIPinchGestureRecognizer?
+  private var pinching = false
+  private var panTold = false
+  private var lastFocal = CGPoint.zero
+
+  /// The pan and the pinch are one gesture to the app, and are heard together.
+  func gestureRecognizer(
+    _ recognizer: UIGestureRecognizer,
+    shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+  ) -> Bool {
+    let mine: [UIGestureRecognizer?] = [panRecognizer, pinchRecognizer]
+    return mine.contains { $0 === recognizer } && mine.contains { $0 === other }
+  }
+
+  @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+    guard let eventId = style.panEventId else { return }
+    let point = recognizer.location(in: surface)
+    let onScreen = recognizer.location(in: nil)
+    switch recognizer.state {
+    case .began:
+      pinching = true
+      lastFocal = onScreen
+      if !panTold {
+        panTold = true
+        onEvent?(
+          eventId + "_start",
+          ["x": Double(point.x), "y": Double(point.y), "dx": 0.0, "dy": 0.0,
+           "vx": 0.0, "vy": 0.0, "pointers": 2])
+      }
+    case .changed:
+      guard recognizer.numberOfTouches >= 2 else { return }
+      onEvent?(
+        eventId + "_update",
+        [
+          "x": Double(point.x), "y": Double(point.y),
+          "dx": Double(onScreen.x - lastFocal.x), "dy": Double(onScreen.y - lastFocal.y),
+          "vx": 0.0, "vy": 0.0,
+          "scale": Double(recognizer.scale),
+          "pointers": recognizer.numberOfTouches,
+        ])
+      lastFocal = onScreen
+    case .ended, .cancelled, .failed:
+      pinching = false
+      // The pan goes on with the finger left, from where it is - or, when
+      // there is no pan going, the gesture is over.
+      if let pan = panRecognizer, pan.state == .began || pan.state == .changed {
+        lastPan = pan.location(in: nil)
+      } else if panTold {
+        panTold = false
+        onEvent?(
+          eventId + "_end",
+          ["x": Double(point.x), "y": Double(point.y), "dx": 0.0, "dy": 0.0,
+           "vx": 0.0, "vy": 0.0])
+      }
+    default:
+      return
+    }
+  }
   private var hovering = false
   private var reportedSize = CGSize(width: -1, height: -1)
 
@@ -415,17 +524,21 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     let inset = style.padding
     var next: [NSLayoutConstraint] = []
 
-    // The child never leaves the padded area, whatever else is asked.
-    next.append(
-      child.leftAnchor.constraint(greaterThanOrEqualTo: content.leftAnchor, constant: inset.left))
-    next.append(
-      child.topAnchor.constraint(greaterThanOrEqualTo: content.topAnchor, constant: inset.top))
-    next.append(
+    // The child never leaves the padded area, whatever else is asked - but
+    // for a box on its way to its child's size, which is held at the size it
+    // is passing through and lets the child stand past it.
+    let within = [
+      child.leftAnchor.constraint(greaterThanOrEqualTo: content.leftAnchor, constant: inset.left),
+      child.topAnchor.constraint(greaterThanOrEqualTo: content.topAnchor, constant: inset.top),
       content.rightAnchor.constraint(
-        greaterThanOrEqualTo: child.rightAnchor, constant: inset.right))
-    next.append(
+        greaterThanOrEqualTo: child.rightAnchor, constant: inset.right),
       content.bottomAnchor.constraint(
-        greaterThanOrEqualTo: child.bottomAnchor, constant: inset.bottom))
+        greaterThanOrEqualTo: child.bottomAnchor, constant: inset.bottom),
+    ]
+    if animatesSize {
+      for constraint in within { constraint.priority = UILayoutPriority(996) }
+    }
+    next += within
 
     if let alignment = style.alignment {
       if alignment.x < -0.33 {
@@ -748,6 +861,19 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
       surface.removeGestureRecognizer(recognizer)
       panRecognizer = nil
     }
+
+    if style.panEventId != nil && style.panScale {
+      if pinchRecognizer == nil {
+        let recognizer = UIPinchGestureRecognizer(
+          target: self, action: #selector(handlePinch(_:)))
+        recognizer.delegate = self
+        surface.addGestureRecognizer(recognizer)
+        pinchRecognizer = recognizer
+      }
+    } else if let recognizer = pinchRecognizer {
+      surface.removeGestureRecognizer(recognizer)
+      pinchRecognizer = nil
+    }
   }
 
   private func pointData(_ point: CGPoint) -> [String: Any] {
@@ -780,11 +906,22 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     let suffix: String
     switch recognizer.state {
     case .began:
-      suffix = "_start"
       lastPan = onScreen
+      // A pinch that came first has told the app already.
+      if panTold { return }
+      panTold = true
+      suffix = "_start"
     case .changed:
+      // Two fingers are the pinch's to report; the pan's centroid moving is
+      // the same movement.
+      if pinching {
+        lastPan = onScreen
+        return
+      }
       suffix = "_update"
     case .ended, .cancelled, .failed:
+      if pinching { return }
+      panTold = false
       suffix = "_end"
     default:
       return
@@ -1330,8 +1467,10 @@ final class DnnCanvasDrawingView: UIView {
   }
 
   private func fillOrStroke(
-    _ context: CGContext, _ path: CGPath, _ paint: DnnPaint, strokeOnly: Bool = false
+    _ context: CGContext, _ path: CGPath, _ paint: DnnPaint, strokeOnly: Bool = false,
+    evenOdd: Bool = false
   ) {
+    let rule: CGPathFillRule = evenOdd ? .evenOdd : .winding
     context.addPath(path)
     let stroked = paint.stroke || strokeOnly
     if stroked {
@@ -1342,13 +1481,19 @@ final class DnnCanvasDrawingView: UIView {
       context.setLineCap(paint.cap)
       context.setLineJoin(paint.join)
     }
-    if let gradient = paint.gradient {
+    if let gradient = paint.gradient, paint.blur > 0 {
+      // A shadow is one colour, so a blurred gradient is drawn into a
+      // picture of its own, blurred there and laid back where it belongs.
+      context.beginPath()
+      blurredGradient(context, stroked ? strokedCopy(path, paint) : path, gradient,
+        paint.blur, rule: stroked ? .winding : rule)
+    } else if let gradient = paint.gradient {
       // Core Graphics paints a gradient over a region rather than with it:
       // the shape - or the outline of its stroke - becomes the clip, and the
       // gradient is drawn through that.
       context.saveGState()
       if stroked { context.replacePathWithStrokedPath() }
-      context.clip()
+      context.clip(using: stroked ? .winding : rule)
       gradient.draw(in: context)
       context.restoreGState()
     } else if paint.blur > 0 {
@@ -1371,14 +1516,53 @@ final class DnnCanvasDrawingView: UIView {
       context.translateBy(x: away.width, y: away.height)
       context.addPath(outline)
       context.setFillColor(paint.color.cgColor)
-      context.fillPath()
+      context.fillPath(using: stroked ? .winding : rule)
       context.restoreGState()
     } else if stroked {
       context.strokePath()
     } else {
       context.setFillColor(paint.color.cgColor)
-      context.fillPath()
+      context.fillPath(using: rule)
     }
+  }
+
+  /// One Core Image context for every blurred gradient: making one is slow.
+  private static let blurContext = CIContext(options: [.useSoftwareRenderer: false])
+
+  /// [gradient] drawn through [outline], blurred by [sigma]: drawn into a
+  /// picture of the shape's bounds and the blur's reach, at the pixels the
+  /// screen has there, blurred, and drawn back over the same place.
+  private func blurredGradient(
+    _ context: CGContext, _ outline: CGPath, _ gradient: DnnPaintGradient, _ sigma: CGFloat,
+    rule: CGPathFillRule
+  ) {
+    let bounds = outline.boundingBoxOfPath.insetBy(dx: -sigma * 3, dy: -sigma * 3)
+    guard bounds.width > 0, bounds.height > 0, bounds.width < 10000, bounds.height < 10000
+    else { return }
+    let device = context.userSpaceToDeviceSpaceTransform
+    let scale = max(sqrt(abs(device.a * device.d - device.b * device.c)), 1)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = scale
+    format.opaque = false
+    let sharp = UIGraphicsImageRenderer(size: bounds.size, format: format).image { drawn in
+      let inner = drawn.cgContext
+      inner.translateBy(x: -bounds.minX, y: -bounds.minY)
+      inner.addPath(outline)
+      inner.clip(using: rule)
+      gradient.draw(in: inner)
+    }
+    guard let input = sharp.cgImage.map({ CIImage(cgImage: $0) }),
+      let filter = CIFilter(name: "CIGaussianBlur")
+    else { return }
+    // Clamped first, so the blur does not fade in from the picture's edges.
+    filter.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
+    filter.setValue(sigma * scale, forKey: kCIInputRadiusKey)
+    guard let output = filter.outputImage?.cropped(to: input.extent),
+      let blurred = Self.blurContext.createCGImage(output, from: input.extent)
+    else { return }
+    UIGraphicsPushContext(context)
+    UIImage(cgImage: blurred, scale: scale, orientation: .up).draw(in: bounds)
+    UIGraphicsPopContext()
   }
 
   /// The outline of [path] stroked the way [paint] says, as a shape to fill.
@@ -1513,7 +1697,9 @@ final class DnnCanvasDrawingView: UIView {
         fillOrStroke(context, path, paint(command, 8))
       case "path":
         let segments = item(command, 1) as? [Any] ?? []
-        fillOrStroke(context, segmentPath(segments), paint(command, 2))
+        fillOrStroke(
+          context, segmentPath(segments), paint(command, 2),
+          evenOdd: item(command, 3) as? String == "evenOdd")
       case "text":
         drawText(command)
       case "save":
@@ -1545,7 +1731,7 @@ final class DnnCanvasDrawingView: UIView {
           context.clip(to: .zero)
         } else {
           context.addPath(outline)
-          context.clip()
+          context.clip(using: item(command, 2) as? String == "evenOdd" ? .evenOdd : .winding)
         }
       default:
         break

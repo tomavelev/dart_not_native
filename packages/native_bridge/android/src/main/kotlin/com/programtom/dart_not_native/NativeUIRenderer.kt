@@ -3024,9 +3024,10 @@ class NativeUIRenderer(
                 "scaleDown" -> ImageView.ScaleType.CENTER_INSIDE
                 else -> ImageView.ScaleType.CENTER_CROP
             }
-            // A tint: the picture's shape in one colour.
+            // A tint, blended with the picture as the node says - its
+            // shape in one colour when it says nothing.
             parseColorOrNull(node["color"])?.let {
-                setColorFilter(it, android.graphics.PorterDuff.Mode.SRC_IN)
+                colorFilter = tintFilter(it, node["blend"] as? String)
             }
         }
         container.addView(image, FrameLayout.LayoutParams(
@@ -3059,10 +3060,14 @@ class NativeUIRenderer(
     private fun imageFallback(node: Map<*, *>): View? {
         val child = firstChild(node) ?: return null
         val view = renderWidget(child) ?: return null
+        // It fills the image's box, as it does on iOS and the web; a side
+        // the widget gives a size of its own keeps it.
         val own = view.layoutParams
+        fun side(size: Int?) =
+            if (size != null && size >= 0) size else ViewGroup.LayoutParams.MATCH_PARENT
         view.layoutParams = FrameLayout.LayoutParams(
-            own?.width ?: ViewGroup.LayoutParams.WRAP_CONTENT,
-            own?.height ?: ViewGroup.LayoutParams.WRAP_CONTENT,
+            side(own?.width),
+            side(own?.height),
             Gravity.CENTER,
         )
         return view
@@ -3162,6 +3167,31 @@ class NativeUIRenderer(
      * An image already in memory is shown before this returns, so a rebuild
      * goes straight from picture to picture with no fallback in between.
      */
+    /**
+     * A filter that blends [color] with a picture by Flutter's `BlendMode`
+     * [name], whose names are Android's own in another case. Before Android
+     * 10 only the Porter-Duff modes are there; any other is the default,
+     * `srcIn`.
+     */
+    private fun tintFilter(color: Int, name: String?): android.graphics.ColorFilter {
+        val upper = (name ?: "srcIn").replace(Regex("([A-Z])"), "_$1").uppercase()
+            .replace("_A_TOP", "_ATOP")
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val mode = runCatching { android.graphics.BlendMode.valueOf(upper) }
+                .getOrDefault(android.graphics.BlendMode.SRC_IN)
+            return android.graphics.BlendModeColorFilter(color, mode)
+        }
+        // Porter-Duff's multiply is Flutter's modulate, the nearest there is
+        // to its multiply too.
+        val mode = when (upper) {
+            "PLUS" -> android.graphics.PorterDuff.Mode.ADD
+            "MODULATE" -> android.graphics.PorterDuff.Mode.MULTIPLY
+            else -> runCatching { android.graphics.PorterDuff.Mode.valueOf(upper) }
+                .getOrDefault(android.graphics.PorterDuff.Mode.SRC_IN)
+        }
+        return android.graphics.PorterDuffColorFilter(color, mode)
+    }
+
     private fun loadImage(
         src: String?,
         into: ImageView,
@@ -4308,7 +4338,10 @@ class NativeUIRenderer(
      * rather than rebuilt (see [patchAnimatedOpacity]).
      */
     private fun renderAnimatedOpacity(node: Map<*, *>): View =
-        FrameLayout(activity).apply {
+        FrameLayout(activity).also { fade ->
+            // Made where it is going, so it is there already.
+            endAnswer(fade, node)?.invoke()
+        }.apply {
             layoutParams = matchWidth()
             alpha = ((node["opacity"] as? Number)?.toFloat() ?: 1f).coerceIn(0f, 1f)
             firstChild(node)?.let { child ->
@@ -4336,15 +4369,37 @@ class NativeUIRenderer(
         newNode: Map<*, *>,
     ): Boolean {
         val target = ((newNode["opacity"] as? Number)?.toFloat() ?: 1f).coerceIn(0f, 1f)
-        if (view.alpha == target) return true
+        val done = endAnswer(view, newNode)
+        if (view.alpha == target) {
+            done?.invoke()
+            return true
+        }
         val duration = (newNode["durationMs"] as? Number)?.toLong() ?: 200L
         view.animate().cancel()
         view.animate()
             .alpha(target)
             .setDuration(duration)
             .setInterpolator(interpolator(newNode))
+            // Run only when it gets there: a cancel is a newer fade taking over.
+            .withEndAction { done?.invoke() }
             .start()
         return true
+    }
+
+    /** The ask each moving view last answered, so one is answered once. */
+    private val endAsks = java.util.WeakHashMap<View, Int>()
+
+    /**
+     * What tells the app that [view] has got where [node] sent it, when the
+     * node asks (`endEventId`, `endAsk`) and has not asked this before: the
+     * answer is `{ask}`, sent after the frame that applies it.
+     */
+    private fun endAnswer(view: View, node: Map<*, *>): (() -> Unit)? {
+        val eventId = node["endEventId"] as? String ?: return null
+        val ask = (node["endAsk"] as? Number)?.toInt() ?: return null
+        if (endAsks[view] == ask) return null
+        endAsks[view] = ask
+        return { view.post { sendEvent(eventId, mapOf("ask" to ask)) } }
     }
 
     /**
@@ -5213,7 +5268,16 @@ class NativeUIRenderer(
         }
 
         val duration = if (animate) (node["animateMs"] as? Number)?.toLong() ?: 0L else 0L
-        box.setStyle(style, duration, if (duration > 0) interpolator(node) else null)
+        box.sizeMs = if (node["animateSize"] == true) {
+            (node["animateMs"] as? Number)?.toLong() ?: 0L
+        } else {
+            0L
+        }
+        box.sizeCurve = if (box.sizeMs > 0) interpolator(node) else null
+        box.setStyle(
+            style, duration, if (duration > 0) interpolator(node) else null,
+            onDone = endAnswer(box, node),
+        )
 
         val events = boxEvents(node)
         if (events != box.events) box.events = events
@@ -5327,6 +5391,7 @@ class NativeUIRenderer(
         longPress = node["longPressEventId"] as? String,
         pan = node["panEventId"] as? String,
         panAxis = node["panAxis"] as? String,
+        panScale = node["panScale"] == true,
         drop = node["dropEventId"] as? String,
         size = node["sizeEventId"] as? String,
         dragData = node["dragData"] as? String,

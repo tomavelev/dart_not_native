@@ -793,6 +793,7 @@ class NativeUIRenderer {
     // it holds - untouched. This is what lets a field be typed into and a list
     // keep its position across a re-render. Any mismatch returns false and
     // falls through to the full rebuild, which is always correct.
+    let sized = currentTree == nil ? [] : sizesBefore()
     if let old = currentTree, let oldRoot = currentRoot,
       tryPatch(oldRoot, old, next)
     {
@@ -800,6 +801,7 @@ class NativeUIRenderer {
       // A patch builds new views too, and they need turning like the rest.
       applyDirection(oldRoot)
       finishRender(next)
+      moveSizes(sized, in: container)
       // A patch builds new views too - a lazy list's newly visible rows - so it
       // can meet an unknown type as readily as a rebuild can.
       return unknownTypes.isEmpty ? nil : ["unknownTypes": unknownTypes.sorted()]
@@ -2793,6 +2795,10 @@ class NativeUIRenderer {
     if let tint = (node["color"] as? String).flatMap({ UIColor(hex: $0) }) {
       imageView.tintColor = tint
       imageView.tag = tintedImageTag
+      // Any other way of blending the two is drawn into the picture.
+      if let blend = node["blend"] as? String, blend != "srcIn" {
+        imageBlends.setObject(blend as NSString, forKey: imageView)
+      }
     }
     imageView.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(imageView)
@@ -2825,10 +2831,63 @@ class NativeUIRenderer {
   /// Marks an image view whose picture is drawn in the view's tint.
   private let tintedImageTag = 0x646e_6e74
 
+  /// The tinted image views blended other than as `srcIn`, by Flutter's
+  /// `BlendMode` name.
+  private let imageBlends = NSMapTable<UIImageView, NSString>.weakToStrongObjects()
+
+  /// [image] with [tint] blended over it as Flutter's `BlendMode` [name]
+  /// says - the colour the source, the picture what it lands on.
+  private func blended(_ image: UIImage, tint: UIColor, name: String) -> UIImage {
+    let mode: CGBlendMode?
+    switch name {
+    case "dst", "dstOver", "dstIn", "dstATop": return image.withRenderingMode(.alwaysOriginal)
+    case "clear": mode = .clear
+    case "src": mode = .copy
+    case "srcOver": mode = .normal
+    case "srcOut": mode = .sourceOut
+    case "dstOut": mode = .destinationOut
+    case "srcATop": mode = .sourceAtop
+    case "xor": mode = .xor
+    case "plus": mode = .plusLighter
+    case "modulate", "multiply": mode = .multiply
+    case "screen": mode = .screen
+    case "overlay": mode = .overlay
+    case "darken": mode = .darken
+    case "lighten": mode = .lighten
+    case "colorDodge": mode = .colorDodge
+    case "colorBurn": mode = .colorBurn
+    case "hardLight": mode = .hardLight
+    case "softLight": mode = .softLight
+    case "difference": mode = .difference
+    case "exclusion": mode = .exclusion
+    case "hue": mode = .hue
+    case "saturation": mode = .saturation
+    case "color": mode = .color
+    case "luminosity": mode = .luminosity
+    default: mode = nil
+    }
+    guard let mode else { return image.withRenderingMode(.alwaysTemplate) }
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = image.scale
+    format.opaque = false
+    let rect = CGRect(origin: .zero, size: image.size)
+    return UIGraphicsImageRenderer(size: image.size, format: format).image { context in
+      image.draw(in: rect)
+      tint.setFill()
+      context.fill(rect, blendMode: mode)
+      // Modulate multiplies the alpha too: what was clear stays clear.
+      if name == "modulate" { image.draw(in: rect, blendMode: .destinationIn, alpha: 1) }
+    }.withRenderingMode(.alwaysOriginal)
+  }
+
   /// Puts [image] in [view] and takes what stood in for it out of the way.
   private func show(_ image: UIImage, in view: UIImageView, hiding fallback: UIView) {
-    view.image =
-      view.tag == tintedImageTag ? image.withRenderingMode(.alwaysTemplate) : image
+    if let blend = imageBlends.object(forKey: view), let tint = view.tintColor {
+      view.image = blended(image, tint: tint, name: blend as String)
+    } else {
+      view.image =
+        view.tag == tintedImageTag ? image.withRenderingMode(.alwaysTemplate) : image
+    }
     fallback.isHidden = true
     if let host = fallback as? ImageFallbackHost {
       NSLayoutConstraint.deactivate(host.holds)
@@ -3951,6 +4010,7 @@ class NativeUIRenderer {
   private func renderAnimatedOpacity(_ node: [String: Any]) -> UIView {
     let container = UIView()
     container.alpha = CGFloat(fadeOpacity(node))
+    endAnswer(container, node)?()
     guard let child = firstChild(node), let view = renderWidget(child) else {
       return container
     }
@@ -3971,15 +4031,20 @@ class NativeUIRenderer {
 
   private func patchAnimatedOpacity(_ view: UIView, _ node: [String: Any]) -> Bool {
     let target = CGFloat(fadeOpacity(node))
-    if abs(view.alpha - target) < 0.001 { return true }
+    let done = endAnswer(view, node)
+    if abs(view.alpha - target) < 0.001 {
+      done?()
+      return true
+    }
     let duration = (number(node["durationMs"]) ?? 200) / 1000
     // Only the fade's own animation, not every animation on the layer: a box
     // growing further up the tree animates this view's position through the
     // same layer, and removing that would snap it to where it is going.
     view.layer.removeAnimation(forKey: "opacity")
-    UIView.animate(withDuration: duration, delay: 0, options: curve(node)) {
-      view.alpha = target
-    }
+    UIView.animate(
+      withDuration: duration, delay: 0, options: curve(node),
+      animations: { view.alpha = target },
+      completion: { finished in if finished { done?() } })
     return true
   }
 
@@ -4883,6 +4948,7 @@ class NativeUIRenderer {
     style.doubleTapEventId = node["doubleTapEventId"] as? String
     style.longPressEventId = node["longPressEventId"] as? String
     style.panEventId = node["panEventId"] as? String
+    style.panScale = node["panScale"] as? Bool == true
     style.panAxis = node["panAxis"] as? String
     style.ripple = node["ripple"] as? Bool ?? false
     style.dragData = node["dragData"] as? String
@@ -4905,6 +4971,11 @@ class NativeUIRenderer {
       self?.send(eventId: eventId, data: data)
     }
     box.apply(boxStyle(node))
+    let sizeMs = node["animateSize"] as? Bool == true ? number(node["animateMs"]) ?? 0 : 0
+    box.animatesSize = sizeMs > 0
+    box.sizeSeconds = Double(sizeMs) / 1000
+    box.sizeCurve = curve(node)
+    if sizeMs > 0 { sizingBoxes.add(box) } else { sizingBoxes.remove(box) }
     if let hero = node["hero"] as? String {
       heroViews.setObject(hero as NSString, forKey: box)
     } else {
@@ -4921,7 +4992,67 @@ class NativeUIRenderer {
     }
     // Only notes what a live region says to begin with; see `announceChanges`.
     box.announceChanges()
+    // Made where it is going, so it is there already.
+    endAnswer(box, node)?()
     return box
+  }
+
+  /// The boxes that move to the size their child comes to (`animateSize`).
+  private let sizingBoxes = NSHashTable<DnnBoxView>.weakObjects()
+
+  /// Each box in [sizingBoxes] that is on screen, with its size before a
+  /// patch.
+  private func sizesBefore() -> [(DnnBoxView, CGSize)] {
+    sizingBoxes.allObjects.compactMap { box in
+      box.window == nil ? nil : (box, box.surface.bounds.size)
+    }
+  }
+
+  /// Moves each box in [before] from the size it was to the size the patch
+  /// left it at: laid out at the new size to learn it, held at the old one,
+  /// and let go towards the new one inside an animation - which carries
+  /// whatever the change moves around it, as Flutter's does.
+  private func moveSizes(_ before: [(DnnBoxView, CGSize)], in root: UIView) {
+    guard !before.isEmpty else { return }
+    root.layoutIfNeeded()
+    var moving: [(DnnBoxView, CGSize)] = []
+    for (box, old) in before where box.window != nil && box.animatesSize {
+      let now = box.surface.bounds.size
+      guard abs(now.width - old.width) > 0.5 || abs(now.height - old.height) > 0.5 else {
+        continue
+      }
+      box.pinSize(old)
+      moving.append((box, now))
+    }
+    guard let lead = moving.first?.0 else { return }
+    root.layoutIfNeeded()
+    UIView.animate(
+      withDuration: lead.sizeSeconds, delay: 0,
+      options: [lead.sizeCurve, .allowUserInteraction, .beginFromCurrentState],
+      animations: {
+        for (box, now) in moving { box.pinSize(now) }
+        root.layoutIfNeeded()
+      },
+      completion: { _ in
+        for (box, _) in moving { box.unpinSize() }
+      })
+  }
+
+  /// The ask each moving view last answered, so one is answered once.
+  private let endAsks = NSMapTable<UIView, NSNumber>.weakToStrongObjects()
+
+  /// What tells the app that [view] has got where [node] sent it, when the
+  /// node asks (`endEventId`, `endAsk`) and has not asked this before: the
+  /// answer is `{ask}`, sent once the change in hand is done with.
+  private func endAnswer(_ view: UIView, _ node: [String: Any]) -> (() -> Void)? {
+    guard let eventId = node["endEventId"] as? String,
+      let ask = (node["endAsk"] as? NSNumber)?.intValue
+    else { return nil }
+    if endAsks.object(forKey: view)?.intValue == ask { return nil }
+    endAsks.setObject(NSNumber(value: ask), forKey: view)
+    return { [weak self] in
+      DispatchQueue.main.async { self?.send(eventId: eventId, data: ["ask": ask]) }
+    }
   }
 
   /// Restyles a box in place - moving there over `animateMs` when the tree
@@ -4929,8 +5060,10 @@ class NativeUIRenderer {
   private func patchBox(_ view: UIView, _ node: [String: Any]) -> Bool {
     guard let box = view as? DnnBoxView else { return false }
     let duration = Double(number(node["animateMs"]) ?? 0) / 1000
+    let done = endAnswer(box, node)
     guard duration > 0, box.window != nil else {
       configureBox(box, node)
+      done?()
       return true
     }
     // Laid out from the top of the tree: a box that grows moves whatever is
@@ -4945,7 +5078,9 @@ class NativeUIRenderer {
       animations: {
         self.configureBox(box, node)
         root.layoutIfNeeded()
-      }, completion: nil)
+      },
+      // Not finished is a newer change taking over: that one answers.
+      completion: { finished in if finished { done?() } })
     return true
   }
 
@@ -5878,6 +6013,9 @@ class NativeUIRenderer {
       // Unless it said `mainAxisSize: 'min'`: a row as wide as its children.
       return node["mainAxisSize"] as? String != "min"
     case "TextField", "Slider", "Wrap", "Divider":
+      return true
+    case "Scroll", "LazyList":
+      // A scroller is as wide as it may be, whatever it holds.
       return true
     case "Loading":
       return prop(node, "type") as? String == "progress-linear"

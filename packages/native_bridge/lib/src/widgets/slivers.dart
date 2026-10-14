@@ -585,9 +585,11 @@ class SliverAppBar extends _Sliver {
                 child: heading == null
                     ? const SizedBox.shrink()
                     : Align(
+                        // At the start of the line: the right, read from
+                        // the right.
                         alignment: centerTitle == true
-                            ? Alignment.center
-                            : Alignment.centerLeft,
+                            ? AlignmentDirectional.center
+                            : AlignmentDirectional.centerStart,
                         child: DefaultTextStyle(
                           style: TextStyle(
                             color: ink,

@@ -145,6 +145,126 @@ Flutter, it now agrees, and these are the places existing code has to change:
   grey block; under Materialize a disabled tonal button keeps a fill.
   A text button is written in the app's primary under both.
 
+### `onEnd` is the renderer's word
+
+An implicit animation's `onEnd` was a timer the app set for the duration it
+asked for, which ran from the build rather than from the moment the renderer
+started moving. A node on its way now carries `endEventId` and `endAsk`, a
+number for the change, and the renderer answers `{ask}` once the move has
+finished: iOS from `UIView.animate`'s completion, Android from its animator,
+the browser and the Flutter host the duration after they applied the tree -
+and at once, wherever nothing moved. An answer about a move since overtaken
+ends nothing. A renderer that never answers is waited for a quarter of a
+second past the duration. Seen on an iOS simulator, an Android emulator and
+in Chrome: an 800 ms `AnimatedContainer` ended at 842, 837 and 803 ms. This
+is the event an explicit animation design would start from.
+
+### Sizes move
+
+`AnimatedSize` showed its child's new size at once, and an
+`AnimatedCrossFade` jumped to the new child's size when the fade ended. A box
+with `animateSize` now moves from the size it was to the size its child came
+to over its `animateMs` - the renderer does the moving, since only it knows
+how big the child came out - and both widgets are drawn with one. The child
+is laid out once, at its new size, and clipped while the box passes over it:
+text does not wrap again at every width on the way. In a cross-fade the child
+going is laid over the top, as wide as the stack, so the space follows the
+child coming. Android moves the box in its measure, iOS holds the old size
+and lets it go inside an animation, the browser animates between the two
+sizes it measures before and after a patch, and the Flutter host uses its
+own `AnimatedSize`. Seen on an iOS simulator, an Android emulator and in
+Chrome. A child that changes size between renders - a picture arriving - is
+not moved to, and `AnimatedSize.onEnd` is not called.
+
+### `PageView` slides, and follows the finger
+
+A `PageView` changed page at once, whether swiped or told to by
+`animateToPage`. The page now slides: `animateToPage`, `nextPage` and
+`previousPage` over the duration and curve asked for, completing when the
+page is there; a swipe from wherever the finger let go, over what is left of
+the way. Under the finger, the page and the one beside it move with it, and
+let go short of the next, they go back. At either end the page gives a
+little and no more. `jumpToPage` is still at once. Seen on an iOS simulator,
+an Android emulator and in Chrome. As with a `Dismissible`, each movement of
+the finger is a build, so on a long screen the page is a little behind it.
+
+### Two fingers zoom an `InteractiveViewer`
+
+No renderer reported a pinch, so an `InteractiveViewer` could only be zoomed
+by its controller. A box with `panScale` now hears a second finger: while two
+are down, its pan updates carry `scale` - the spread over what it was - with
+the point between them. `GestureDetector` has `onScaleStart`, `onScaleUpdate`
+and `onScaleEnd` on it, and the viewer scales about the point between the
+fingers, held between `minScale` and `maxScale`. Pinched in Chrome and in the
+Flutter host's tests. **Not tried on a phone:** neither the simulator nor the
+emulator can be given two fingers from here, so on iOS and Android it rests
+on the code. `Matrix4.getMaxScaleOnAxis()` is there, to read the zoom back.
+
+### Rows part while one is moved
+
+A `ReorderableListView` showed nothing of where a row would land. While a
+row is over another, a gap as tall as the row opens on the side it will go,
+and closes when it moves on - built in the widget layer from what the rows
+measure. With it, a `DragTarget`'s builder is handed what is being dragged
+over it (`candidateData`), as in Flutter, where it was handed `[null]`; to
+know, every `Draggable` now says when it is picked up and let go. Seen on an
+Android emulator and in Chrome; on iOS a row cannot be held and dragged from
+here.
+
+### What a canvas left out
+
+- `dart:ui`'s own gradients: `Gradient.linear`, `Gradient.radial` and
+  `Gradient.sweep`, so a painter that wrote `ui.Gradient.linear(...)` migrates
+  by dropping the `ui.`.
+- Tile modes other than clamp - `repeated`, `mirror` and `decal` - for a
+  linear, radial or sweep gradient on a canvas, sent as the copies of it that
+  cover the canvas.
+- Blur styles other than normal: `solid`, `outer` and `inner`. A stroke is
+  blurred `normal` or `solid`; asked for either of the others, `normal`.
+- `Path.fillType = PathFillType.evenOdd`, for a fill and for a clip.
+- A blur over a gradient on iOS, which was drawn sharp.
+
+Seen on an iOS simulator, an Android emulator and in Chrome; even-odd also by
+pixel in Chrome and the Flutter host. Blend modes on a paint and `saveLayer`
+are still not carried.
+
+### An image's tint blends as asked
+
+`Image.colorBlendMode` is carried (`blend`), every mode of Flutter's, which
+`BlendMode` now lists in full. Seen on an iOS simulator, an Android emulator
+and in Chrome. On the web the picture's transparent parts stay clear whatever
+the mode, where Flutter fills them for some (multiply, screen and the like).
+
+### Smaller things
+
+- A floating snackbar over a nested scaffold's bottom bar knows how tall the
+  bar is: it is measured, where it was taken to be 80 or 56.
+- What stands in for an image - an `errorBuilder`'s widget - fills the
+  image's box on Android and the web as it did on iOS, with an icon or a
+  spinner in the middle of it.
+
+### Found by looking
+
+- On the web a canvas with a stated size, given more room than that - a
+  scaffold's body gives its one child all of it - had its picture stretched
+  to fit. It keeps the size it was painted at.
+- On the web a `PageView` in a `SizedBox` that only says how tall was as
+  narrow as its page's content, and so was a `ListView` under an `Expanded`
+  in a column that centres - on iOS too. Both are as wide as the column, as in
+  Flutter.
+- On Android a drag over a row that was itself a `Draggable` someone listened
+  to was never heard by the `DragTarget` round it: the platform tells only
+  the innermost view listening.
+- A `SliverAppBar`'s title sat at the left read from the right too; it is at
+  the start of the line.
+- In the Flutter host an image's stand-in was as big as its content rather
+  than the image's box.
+
+Also seen for the first time, and working: a named page's state kept on an
+iOS simulator, a `Hero` flying right to left on one, a pinned `SliverAppBar`
+on an iOS simulator, an Android emulator and in Chrome, and an image's wait
+and failure in the Flutter host on a simulator.
+
 ### A `Hero` flies
 
 A `Hero` was its child and nothing else. Now, when a page is pushed or popped
