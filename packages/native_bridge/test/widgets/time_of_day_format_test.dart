@@ -2,6 +2,7 @@
 /// say as Flutter does for that locale, since the conventions are Flutter's.
 library;
 
+import 'package:dart_not_native/core.dart' show RendererEvents;
 import 'package:dart_not_native/src/time_formats.dart';
 import 'package:dart_not_native/testing.dart';
 import 'package:dart_not_native/widgets.dart';
@@ -152,5 +153,40 @@ void main() {
       {'H:mm', 'HH:mm', 'HH.mm', 'h:mm a', 'a h:mm', "HH 'h' mm"},
     );
     expect(timeOfDayFormats.length, greaterThan(100));
+  });
+
+  group('the digits', () {
+    test('are a locale\'s own where it writes numbers in other digits', () {
+      expect(written(afternoon, const Locale('fa')), '۱۵:۰۵');
+      expect(written(morning, const Locale('bn')), '৯:৩০');
+    });
+
+    test('follow the region where it is the region that has them', () {
+      expect(written(afternoon, const Locale('ar')), '3:05 م');
+      expect(written(afternoon, const Locale('ar', 'EG')), '٣:٠٥ م');
+    });
+  });
+
+  test('the device\'s 24-hour switch, as the renderer reports it, reaches '
+      'MediaQuery', () async {
+    late BuildContext page;
+    final tester = AppTester.widget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            page = context;
+            return const Scaffold(body: SizedBox.shrink());
+          },
+        ),
+      ),
+    );
+    expect(MediaQuery.alwaysUse24HourFormatOf(page), isFalse);
+    await tester.emit(RendererEvents.viewport, {
+      'width': 400,
+      'height': 800,
+      'use24Hour': true,
+    });
+    await pumpEventQueue();
+    expect(MediaQuery.alwaysUse24HourFormatOf(page), isTrue);
   });
 }

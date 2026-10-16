@@ -478,6 +478,10 @@ button.dnn-textfield__icon--suffix:focus-visible { outline: 2px solid var(--dnn-
 .dnn-textfield--error.dnn-textfield--floating .dnn-textfield__label { color: var(--dnn-error); }
 /* The hint would otherwise sit under the label; it appears once the label is
    out of the way. */
+/* A hint's own style, where the app gave one (see _applyFieldLook). */
+.dnn-hint-color::placeholder { color: var(--dnn-hint-color); }
+.dnn-hint-size::placeholder { font-size: var(--dnn-hint-size); }
+.dnn-hint-weight::placeholder { font-weight: var(--dnn-hint-weight); }
 .dnn-textfield--floating .dnn-textfield__input::placeholder { color: transparent; }
 .dnn-textfield--floating .dnn-textfield__input:focus::placeholder { color: var(--dnn-text-secondary); }
 /* A field with glyphs at its ends keeps its input in a box of its own. The box
@@ -677,6 +681,40 @@ body:has(.dnn-modal) { overflow: hidden; }
   padding: 16px;
   border-radius: 16px 16px 0 0;
 }
+/* A sheet with a side: a drawer, the height of the screen, sliding in from
+ * that edge of the reading direction. */
+.dnn-modal--drawer { align-items: stretch; justify-content: flex-start; }
+.dnn-modal--drawer-end { justify-content: flex-end; }
+.dnn-drawer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(304px, calc(100vw - 56px));
+  height: 100%;
+  background: var(--dnn-surface);
+  color: var(--dnn-text);
+  outline: none;
+  touch-action: pan-y;
+  box-shadow: 0 8px 10px rgba(0, 0, 0, 0.2), 0 16px 24px rgba(0, 0, 0, 0.14);
+  border-start-end-radius: 16px;
+  border-end-end-radius: 16px;
+  --dnn-drawer-from: -100%;
+  animation: dnn-drawer-in 250ms cubic-bezier(0.2, 0, 0, 1);
+}
+.dnn-modal--drawer-end .dnn-drawer {
+  border-radius: 0;
+  border-start-start-radius: 16px;
+  border-end-start-radius: 16px;
+  --dnn-drawer-from: 100%;
+}
+[dir="rtl"] .dnn-modal--drawer-start .dnn-drawer { --dnn-drawer-from: 100%; }
+[dir="rtl"] .dnn-modal--drawer-end .dnn-drawer { --dnn-drawer-from: -100%; }
+@keyframes dnn-drawer-in { from { transform: translateX(var(--dnn-drawer-from)); } }
+.dnn-modal--drawer > .dnn-scrim { animation: dnn-scrim-in 250ms linear; }
+@keyframes dnn-scrim-in { from { opacity: 0; } }
+.dnn-drawer__title { margin: 16px 16px 8px; font-size: 22px; font-weight: 500; }
+.dnn-drawer__body { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.dnn-drawer__body > * { flex: 1 1 auto; }
 .dnn-dialog__title, .dnn-sheet__title { margin: 0 0 16px; font-size: 22px; font-weight: 500; line-height: 1.3; flex-shrink: 0; }
 .dnn-dialog__body, .dnn-sheet__body { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 .dnn-dialog__body > .dnn-column { flex-shrink: 0; }

@@ -2187,6 +2187,69 @@ void main() {
       expect(find.text('Copy me'), findsOneWidget);
     });
 
+    testWidgets('a node that reads its own way is built under a '
+        'Directionality that says so', (tester) async {
+      await show(
+        tester,
+        UIBuilder.column(
+          children: [
+            WidgetNode(
+              type: 'Row',
+              props: const {'layoutDirection': 'rtl'},
+              children: [UIBuilder.text('a'), UIBuilder.text('b')],
+            ),
+          ],
+        ),
+      );
+      expect(
+        tester.getTopLeft(find.text('a')).dx,
+        greaterThan(tester.getTopLeft(find.text('b')).dx),
+      );
+    });
+
+    testWidgets('a widget run is the widget, in the line', (tester) async {
+      await show(
+        tester,
+        UIBuilder.text(
+          'Go \uFFFC',
+          spans: [
+            {'text': 'Go '},
+            {
+              'text': '\uFFFC',
+              'widget': UIBuilder.text('inline').toJson(),
+              'eventId': 'unused',
+            },
+          ],
+        ),
+      );
+
+      final rich = tester.widget<RichText>(find.byType(RichText).first);
+      final runs = (rich.text as TextSpan).children!.single as TextSpan;
+      expect(runs.children![1], isA<WidgetSpan>());
+      expect(find.text('inline'), findsOneWidget);
+    });
+
+    testWidgets('a run that can be held answers a long press', (tester) async {
+      listen('define');
+      await show(
+        tester,
+        UIBuilder.center(
+          child: UIBuilder.text(
+            'word',
+            fontSize: 20,
+            spans: [
+              {'text': 'word', 'longPressEventId': 'define'},
+            ],
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(RichText));
+      expect(events, isEmpty);
+      await tester.longPress(find.byType(RichText));
+      expect(events.single, event('define', {}));
+    });
+
     testWidgets('spans are runs with their own style', (tester) async {
       await show(
         tester,
@@ -2428,6 +2491,7 @@ void main() {
           'devicePixelRatio': 3.0,
           'textScale': 1.5,
           'dark': true,
+          'use24Hour': false,
         }),
       );
     });

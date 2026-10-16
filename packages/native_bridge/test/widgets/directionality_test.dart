@@ -193,7 +193,8 @@ void main() {
       expect(renderer.tree!.props[RootProps.textDirection], 'rtl');
     });
 
-    test('deep in a screen turns what is below it, not the screen', () {
+    test('deep in a screen turns what is below it, and tells the renderer '
+        'so there, not for the screen', () {
       final renderer = _mount(
         MaterialApp(
           locale: const Locale('en'),
@@ -209,10 +210,57 @@ void main() {
       final tree = renderer.tree!;
 
       expect(tree.props.containsKey(RootProps.textDirection), isFalse);
-      expect(_boxWith(tree, 'padding').props['padding'], [0, 0, 7, 0]);
-      // The renderer lays the row out left to right, so a row that runs the
-      // other way is sent with its children in the opposite order.
-      expect(texts(tree), ['b', 'a']);
+      final turned = _boxWith(tree, 'padding');
+      expect(turned.props['padding'], [0, 0, 7, 0]);
+      // The renderer is told, on the node below the Directionality, and lays
+      // the row out right to left itself: its children go in their order.
+      expect(turned.props['layoutDirection'], 'rtl');
+      expect(texts(tree), ['a', 'b']);
+    });
+
+    test('one that says what is around it already says nothing', () {
+      final renderer = _mount(
+        MaterialApp(
+          locale: const Locale('ar'),
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Container(
+              padding: const EdgeInsets.all(1),
+              child: const Text('x'),
+            ),
+          ),
+        ),
+      );
+      expect(
+        _boxWith(renderer.tree!, 'padding').props.containsKey('layoutDirection'),
+        isFalse,
+      );
+    });
+
+    test('a left-to-right field in a right-to-left form, and a row in it in '
+        'its own order', () {
+      final renderer = _mount(
+        MaterialApp(
+          locale: const Locale('ar'),
+          home: Column(
+            children: [
+              const Row(children: [Text('a'), Text('b')]),
+              Directionality(
+                textDirection: TextDirection.ltr,
+                child: Row(
+                  children: const [Text('c'), Text('d')],
+                  key: const ValueKey('code'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      final tree = renderer.tree!;
+      final rows = nodesOfType(tree, 'Row');
+      expect(rows.first.props.containsKey('layoutDirection'), isFalse);
+      expect(rows.last.props['layoutDirection'], 'ltr');
+      expect(texts(tree), ['a', 'b', 'c', 'd']);
     });
   });
 

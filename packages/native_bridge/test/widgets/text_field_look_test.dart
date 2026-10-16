@@ -176,4 +176,47 @@ void main() {
     expect(sent['textColor'], '#2e7d32');
     expect(sent['fillColor'], '#fff8e1');
   });
+
+  test('the outline of each state, and the styles of the words around the '
+      'field', () {
+    final sent = props(
+      const TextField(
+        decoration: InputDecoration(
+          labelText: 'Name',
+          helperText: 'As on your passport',
+          border: OutlineInputBorder(),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: green, width: 2),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: Color(0xFFB00020)),
+          ),
+          disabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: cream),
+          ),
+          hintStyle: TextStyle(color: green, fontSize: 12),
+          labelStyle: TextStyle(fontWeight: FontWeight.bold),
+          helperStyle: TextStyle(color: cream),
+        ),
+      ),
+    );
+
+    expect(sent['focusedBorderColor'], '#2e7d32');
+    expect(sent['focusedBorderWidth'], 2);
+    expect(sent['errorBorderColor'], '#b00020');
+    expect(sent['errorBorderWidth'], 1);
+    expect(sent['disabledBorderColor'], '#fff8e1');
+    expect(sent['hintStyle'], {'color': '#2e7d32', 'fontSize': 12});
+    expect(sent['labelStyle'], {'fontWeight': 700});
+    expect(sent['helperStyle'], {'color': '#fff8e1'});
+  });
+
+  test('a state whose outline nobody chose sends nothing for it', () {
+    final sent = props(
+      const TextField(
+        decoration: InputDecoration(focusedBorder: OutlineInputBorder()),
+      ),
+    );
+    expect(sent.containsKey('focusedBorderColor'), isFalse);
+  });
 }

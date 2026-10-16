@@ -103,4 +103,65 @@ void main() {
     expect(taps, isEmpty);
     await tester.pumpAndSettle();
   });
+
+  testWidgets('a route\'s moves move both pages: the one beneath under the '
+      'one pushed over it', (tester) async {
+    await show(tester, page('one'));
+    await show(
+      tester,
+      UIBuilder.withPageTransition(
+        UIBuilder.scaffold(body: UIBuilder.text('two')),
+        {
+          'kind': 'push',
+          'ms': 400,
+          'page': {'dx': 1.0},
+          'picture': {'dx': -0.5},
+        },
+      ),
+    );
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    final oneAt = tester.getTopLeft(find.text('one')).dx;
+    final twoAt = tester.getTopLeft(find.text('two')).dx;
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // Half way: the old page a quarter of the screen to the start, the new
+    // one half the screen short of its place.
+    expect(
+      tester.getTopLeft(find.text('one')).dx,
+      closeTo(oneAt - width / 4, 1),
+    );
+    expect(
+      tester.getTopLeft(find.text('two')).dx,
+      closeTo(twoAt - width / 2, 1),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('one'), findsNothing);
+  });
+
+  testWidgets('and out from under the one popped off it', (tester) async {
+    await show(tester, page('two'));
+    await show(
+      tester,
+      UIBuilder.withPageTransition(
+        UIBuilder.scaffold(body: UIBuilder.text('one')),
+        {
+          'kind': 'pop',
+          'ms': 400,
+          'picture': {'opacity': 0.0},
+          'page': {'dx': -0.5},
+        },
+      ),
+    );
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    await tester.pump(const Duration(milliseconds: 200));
+    final opacities = tester
+        .widgetList<Opacity>(
+          find.ancestor(of: find.text('two'), matching: find.byType(Opacity)),
+        )
+        .map((o) => o.opacity);
+    expect(opacities, contains(closeTo(0.5, 1e-6)));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('one')).dx, lessThan(width / 4));
+    expect(find.text('two'), findsNothing);
+  });
 }

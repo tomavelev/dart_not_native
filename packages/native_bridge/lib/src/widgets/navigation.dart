@@ -16,12 +16,19 @@ class _OverlayEntry {
     this.scope,
     this.barrierDismissible = true,
     this.isDrawer = false,
+    this.side,
+    this.width,
   });
   final _OverlayKind kind;
 
   /// A scaffold's drawer, which belongs to the page it was opened on and so
   /// closes when the app moves to another.
   final bool isDrawer;
+
+  /// For a drawer, the edge it slides in from - `'start'` or `'end'` - and
+  /// how wide it is, when it says.
+  final String? side;
+  final double? width;
   final WidgetBuilder build;
 
   /// What was above the context that asked for the overlay, so the overlay is
@@ -41,6 +48,8 @@ class _OverlayEntry {
           id: id,
           content: [node],
           dismissible: barrierDismissible,
+          side: side,
+          width: width,
           onDismiss: () => owner._dismiss(this, null),
         );
       case _OverlayKind.dialog:
@@ -764,6 +773,51 @@ class RouteSettings {
   final Object? arguments;
 }
 
+/// A page described rather than pushed - what a router's page builder
+/// returns (`GoRoute.pageBuilder`). There is no `Navigator(pages:)` here:
+/// a page is read by the router that asked for it.
+abstract class Page<T> extends RouteSettings {
+  const Page({this.key, super.name, super.arguments, this.restorationId});
+  final LocalKey? key;
+  final String? restorationId;
+}
+
+/// A page that moves on and off the screen as a [MaterialPageRoute] does -
+/// the renderer's own move.
+class MaterialPage<T> extends Page<T> {
+  const MaterialPage({
+    required this.child,
+    this.maintainState = true,
+    this.fullscreenDialog = false,
+    this.allowSnapshotting = true,
+    super.key,
+    super.name,
+    super.arguments,
+    super.restorationId,
+  });
+  final Widget child;
+  final bool maintainState;
+  final bool fullscreenDialog;
+  final bool allowSnapshotting;
+}
+
+/// Flutter's iOS-styled page; a [MaterialPage] by another name here, where
+/// the platform draws the page.
+class CupertinoPage<T> extends MaterialPage<T> {
+  const CupertinoPage({
+    required super.child,
+    this.title,
+    super.maintainState,
+    super.fullscreenDialog,
+    super.allowSnapshotting,
+    super.key,
+    super.name,
+    super.arguments,
+    super.restorationId,
+  });
+  final String? title;
+}
+
 /// A page on a [Navigator]'s stack.
 abstract class Route<T> {
   Route({RouteSettings? settings})
@@ -866,32 +920,68 @@ abstract class ModalRoute<T> extends Route<T> {
   /// How [buildTransitions] leaves the page at the start of its animation
   /// (see [_pageMotion]), or null when the renderer's own move is wanted.
   Map<String, Object>? _motion(BuildContext context, {required bool arriving}) {
-    final page = _Probe();
-    Widget at(double value) => buildTransitions(
-      context,
-      _FixedAnimation(
-        value,
-        arriving ? AnimationStatus.forward : AnimationStatus.reverse,
-      ),
-      kAlwaysDismissedAnimation,
-      page,
-    );
-    final built = at(0);
-    if (identical(built, page) && !_ownTransition) return null;
-    final motion = _pageMotion(built, page);
-    // A turn is told from where it ends, which need not be upright: a whole
-    // turn starts and ends at the same angle, and still turns.
-    final ends = _pageMotion(at(1), page)['rotate'];
-    if (ends is double) {
-      final from = (motion['rotate'] as double? ?? 0) - ends;
-      if (from == 0) {
-        motion.remove('rotate');
-      } else {
-        motion['rotate'] = from;
-      }
-    }
+    final motion = _transitionMotion(context, buildTransitions, arriving);
+    if (motion == null && _ownTransition) return {};
     return motion;
   }
+
+  /// How [buildTransitions] leaves the page when another route is over it -
+  /// its `secondaryAnimation` complete - or null when covering it does not
+  /// move it.
+  Map<String, Object>? _coveredMotion(
+    BuildContext context, {
+    required bool covering,
+  }) => _transitionMotion(
+    context,
+    buildTransitions,
+    covering,
+    secondary: true,
+  );
+}
+
+/// How [build] leaves a page at one end of an animation, told from the
+/// other: with [secondary] false, at the start of its own animation, from
+/// where it ends; with it true, with its `secondaryAnimation` complete -
+/// covered - from where nothing covers it. Null when [build] returns the
+/// page as it is, or moves nothing.
+Map<String, Object>? _transitionMotion(
+  BuildContext context,
+  RouteTransitionsBuilder build,
+  bool forward, {
+  bool secondary = false,
+}) {
+  final page = _Probe();
+  final status = forward ? AnimationStatus.forward : AnimationStatus.reverse;
+  Widget at(double value) => secondary
+      ? build(
+          context,
+          kAlwaysCompleteAnimation,
+          _FixedAnimation(value, status),
+          page,
+        )
+      : build(
+          context,
+          _FixedAnimation(value, status),
+          kAlwaysDismissedAnimation,
+          page,
+        );
+  final away = at(secondary ? 1 : 0);
+  if (identical(away, page)) return null;
+  final motion = _pageMotion(away, page);
+  final home = _pageMotion(at(secondary ? 0 : 1), page);
+  // A turn is told from where it ends, which need not be upright: a whole
+  // turn starts and ends at the same angle, and still turns.
+  final ends = home['rotate'];
+  if (ends is double) {
+    final from = (motion['rotate'] as double? ?? 0) - ends;
+    if (from == 0) {
+      motion.remove('rotate');
+    } else {
+      motion['rotate'] = from;
+    }
+  }
+  if (secondary && motion.keys.every((key) => key == 'curve')) return null;
+  return motion;
 }
 
 /// Stands for the page in a route's transition, to be found again.
@@ -1716,14 +1806,28 @@ class NavigatorState extends State<Navigator> {
     // A route with a transition of its own moves by it: the arriving page
     // from where it starts, the leaving one's picture back there.
     final moving = popped ? before : top;
+    final context = owner._context();
     final motion = moving is ModalRoute
-        ? moving._motion(owner._context(), arriving: !popped)
+        ? moving._motion(context, arriving: !popped)
         : null;
-    owner._pageTransition = {
-      'kind': pushed ? 'push' : popped ? 'pop' : 'fade',
-      'ms': ms,
-      if (motion != null) popped ? 'picture' : 'page': motion,
-    };
+    // The page beneath moves too when its transition says what being
+    // covered does to it: the one pushed over going under, the one popped
+    // back to coming out.
+    final beneath = pushed
+        ? before
+        : popped
+        ? top
+        : null;
+    final covered = beneath is ModalRoute
+        ? beneath._coveredMotion(context, covering: pushed)
+        : null;
+    owner._pageTransition = _routeMove(
+      pushed ? 'push' : popped ? 'pop' : 'fade',
+      ms,
+      motion,
+      covered,
+      rtl: owner._screenDirection == TextDirection.rtl,
+    );
   }
 
   Widget _page(Route<dynamic> route) => _RouteScope(
@@ -1763,21 +1867,74 @@ class NavigatorState extends State<Navigator> {
 typedef RouteWidgetBuilder =
     Widget Function(BuildContext context, Map<String, dynamic> params);
 
+/// The [RootProps.pageTransition] for a move of [kind] over [ms]: [motion]
+/// is the moving page's - the arriving one's start, or where the leaving
+/// one's picture goes - and [covered] the page beneath's, which a push
+/// takes it to and a pop brings it back from. With only [covered], the
+/// moving page makes the renderer's own move, said in the same terms so
+/// both pages move together.
+Map<String, Object> _routeMove(
+  String kind,
+  int ms,
+  Map<String, Object>? motion,
+  Map<String, Object>? covered, {
+  required bool rtl,
+}) {
+  final popped = kind == 'pop';
+  if (covered != null && motion == null && kind != 'fade') {
+    final end = rtl ? -0.25 : 0.25;
+    motion = popped
+        ? {'opacity': 0.0, 'dx': end, 'curve': 'easeOut'}
+        : {'dx': end, 'curve': 'easeOut'};
+  }
+  return {
+    'kind': kind,
+    'ms': ms,
+    if (motion != null) popped ? 'picture' : 'page': motion,
+    if (covered != null && kind != 'fade') popped ? 'page' : 'picture': covered,
+  };
+}
+
 /// For a router: says that the page the build in progress shows is another
 /// one from the last, and how it was reached - `'push'`, `'pop'` or `'fade'`
 /// ([RootProps.pageTransition]) - so the renderer moves from the one to the
 /// other. A [Navigator] says so for its own pages; a [RouterConfig] that
 /// swaps what it builds calls this from its `build`, once, on the first
 /// build of the new page. Outside a build it does nothing.
+///
+/// A page with a transition of its own passes it as [transitions] - the
+/// arriving page's on a push, the leaving one's on a pop - and the page
+/// beneath, pushed over or popped back to, its own as [covered]; each is
+/// read as [ModalRoute.buildTransitions] is. [moves] says whether the
+/// moving page moves at all when [transitions] returns it as it is: false
+/// for a page that leaves the move to the renderer.
 void announcePageTransition(
   BuildContext context,
   String kind, {
   Duration duration = const Duration(milliseconds: 300),
+  RouteTransitionsBuilder? transitions,
+  bool moves = true,
+  RouteTransitionsBuilder? covered,
 }) {
   if (context is! _Context || duration <= Duration.zero) return;
   final owner = context._owner;
   if (!owner._building || owner._hidden > 0) return;
-  owner._pageTransition ??= {'kind': kind, 'ms': duration.inMilliseconds};
+  if (owner._pageTransition != null) return;
+  final popped = kind == 'pop';
+  var motion = transitions == null
+      ? null
+      : _transitionMotion(context, transitions, !popped);
+  if (motion == null && transitions != null && moves) motion = {};
+  final beneath = covered == null
+      ? null
+      : _transitionMotion(context, covered, !popped, secondary: true);
+  owner._pageTransition = _routeMove(
+    kind,
+    duration.inMilliseconds,
+    motion,
+    beneath,
+    rtl: owner._screenDirection == TextDirection.rtl,
+  );
 }
 
 /// What decides the page a `MaterialApp.router` shows.
@@ -2412,12 +2569,19 @@ enum FloatingActionButtonLocation {
 /// shell that owns the app bar - is composed from a column and a stack
 /// instead, because a platform has one frame per screen.
 ///
-/// [drawer] is shown as a sheet, opened by the menu button the app bar gains
-/// - the nearest the protocol has to a panel sliding in from the side - or by
-/// `Scaffold.of(context).openDrawer()`. It closes when the app moves to
-/// another page, as a drawer left behind on its own page does in Flutter.
-/// [endDrawer] is the same sheet, opened only by
-/// `Scaffold.of(context).openEndDrawer()`: the bar gains no button for it.
+/// [drawer] is a panel sliding in from the start edge over a scrim -
+/// [endDrawer] from the end - opened by the menu button the app bar gains or
+/// by `Scaffold.of(context).openDrawer()`, and closed by a tap on the scrim,
+/// the back gesture or a swipe towards its edge. A swipe in from its edge
+/// opens it too, unless [drawerEnableOpenDragGesture] (or
+/// [endDrawerEnableOpenDragGesture]) is false; the panel then slides in by
+/// itself rather than following the finger, and a scaffold built inside
+/// another's body is not swiped open. It is as tall as the screen and as
+/// wide as the [Drawer] says (304 unless it says), and closes when the app
+/// moves to another page, as a drawer left behind on its own page does in
+/// Flutter. [endDrawer] is the same panel from the end, opened by
+/// `Scaffold.of(context).openEndDrawer()` or a swipe: the bar gains no
+/// button for it.
 class Scaffold extends StatefulWidget {
   const Scaffold({
     super.key,
@@ -2461,7 +2625,7 @@ class Scaffold extends StatefulWidget {
   /// the keyboard themselves.
   final bool? resizeToAvoidBottomInset;
 
-  /// Accepted and not consulted: a sheet is not dragged in from an edge.
+  /// Whether a swipe in from the edge opens [drawer] ([endDrawer]).
   final bool drawerEnableOpenDragGesture;
   final bool endDrawerEnableOpenDragGesture;
   final bool extendBody;
@@ -2503,7 +2667,11 @@ class ScaffoldState extends State<Scaffold> {
   /// is open already.
   void openDrawer() {
     if (widget.drawer == null || _drawer != null) return;
-    final entry = _open((_) => widget.drawer ?? const SizedBox.shrink());
+    final entry = _open(
+      (_) => widget.drawer ?? const SizedBox.shrink(),
+      side: 'start',
+      drawer: widget.drawer,
+    );
     _drawer = entry;
     widget.onDrawerChanged?.call(true);
     entry.completer.future.whenComplete(() {
@@ -2515,7 +2683,11 @@ class ScaffoldState extends State<Scaffold> {
   /// Shows the scaffold's [Scaffold.endDrawer].
   void openEndDrawer() {
     if (widget.endDrawer == null || _endDrawer != null) return;
-    final entry = _open((_) => widget.endDrawer ?? const SizedBox.shrink());
+    final entry = _open(
+      (_) => widget.endDrawer ?? const SizedBox.shrink(),
+      side: 'end',
+      drawer: widget.endDrawer,
+    );
     _endDrawer = entry;
     widget.onEndDrawerChanged?.call(true);
     entry.completer.future.whenComplete(() {
@@ -2534,12 +2706,18 @@ class ScaffoldState extends State<Scaffold> {
     if (entry != null) _owner?._dismiss(entry, null);
   }
 
-  _OverlayEntry _open(WidgetBuilder builder) {
+  _OverlayEntry _open(
+    WidgetBuilder builder, {
+    required String side,
+    Widget? drawer,
+  }) {
     final entry = _OverlayEntry(
       _OverlayKind.sheet,
       builder,
       scope: _context?._scope,
       isDrawer: true,
+      side: side,
+      width: drawer is Drawer ? drawer.width : null,
     );
     _owner!.pushOverlay<void>(entry);
     return entry;
@@ -2672,6 +2850,16 @@ class _ScaffoldFrame extends Widget {
       bottomBar: bottom == null ? null : UIBuilder.bottomBar(child: bottom),
       bodyScrolls: false,
       backgroundColor: backgroundColor?._hex,
+      onDrawerEdge: _scaffold.drawer != null &&
+              _scaffold.drawerEnableOpenDragGesture &&
+              owner._hidden == 0
+          ? _state.openDrawer
+          : null,
+      onEndDrawerEdge: _scaffold.endDrawer != null &&
+              _scaffold.endDrawerEnableOpenDragGesture &&
+              owner._hidden == 0
+          ? _state.openEndDrawer
+          : null,
     );
   }
 

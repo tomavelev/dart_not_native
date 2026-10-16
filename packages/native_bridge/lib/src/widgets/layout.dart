@@ -150,7 +150,7 @@ class Row extends Widget {
           : (bounded ? 'max' : null),
       spacing: spacing,
       children:
-          (textDirection ?? owner._direction) != owner._screenDirection
+          (textDirection ?? owner._direction) != owner._placedDirection
           ? nodes.reversed.toList()
           : nodes,
     );
@@ -1601,9 +1601,13 @@ class MaterialRectArcTween extends RectTween {
 /// other - any other tween is a straight line. What flies is the arriving
 /// page's hero, or what a [flightShuttleBuilder] builds instead - its own,
 /// or else the one the hero it flies from has, as in Flutter - drawn at
-/// the end of the flight: the animation it is handed stands at its end, and
-/// both hero contexts are the arriving hero's own. [placeholderBuilder] is
-/// accepted and not called, and a hero does not follow a back swipe
+/// the end of the flight, and laid out at each size it passes through: the
+/// animation it is handed stands at its end, and both hero contexts are the
+/// arriving hero's own. What a [placeholderBuilder] builds stands in the
+/// hero's room while it flies - the arriving hero's, and the one it flies
+/// from in the picture of its page - laid out to that room by the renderer:
+/// the `heroSize` it is handed is [Size.zero], since the size is the
+/// renderer's to know. A hero with none leaves its room empty. A hero does not follow a back swipe
 /// ([transitionOnUserGestures]). The [tag] is told to the renderer as its
 /// `toString()`, so two tags that print alike are one.
 class Hero extends StatefulWidget {
@@ -1668,10 +1672,24 @@ class _HeroState extends State<Hero> {
               'shuttle',
             ),
           );
+    // What stands in its room while it flies, laid out there by the
+    // renderer: the size is not known here. On every tree, since the hero
+    // a flight leaves is drawn from the one before it turned.
+    final holder = widget.placeholderBuilder;
+    final placeholder = holder == null
+        ? null
+        : _withoutIds(
+            _renderChild(
+              owner,
+              holder(context, Size.zero, widget.child),
+              'placeholder',
+            ),
+          );
     return UIBuilder.box(
       hero: tag,
       heroArc: _arcs(context),
       heroShuttle: flown,
+      heroPlaceholder: placeholder,
       id: _idOf(widget.key),
       child: _renderChild(owner, widget.child),
     );

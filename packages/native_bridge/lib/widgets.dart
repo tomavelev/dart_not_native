@@ -58,6 +58,7 @@ import 'forms/form.dart' as forms;
 import 'run_app.dart';
 import 'src/icon_data.dart';
 import 'src/flutter_slots.dart';
+import 'src/glyph_widths.dart';
 import 'src/hero_arc.dart';
 import 'src/icons.dart';
 import 'src/time_formats.dart';
@@ -721,6 +722,12 @@ class _Owner {
   TextDirection get _screenDirection =>
       _appDirection ?? _outerDirection ?? TextDirection.ltr;
 
+  /// The direction the renderer lays out where the build currently is: the
+  /// screen's, or that of a [Directionality] below it that told the renderer
+  /// otherwise (`layoutDirection` on its child's node).
+  TextDirection? _placedOverride;
+  TextDirection get _placedDirection => _placedOverride ?? _screenDirection;
+
   /// Where the build currently is: a slot per step down the tree - a child's
   /// index in a Column, the `body` of a Scaffold, the route being drawn - so a
   /// widget without a [Key] can be told apart from another of its type
@@ -1255,13 +1262,14 @@ class _Owner {
       _scope = entry.scope;
       final node = _withKeyScope(
         entry.id,
-        // A dialog or a sheet is as tall as what is in it.
+        // A dialog or a sheet is as tall as what is in it; a drawer is as
+        // tall as the screen.
         () => _withLayout(
           () => inSlot(
             entry.id,
             () => entry.build(_context())._render(this),
           ),
-          unboundedHeight: true,
+          unboundedHeight: entry.side == null,
         ),
       );
       overlays.add(entry.wrap(this, node));

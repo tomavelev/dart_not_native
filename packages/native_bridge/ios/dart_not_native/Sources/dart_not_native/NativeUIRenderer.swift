@@ -398,6 +398,9 @@ class NativeUIRenderer {
       // The content size category, as the factor it scales body text by.
       "textScale": Double(UIFontMetrics.default.scaledValue(for: 100) / 100),
       "dark": controller.traitCollection.userInterfaceStyle == .dark,
+      // The device's 24-hour switch: a clock that asks for no AM or PM.
+      "use24Hour": !(DateFormatter.dateFormat(
+        fromTemplate: "j", options: 0, locale: .current) ?? "").contains("a"),
     ]
     let boxed = data as NSDictionary
     if !force, let last = lastViewport, last.isEqual(boxed) { return }
@@ -649,21 +652,25 @@ class NativeUIRenderer {
     // the picture - which then has to be of the screen as it is this moment.
     var starts: [String: CGRect] = [:]
     var hidden: [(UIView, CGFloat)] = []
+    // What each of them said stands in its room meanwhile, in the picture.
+    var standIns: [UIView] = []
     if !heroes.isEmpty {
       for case let view as UIView in heroViews.keyEnumerator().allObjects {
         guard let name = heroViews.object(forKey: view) as String?, heroes.contains(name),
           starts[name] == nil, view.window != nil, !view.isHidden,
           view.bounds.width > 0, view.bounds.height > 0
         else { continue }
-        starts[name] = view.convert(view.bounds, to: above)
+        starts[name] = view.convert(heroRoom(view), to: above)
         hidden.append((view, view.alpha))
         view.alpha = 0
+        if let standIn = placeholderOver(view) { standIns.append(standIn) }
       }
     }
     let picture = container.snapshotView(afterScreenUpdates: !hidden.isEmpty)
     // A patch may keep these very views: they were only out of sight for
     // the picture.
     for (view, alpha) in hidden { view.alpha = alpha }
+    for standIn in standIns { standIn.removeFromSuperview() }
     guard let leaving = picture else { return }
     leaving.frame = container.frame
     leaving.isUserInteractionEnabled = false
@@ -672,6 +679,7 @@ class NativeUIRenderer {
     if page != nil || moved != nil {
       moveByRoute(
         container, leaving, above: above, ms: ms, page: page, picture: moved,
+        popped: transition["kind"] as? String == "pop",
         heroes: starts, sources: hidden.map { $0.0 })
       return
     }
@@ -703,45 +711,48 @@ class NativeUIRenderer {
     }
   }
 
-  /// Moves the pages the way a route's own transition says (see Dart's
-  /// `RootProps.pageTransition`): the new `page` from where it starts to its
-  /// place, over `leaving`, the picture of the old one lying still beneath
-  /// it - or `leaving` from its place to where `picture` says, over the new
-  /// page.
+  /// Moves the pages the way a route's transitions say (see Dart's
+  /// `RootProps.pageTransition`): the new page from where `page` says to its
+  /// place, and `leaving`, the picture of the old one, from its place to
+  /// where `picture` says. The page that moves in its own right is on top:
+  /// the new one, unless the move is a pop.
   private func moveByRoute(
     _ container: UIView, _ leaving: UIView, above: UIView, ms: Double,
-    page: [String: Any]?, picture: [String: Any]?,
+    page: [String: Any]?, picture: [String: Any]?, popped: Bool,
     heroes starts: [String: CGRect], sources: [UIView]
   ) {
-    guard let motion = page ?? picture else { return }
-    func n(_ key: String, _ fallback: CGFloat) -> CGFloat {
-      (motion[key] as? NSNumber).map { CGFloat($0.doubleValue) } ?? fallback
-    }
     let size = container.bounds.size
     let background = container.backgroundColor
-    if page != nil {
+    if popped {
+      above.insertSubview(leaving, aboveSubview: container)
+      // Nothing says where a popped page's picture goes: it is simply gone.
+      if picture == nil { leaving.alpha = 0 }
+    } else {
       // Beneath the page, which lets it through while it moves.
       above.insertSubview(leaving, belowSubview: container)
       container.backgroundColor = .clear
-    } else {
-      above.insertSubview(leaving, aboveSubview: container)
+    }
+    /// One move's parts, each on its own key path: a turn by its angle, so
+    /// a whole turn turns, which a move between two matrices would not.
+    func parts(_ motion: [String: Any]) -> [(String, CGFloat, CGFloat)] {
+      func n(_ key: String, _ fallback: CGFloat) -> CGFloat {
+        (motion[key] as? NSNumber).map { CGFloat($0.doubleValue) } ?? fallback
+      }
+      return [
+        ("opacity", min(1, max(0, n("opacity", 1))), 1),
+        ("transform.translation.x", n("dx", 0) * size.width, 0),
+        ("transform.translation.y", n("dy", 0) * size.height, 0),
+        ("transform.scale", n("scale", 1), 1),
+        ("transform.rotation.z", n("rotate", 0), 0),
+      ]
     }
     // Straight through, as a route's animation runs, unless it says.
-    let points = travelPoints(motion["curve"] ?? "linear")
-    let timing =
-      points.map {
+    func timing(_ motion: [String: Any]) -> CAMediaTimingFunction {
+      travelPoints(motion["curve"] ?? "linear").map {
         CAMediaTimingFunction(
           controlPoints: Float($0.0.x), Float($0.0.y), Float($0.1.x), Float($0.1.y))
       } ?? CAMediaTimingFunction(name: .linear)
-    // Each part on its own key path: a turn by its angle, so a whole turn
-    // turns, which a move between two matrices would not.
-    let parts: [(String, CGFloat, CGFloat)] = [
-      ("opacity", min(1, max(0, n("opacity", 1))), 1),
-      ("transform.translation.x", n("dx", 0) * size.width, 0),
-      ("transform.translation.y", n("dy", 0) * size.height, 0),
-      ("transform.scale", n("scale", 1), 1),
-      ("transform.rotation.z", n("rotate", 0), 0),
-    ]
+    }
     // The page is not drawn yet: this is called before the render, and the
     // animation is set going once it has been.
     DispatchQueue.main.async { [weak self] in
@@ -749,32 +760,37 @@ class NativeUIRenderer {
       if !starts.isEmpty {
         self.flyHeroes(from: starts, sources: sources, in: container, above: above, ms: ms)
       }
-      guard let layer = page != nil ? self.currentRoot?.layer : leaving.layer else {
-        leaving.removeFromSuperview()
-        container.backgroundColor = background
-        return
-      }
+      // The page from where it starts; the picture to where it goes.
+      var moves: [(CALayer, [String: Any], Bool)] = []
+      if let page, let layer = self.currentRoot?.layer { moves.append((layer, page, true)) }
+      if let picture { moves.append((leaving.layer, picture, false)) }
       CATransaction.begin()
       CATransaction.setCompletionBlock {
         leaving.removeFromSuperview()
         container.backgroundColor = background
-        for (key, _, _) in parts { layer.removeAnimation(forKey: "dnn.route." + key) }
+        for (layer, _, _) in moves {
+          for key in layer.animationKeys() ?? [] where key.hasPrefix("dnn.route.") {
+            layer.removeAnimation(forKey: key)
+          }
+        }
       }
-      for (key, moved, still) in parts where moved != still {
-        let run = CABasicAnimation(keyPath: key)
-        // The page from where it starts; the picture to where it goes.
-        run.fromValue = page != nil ? moved : still
-        run.toValue = page != nil ? still : moved
-        run.duration = ms / 1000
-        run.timingFunction = timing
-        run.fillMode = .forwards
-        run.isRemovedOnCompletion = false
-        layer.add(run, forKey: "dnn.route." + key)
+      for (layer, motion, arriving) in moves {
+        let curve = timing(motion)
+        for (key, moved, still) in parts(motion) where moved != still {
+          let run = CABasicAnimation(keyPath: key)
+          run.fromValue = arriving ? moved : still
+          run.toValue = arriving ? still : moved
+          run.duration = ms / 1000
+          run.timingFunction = curve
+          run.fillMode = .forwards
+          run.isRemovedOnCompletion = false
+          layer.add(run, forKey: "dnn.route." + key)
+        }
       }
       // Something to wait on, when nothing moves at all.
       let held = CABasicAnimation(keyPath: "dnn.route.held")
       held.duration = ms / 1000
-      layer.add(held, forKey: "dnn.route.held")
+      leaving.layer.add(held, forKey: "dnn.route.held")
       CATransaction.commit()
     }
   }
@@ -785,23 +801,51 @@ class NativeUIRenderer {
   /// What flies in a hero's place (`heroShuttle`), by view.
   private let heroShuttles = NSMapTable<UIView, NSDictionary>.weakToStrongObjects()
 
-  /// What flies for `hero`: a picture of its shuttle drawn at `size`, or of
-  /// the hero itself - stretched over the flight either way.
+  /// What stands in a hero's room while it flies (`heroPlaceholder`).
+  private let heroPlaceholders = NSMapTable<UIView, NSDictionary>.weakToStrongObjects()
+
+  /// What flies for `hero`: its shuttle, laid out at `size` to begin with
+  /// and again at each size it passes through - or a picture of the hero
+  /// itself, stretched over the flight.
   private func flightPicture(_ hero: UIView, size: CGSize) -> UIView? {
     guard let shuttle = heroShuttles.object(forKey: hero) as? [String: Any],
       let drawn = renderWidget(normalized(shuttle)), size.width > 0, size.height > 0
     else {
-      return hero.snapshotView(afterScreenUpdates: true)
+      return hero.resizableSnapshotView(
+        from: heroRoom(hero), afterScreenUpdates: true, withCapInsets: .zero)
     }
     drawn.frame = CGRect(origin: .zero, size: size)
     drawn.setNeedsLayout()
     drawn.layoutIfNeeded()
-    let image = UIGraphicsImageRenderer(size: size).image { context in
-      drawn.layer.render(in: context.cgContext)
-    }
-    let picture = UIImageView(image: image)
-    picture.contentMode = .scaleToFill
-    return picture
+    return drawn
+  }
+
+  /// The heroes whose box sizes or paints itself, and so is their room.
+  private let selfRoomHeroes = NSHashTable<UIView>.weakObjects()
+
+  /// The room a hero takes, in its own space: its child's. A box that is
+  /// only a hero paints nothing and can be stretched wider than its child,
+  /// while a Flutter `Hero` is exactly its child's size.
+  private func heroRoom(_ hero: UIView) -> CGRect {
+    guard !selfRoomHeroes.contains(hero),
+      let child = (hero as? DnnSingleChildHost)?.hostedChild, !child.isHidden,
+      !child.bounds.isEmpty
+    else { return hero.bounds }
+    let room = hero.convert(child.bounds, from: child).intersection(hero.bounds)
+    return room.isNull || room.isEmpty ? hero.bounds : room
+  }
+
+  /// What `hero` said stands in its room while it flies, drawn over it in
+  /// its parent and laid out to its frame; nil when it said nothing.
+  private func placeholderOver(_ hero: UIView) -> UIView? {
+    guard let placeholder = heroPlaceholders.object(forKey: hero) as? [String: Any],
+      let parent = hero.superview, let drawn = renderWidget(normalized(placeholder))
+    else { return nil }
+    drawn.frame = hero.convert(heroRoom(hero), to: parent)
+    drawn.isUserInteractionEnabled = false
+    parent.insertSubview(drawn, aboveSubview: hero)
+    drawn.layoutIfNeeded()
+    return drawn
   }
 
   /// The boxes that have a hero's name (`hero`), by view.
@@ -826,24 +870,39 @@ class NativeUIRenderer {
         !flown.contains(name), view.window != nil, !view.isHidden,
         view.bounds.width > 0, view.bounds.height > 0
       else { continue }
-      let end = view.convert(view.bounds, to: above)
+      let end = view.convert(heroRoom(view), to: above)
       // The same view in the same place: it never left.
       if sources.contains(where: { $0 === view }), end.equalTo(start) { continue }
-      guard let flight = flightPicture(view, size: end.size) else { continue }
+      guard let flight = flightPicture(view, size: start.size) else { continue }
+      // A shuttle is laid out again at each size; a picture is stretched.
+      let laidOut = heroShuttles.object(forKey: view) != nil
       flown.insert(name)
       flight.frame = start
       flight.isUserInteractionEnabled = false
       above.addSubview(flight)
+      if laidOut { flight.layoutIfNeeded() }
       let shown = view.alpha
       view.alpha = 0
+      // What stands in its room meanwhile, over it in its parent.
+      let standIn = placeholderOver(view)
       let land: (Bool) -> Void = { [weak view] _ in
         flight.removeFromSuperview()
+        standIn?.removeFromSuperview()
         view?.alpha = shown
       }
-      if heroArcs.contains(view) {
-        // Along the arc a point at a time, each placed where the eased run
-        // has got to by then: Flutter's fast-out-slow-in over the whole.
-        let path = DnnArcRectPath(from: start, to: end)
+      if heroArcs.contains(view) || laidOut {
+        // Along the arc (or the line) a point at a time, each placed where
+        // the eased run has got to by then: Flutter's fast-out-slow-in over
+        // the whole. A shuttle is laid out at each.
+        let arc = heroArcs.contains(view) ? DnnArcRectPath(from: start, to: end) : nil
+        func at(_ t: CGFloat) -> CGRect {
+          if let arc { return arc.at(t) }
+          return CGRect(
+            x: start.minX + (end.minX - start.minX) * t,
+            y: start.minY + (end.minY - start.minY) * t,
+            width: start.width + (end.width - start.width) * t,
+            height: start.height + (end.height - start.height) * t)
+        }
         let steps = 24
         UIView.animateKeyframes(
           withDuration: ms / 1000, delay: 0, options: [.calculationModeLinear],
@@ -855,7 +914,10 @@ class NativeUIRenderer {
               UIView.addKeyframe(
                 withRelativeStartTime: Double(step - 1) / Double(steps),
                 relativeDuration: 1 / Double(steps)
-              ) { flight.frame = path.at(eased) }
+              ) {
+                flight.frame = at(eased)
+                if laidOut { flight.layoutIfNeeded() }
+              }
             }
           }, completion: land)
       } else {
@@ -870,6 +932,10 @@ class NativeUIRenderer {
     guard let container = rootContainer else {
       return ["error": "Error: container not initialized"]
     }
+    // A box moving to its size is moved by the render itself while it runs
+    // (`moveSizes`), not by what it sees change.
+    DnnBoxView.rendering = true
+    defer { DnnBoxView.rendering = false }
     var next = normalized(tree)
     unknownTypes.removeAll()
 
@@ -1005,26 +1071,34 @@ class NativeUIRenderer {
    A control, a label, a web page and a map are told and not entered: what is
    inside them is theirs to arrange.
    */
-  private func applyDirection(_ view: UIView) {
-    let wanted: UISemanticContentAttribute = isRTL ? .forceRightToLeft : .forceLeftToRight
+  ///
+  /// A view whose node reads the other way from what is around it
+  /// (`layoutDirection`, a `Directionality` deep in a screen) is told its own
+  /// way, and so is everything under it.
+  private func applyDirection(_ view: UIView, rtl around: Bool? = nil) {
+    let rtl = turnedViews.object(forKey: view)?.boolValue ?? around ?? isRTL
+    let wanted: UISemanticContentAttribute = rtl ? .forceRightToLeft : .forceLeftToRight
     if view.semanticContentAttribute != wanted { view.semanticContentAttribute = wanted }
     if let label = view as? UILabel {
-      if isRTL, label.textAlignment == .natural { label.textAlignment = .right }
+      if rtl, label.textAlignment == .natural { label.textAlignment = .right }
       return
     }
     if let field = view as? UITextField {
-      if isRTL, field.textAlignment == .natural { field.textAlignment = .right }
+      if rtl, field.textAlignment == .natural { field.textAlignment = .right }
       return
     }
     if let text = view as? UITextView {
-      if isRTL, text.textAlignment == .natural { text.textAlignment = .right }
+      if rtl, text.textAlignment == .natural { text.textAlignment = .right }
       return
     }
     if view is UIControl || view is UITabBar || view is WKWebView || view is MKMapView {
       return
     }
-    for sub in view.subviews { applyDirection(sub) }
+    for sub in view.subviews { applyDirection(sub, rtl: rtl) }
   }
+
+  /// The views whose nodes read their own way (`layoutDirection`).
+  private let turnedViews = NSMapTable<UIView, NSNumber>.weakToStrongObjects()
 
   // MARK: - Reconciliation (the shape-preserving fast path)
 
@@ -1601,6 +1675,7 @@ class NativeUIRenderer {
       return false
     }
     view.backgroundColor = statedColor(newNode["backgroundColor"])
+    watchDrawerEdges(view, newNode)
     return true
   }
 
@@ -1799,6 +1874,11 @@ class NativeUIRenderer {
    render function made it.
    */
   private func identify(_ view: UIView, _ node: [String: Any]) {
+    switch node["layoutDirection"] as? String {
+    case "rtl": turnedViews.setObject(NSNumber(value: true), forKey: view)
+    case "ltr": turnedViews.setObject(NSNumber(value: false), forKey: view)
+    default: turnedViews.removeObject(forKey: view)
+    }
     let target = identityTarget(view, node)
     var id = node["id"] as? String
     if id?.isEmpty == true { id = nil }
@@ -1989,6 +2069,7 @@ class NativeUIRenderer {
 
   private func renderScaffold(_ node: [String: Any]) -> UIView {
     let container = UIView()
+    watchDrawerEdges(container, node)
     let column = UIStackView()
     column.axis = .vertical
     column.alignment = .fill
@@ -2698,7 +2779,7 @@ class NativeUIRenderer {
     // A label cannot be selected, so selectable text is a text view that
     // neither edits nor scrolls - which sizes to its text as a label does.
     if node["selectable"] as? Bool == true {
-      let textView = UITextView()
+      let textView = DnnSelectableTextView()
       textView.isEditable = false
       textView.isScrollEnabled = false
       textView.backgroundColor = .clear
@@ -2771,6 +2852,14 @@ class NativeUIRenderer {
       runs = [["text": node["content"] as? String ?? ""]]
     }
     for span in runs {
+      // A widget in the line: a picture of it, as it first lays out.
+      if let widget = span["widget"] as? [String: Any],
+        let picture = widgetPicture(
+          widget, font: dnnFont(size: size, weight: weight, family: family, italic: italic))
+      {
+        result.append(NSAttributedString(attachment: picture))
+        continue
+      }
       var attributes = base
       attributes[.font] = dnnFont(
         size: number(span["fontSize"]) ?? size,
@@ -2809,23 +2898,57 @@ class NativeUIRenderer {
     // After the text: a label applies its line breaking to an attributed
     // string as it is set.
     clampLines(label, node)
-    // The runs that can be tapped, by where they are in the string.
     guard let linked = label as? DnnLabel else { return }
-    var links: [(NSRange, String)] = []
+    linked.links = runEvents(node)
+    linked.onLink = { [weak self] eventId in self?.send(eventId: eventId, data: [:]) }
+  }
+
+  /// The runs of [node] that can be tapped or held, by where they are in
+  /// the string.
+  private func runEvents(_ node: [String: Any]) -> [DnnRun] {
+    var runs: [DnnRun] = []
     var at = 0
     for case let span as [String: Any] in node["spans"] as? [Any] ?? [] {
       let length = ((span["text"] as? String ?? "") as NSString).length
-      if let eventId = span["eventId"] as? String, length > 0 {
-        links.append((NSRange(location: at, length: length), eventId))
+      let tap = span["eventId"] as? String
+      let longPress = span["longPressEventId"] as? String
+      if tap != nil || longPress != nil, length > 0 {
+        runs.append(
+          DnnRun(range: NSRange(location: at, length: length), tap: tap, longPress: longPress))
       }
       at += length
     }
-    linked.links = links
-    linked.onLink = { [weak self] eventId in self?.send(eventId: eventId, data: [:]) }
+    return runs
+  }
+
+  /// A picture of [widget] - a node tree - to stand in a line of text set in
+  /// [font], its middle on the middle of the font's height.
+  private func widgetPicture(_ widget: [String: Any], font: UIFont) -> NSTextAttachment? {
+    guard let view = renderWidget(normalized(widget)) else { return nil }
+    let size = view.systemLayoutSizeFitting(
+      UIScreen.main.bounds.size,
+      withHorizontalFittingPriority: .fittingSizeLevel,
+      verticalFittingPriority: .fittingSizeLevel)
+    guard size.width > 0, size.height > 0 else { return nil }
+    view.frame = CGRect(origin: .zero, size: size)
+    view.layoutIfNeeded()
+    let image = UIGraphicsImageRenderer(size: size).image { context in
+      view.layer.render(in: context.cgContext)
+    }
+    let attachment = NSTextAttachment()
+    attachment.image = image
+    let middle = (font.ascender + font.descender) / 2
+    attachment.bounds = CGRect(
+      x: 0, y: middle - size.height / 2, width: size.width, height: size.height)
+    return attachment
   }
 
   private func applySelectableText(_ textView: UITextView, _ node: [String: Any]) {
     textView.attributedText = richText(node)
+    if let linked = textView as? DnnSelectableTextView {
+      linked.links = runEvents(node)
+      linked.onLink = { [weak self] eventId in self?.send(eventId: eventId, data: [:]) }
+    }
     let maxLines = Int(number(node["maxLines"]) ?? 0)
     textView.textContainer.maximumNumberOfLines = maxLines > 0 ? maxLines : 0
     textView.textContainer.lineBreakMode =
@@ -2905,7 +3028,13 @@ class NativeUIRenderer {
       fallback = label
     }
 
-    let imageView = UIImageView()
+    let imageView = DnnImageView()
+    // A width alone: the height follows from it in the picture's
+    // proportions, and is nothing until the picture comes, as Flutter's.
+    if node["height"] == nil, let width = number(node["width"]) {
+      imageView.statedWidth = width
+      imageView.setContentHuggingPriority(.defaultHigh, for: .vertical)
+    }
     // An image nobody described is decoration: there is nothing to say about
     // it, and "image" on its own is noise.
     imageView.isAccessibilityElement = !alt.isEmpty
@@ -3698,6 +3827,9 @@ class NativeUIRenderer {
       label.text = labelText
       label.font = .systemFont(ofSize: 13)
       label.textColor = .secondaryLabel
+      let (ink, font) = textStyle(node["labelStyle"], size: 13)
+      if let ink { label.textColor = ink }
+      if let font { label.font = font }
       stack.addArrangedSubview(label)
     }
 
@@ -3750,6 +3882,9 @@ class NativeUIRenderer {
     let helper = TextFieldHelperLabel()
     helper.font = .systemFont(ofSize: 12)
     helper.textColor = color(themeTextSecondary, fallback: themeTextSecondary)
+    let (helperInk, helperFont) = textStyle(node["helperStyle"], size: 12)
+    if let helperInk { helper.textColor = helperInk }
+    if let helperFont { helper.font = helperFont }
     helper.numberOfLines = 0
     stack.addArrangedSubview(helper)
     stack.addArrangedSubview(error)
@@ -3764,7 +3899,24 @@ class NativeUIRenderer {
   private static let fieldLookKeys = [
     "textColor", "fontSize", "fontWeight", "fillColor", "border",
     "borderColor", "borderWidth", "borderRadius", "contentPadding",
+    "focusedBorderColor", "focusedBorderWidth", "errorBorderColor",
+    "errorBorderWidth", "disabledBorderColor", "disabledBorderWidth",
+    "hintStyle", "labelStyle", "helperStyle",
   ]
+
+  /// A label's, hint's or helper's style (`labelStyle`...) as the colour and
+  /// font it gives, each nil where it says nothing of it.
+  private func textStyle(_ style: Any?, size: CGFloat) -> (UIColor?, UIFont?) {
+    guard let given = style as? [String: Any] else { return (nil, nil) }
+    let font =
+      given["fontSize"] == nil && given["fontWeight"] == nil
+      ? nil
+      : dnnFont(
+        size: number(given["fontSize"]) ?? size,
+        weight: number(given["fontWeight"]) ?? 400,
+        family: nil, italic: false)
+    return (statedColor(given["color"]), font)
+  }
 
   /// The look the app gave a field: the style of what is typed, what the
   /// field is filled with, its outline and the room inside it. A field that
@@ -3790,24 +3942,27 @@ class NativeUIRenderer {
       let width = number(node["borderWidth"]) ?? 1
       field.borderStyle = .none
       field.backgroundColor = fill
-      field.layer.borderWidth = 0
-      field.layer.cornerRadius = 0
-      field.setUnderline(color: nil, width: 0)
-      switch kind {
-      case "none":
-        break
-      case "outline":
-        field.layer.borderWidth = width
-        field.layer.borderColor = line.cgColor
-        field.layer.cornerRadius = number(node["borderRadius"]) ?? 4
-        field.layer.masksToBounds = true
-      default:
-        // A line under the field - and under one that is only filled, which
-        // is how Material draws a filled field.
-        field.setUnderline(color: line, width: width)
+      // The outline at rest, and in each state the app gave one of its own;
+      // the field redraws it as it gains and loses focus.
+      var lines: [String: (UIColor, CGFloat)] = ["rest": (line, width)]
+      for state in ["focused", "error", "disabled"] {
+        if let stated = statedColor(node["\(state)BorderColor"]) {
+          lines[state] = (stated, number(node["\(state)BorderWidth"]) ?? width)
+        }
       }
+      field.inError = node["error"] != nil
+      field.lines = lines
+      field.outline = (kind ?? "underline", number(node["borderRadius"]) ?? 4)
       // The room UIKit's border gave the text went with the border.
       field.insets = UIEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+    }
+    // The hint in the colour, size and weight the app gave it.
+    let (hintColor, hintFont) = textStyle(node["hintStyle"], size: field.font?.pointSize ?? 17)
+    if hintColor != nil || hintFont != nil, let hint = field.placeholder {
+      var attributes: [NSAttributedString.Key: Any] = [:]
+      if let hintColor { attributes[.foregroundColor] = hintColor }
+      if let hintFont { attributes[.font] = hintFont }
+      field.attributedPlaceholder = NSAttributedString(string: hint, attributes: attributes)
     }
     if let padding = node["contentPadding"] as? [NSNumber], padding.count == 4 {
       let rtl = isRTL
@@ -3921,6 +4076,7 @@ class NativeUIRenderer {
     label.text = message
     label.isHidden = message == nil
     field.accessibilityHint = message
+    (field as? DnnTextField)?.inError = message != nil
   }
 
   private func findErrorLabel(_ view: UIView) -> TextFieldErrorLabel? {
@@ -4692,6 +4848,9 @@ class NativeUIRenderer {
    by rendering a tree without it.
    */
   private func renderBottomSheet(_ node: [String: Any]) -> UIView {
+    if let side = node["side"] as? String, side == "start" || side == "end" {
+      return renderDrawer(node, start: side == "start")
+    }
     let container = modalContainer(node)
 
     let surface = SheetSurface()
@@ -4999,6 +5158,122 @@ class NativeUIRenderer {
 
   /// Follows a downward drag, and on release past the threshold - or a fast
   /// flick - asks for the sheet to be dismissed. Either way it springs back.
+  /// A sheet with a side: a drawer the height of the screen, sliding in from
+  /// the start edge (`start`) or the end over the scrim, and swiped back
+  /// towards it to close.
+  private func renderDrawer(_ node: [String: Any], start: Bool) -> UIView {
+    let container = modalContainer(node)
+    let surface = DrawerSurface()
+    surface.start = start
+    surface.layer.cornerRadius = 16
+    surface.clipsToBounds = true
+    surface.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(surface)
+    applyModalSurface(surface)
+
+    let stack = UIStackView()
+    stack.axis = .vertical
+    stack.alignment = .fill
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    if let title = node["title"] as? String {
+      let label = UILabel()
+      label.text = title
+      label.font = .systemFont(ofSize: 22, weight: .medium)
+      label.numberOfLines = 0
+      label.accessibilityTraits = .header
+      let padded = UIStackView(arrangedSubviews: [label])
+      padded.isLayoutMarginsRelativeArrangement = true
+      padded.layoutMargins = UIEdgeInsets(top: 16, left: 16, bottom: 8, right: 16)
+      stack.addArrangedSubview(padded)
+    }
+    for child in childNodes(node) {
+      guard let view = renderWidget(child) else { continue }
+      // What the drawer holds fills it: a list scrolls in the room left.
+      view.setContentHuggingPriority(.defaultLow, for: .vertical)
+      stack.addArrangedSubview(view)
+    }
+    surface.addSubview(stack)
+
+    let wanted = number(node["width"]) ?? 304
+    let preferred = surface.widthAnchor.constraint(equalToConstant: wanted)
+    preferred.priority = .defaultHigh
+    NSLayoutConstraint.activate([
+      surface.topAnchor.constraint(equalTo: container.topAnchor),
+      surface.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+      start
+        ? surface.leadingAnchor.constraint(equalTo: container.leadingAnchor)
+        : surface.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      preferred,
+      surface.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -56),
+      stack.topAnchor.constraint(equalTo: surface.safeAreaLayoutGuide.topAnchor),
+      stack.bottomAnchor.constraint(equalTo: surface.safeAreaLayoutGuide.bottomAnchor),
+      stack.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
+      stack.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
+    ])
+
+    if isDismissible(node) {
+      let drag = UIPanGestureRecognizer(target: self, action: #selector(drawerDragged(_:)))
+      surface.addGestureRecognizer(drag)
+      bindings[drag.hash] = node
+    }
+    return container
+  }
+
+  /// The drawers a scaffold opens from its start and end edges
+  /// (`drawerEdgeEventId`, `endDrawerEdgeEventId`), by view.
+  private let drawerEdges = NSMapTable<UIView, NSDictionary>.weakToStrongObjects()
+
+  /// Has a pan in from the screen's left or right edge over `scaffold` open
+  /// the drawer at that edge: the platform's own edge pan, which leaves a
+  /// tap by the edge to what is there.
+  private func watchDrawerEdges(_ scaffold: UIView, _ node: [String: Any]) {
+    var ids: [String: String] = [:]
+    if let start = node["drawerEdgeEventId"] as? String { ids["start"] = start }
+    if let end = node["endDrawerEdgeEventId"] as? String { ids["end"] = end }
+    drawerEdges.setObject(ids as NSDictionary, forKey: scaffold)
+    let watched = scaffold.gestureRecognizers?.contains { $0.delegate === drawerEdgeDelegate }
+    if ids.isEmpty || watched == true { return }
+    let pan = UIPanGestureRecognizer(target: self, action: #selector(drawerEdgePanned(_:)))
+    pan.delegate = drawerEdgeDelegate
+    scaffold.addGestureRecognizer(pan)
+  }
+
+  private let drawerEdgeDelegate = DrawerEdgeDelegate()
+
+  @objc private func drawerEdgePanned(_ sender: UIPanGestureRecognizer) {
+    guard sender.state == .began, let scaffold = sender.view,
+      let ids = drawerEdges.object(forKey: scaffold) as? [String: String]
+    else { return }
+    // The start is the left in a screen read from the left.
+    let rtl = scaffold.effectiveUserInterfaceLayoutDirection == .rightToLeft
+    // Only a pan from an edge begins, and it has not got far yet: which half
+    // it is in says which edge. (Its translation starts again from nothing
+    // as it begins.)
+    let fromLeft = sender.location(in: scaffold).x < scaffold.bounds.midX
+    let side = fromLeft != rtl ? "start" : "end"
+    if let eventId = ids[side] { send(eventId: eventId, data: [:]) }
+  }
+
+  @objc private func drawerDragged(_ sender: UIPanGestureRecognizer) {
+    guard let drawer = sender.view as? DrawerSurface else { return }
+    let toward = drawer.toward
+    let distance = max(0, sender.translation(in: drawer.superview).x * toward)
+    switch sender.state {
+    case .changed:
+      drawer.transform = CGAffineTransform(translationX: distance * toward, y: 0)
+    case .ended, .cancelled, .failed:
+      let flicked = sender.velocity(in: drawer.superview).x * toward > 1000
+      if sender.state == .ended, distance > drawer.bounds.width / 3 || flicked {
+        dismiss(bindings[sender.hash], reason: "swipe")
+      }
+      UIView.animate(
+        withDuration: 0.25, delay: 0, options: [.curveEaseOut],
+        animations: { drawer.transform = .identity }, completion: nil)
+    default:
+      break
+    }
+  }
+
   @objc private func sheetDragged(_ sender: UIPanGestureRecognizer) {
     guard let sheet = sender.view else { return }
     let distance = max(0, sender.translation(in: sheet.superview).y)
@@ -5204,6 +5479,7 @@ class NativeUIRenderer {
     box.sizeSeconds = Double(sizeMs) / 1000
     box.sizeCurve = node["curve"] as? String
     box.sizeEndEventId = node["sizeEndEventId"] as? String
+    box.followSize = sizeMs > 0 ? { [weak self] box, _, to in self?.followSize(box, to: to) } : nil
     box.sticky = node["sticky"] as? Bool == true
     if let carried = node["dragFeedback"] as? [String: Any] {
       box.makeFeedback = { [weak self] in
@@ -5219,6 +5495,15 @@ class NativeUIRenderer {
     } else {
       heroViews.removeObject(forKey: box)
     }
+    // A box that is only a hero is its child's size, as a Flutter `Hero` is;
+    // one that sizes or paints itself is its own.
+    let heroKeys: Set<String> = ["id", "hero", "heroArc", "heroShuttle", "heroPlaceholder"]
+    let props = (node["props"] as? [String: Any]) ?? node
+    if node["hero"] != nil, !Set(props.keys).isSubset(of: heroKeys) {
+      selfRoomHeroes.add(box)
+    } else {
+      selfRoomHeroes.remove(box)
+    }
     if node["hero"] != nil, node["heroArc"] as? Bool == true {
       heroArcs.add(box)
     } else {
@@ -5228,6 +5513,11 @@ class NativeUIRenderer {
       heroShuttles.setObject(shuttle as NSDictionary, forKey: box)
     } else {
       heroShuttles.removeObject(forKey: box)
+    }
+    if node["hero"] != nil, let placeholder = node["heroPlaceholder"] as? [String: Any] {
+      heroPlaceholders.setObject(placeholder as NSDictionary, forKey: box)
+    } else {
+      heroPlaceholders.removeObject(forKey: box)
     }
   }
 
@@ -5290,6 +5580,30 @@ class NativeUIRenderer {
           }
         }
       })
+  }
+
+  /// Moves [box], held at the size it was, to the one its child came to
+  /// between renders - a picture arriving - as `moveSizes` does in one.
+  private func followSize(_ box: DnnBoxView, to size: CGSize) {
+    // Out of the layout pass that saw it: held there, and let go on the next
+    // turn, inside an animation.
+    DispatchQueue.main.async { [weak self, weak box] in
+      guard let self, let box, let root = self.rootContainer else { return }
+      root.layoutIfNeeded()
+      self.animate(
+        ["curve": box.sizeCurve as Any], duration: box.sizeSeconds,
+        options: [.allowUserInteraction, .beginFromCurrentState],
+        animations: {
+          box.pinSize(size)
+          root.layoutIfNeeded()
+        },
+        completion: { [weak self, weak box] finished in
+          box?.unpinSize()
+          if finished, let ended = box?.sizeEndEventId {
+            self?.send(eventId: ended, data: [:])
+          }
+        })
+    }
   }
 
   /// The ask each moving view last answered, so one is answered once.
@@ -6472,6 +6786,51 @@ private class SnackbarHost: PassthroughView {
 /// A bottom sheet's surface, which keeps its drag recognizer's delegate alive.
 private class SheetSurface: UIView {
   var dragDelegate: SheetDragDelegate?
+}
+
+/// A drawer's panel, which slides in from its edge the first time it is laid
+/// out on screen.
+private class DrawerSurface: UIView {
+  var start = true
+  private var entered = false
+
+  /// Towards its own edge, on screen: -1 for the left.
+  var toward: CGFloat {
+    let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
+    return start != rtl ? -1 : 1
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // Round on the side towards the screen, square on its edge.
+    layer.maskedCorners =
+      toward < 0
+      ? [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+      : [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+    guard !entered, window != nil, bounds.width > 0 else { return }
+    entered = true
+    transform = CGAffineTransform(translationX: toward * bounds.width, y: 0)
+    UIView.animate(
+      withDuration: 0.25, delay: 0, options: [.curveEaseOut],
+      animations: { self.transform = .identity }, completion: nil)
+  }
+}
+
+/// Lets a scaffold's drawer pan begin only when it went down within 20
+/// points of the left or the right edge and moves in from it, further across
+/// than up or down - so a tap by the edge, and a scroll, are left alone.
+private class DrawerEdgeDelegate: NSObject, UIGestureRecognizerDelegate {
+  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let view = pan.view else {
+      return false
+    }
+    let moved = pan.translation(in: view)
+    let down = pan.location(in: view).x - moved.x
+    if abs(moved.x) <= abs(moved.y) { return false }
+    if down <= 20 { return moved.x > 0 }
+    if down >= view.bounds.width - 20 { return moved.x < 0 }
+    return false
+  }
 }
 
 /// Lets a sheet's drag begin only downwards, and only while its content is

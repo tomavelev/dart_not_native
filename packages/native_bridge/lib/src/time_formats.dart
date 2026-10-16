@@ -119,3 +119,17 @@ const Map<String, (String, String, String)> timeOfDayFormats = {
   'zh': ('a h:mm', '上午', '下午'),
   'zu': ('H:mm', 'AM', 'PM'),
 };
+
+/// By locale tag, the zero of the digits a time is written in, where they
+/// are not 0-9 - as `intl`, which Flutter formats the hour and the
+/// minutes with, has them. The other nine follow it in Unicode.
+const Map<String, String> timeDigitZeros = {
+  'ar_EG': '\u0660',
+  'as': '\u09E6',
+  'bn': '\u09E6',
+  'fa': '\u06F0',
+  'mr': '\u0966',
+  'my': '\u1040',
+  'ne': '\u0966',
+  'ps': '\u06F0',
+};

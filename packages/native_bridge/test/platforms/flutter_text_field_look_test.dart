@@ -107,4 +107,37 @@ void main() {
       const EdgeInsets.fromLTRB(20, 8, 4, 6),
     );
   });
+
+  testWidgets('each state has its own outline, and the words around the '
+      'field their styles', (tester) async {
+    final field = await show(tester, {
+      'border': 'outline',
+      'borderColor': '#111111',
+      'focusedBorderColor': '#2e7d32',
+      'focusedBorderWidth': 2,
+      'errorBorderColor': '#b00020',
+      'disabledBorderColor': '#cccccc',
+      'hintStyle': {'color': '#2e7d32'},
+      'labelStyle': {'fontSize': 18},
+      'helperStyle': {'fontWeight': 700},
+    });
+    final decoration = field.decoration!;
+    expect(decoration.focusedBorder!.borderSide.color, green);
+    expect(decoration.focusedBorder!.borderSide.width, 2);
+    expect(
+      decoration.errorBorder!.borderSide.color,
+      const Color(0xFFB00020),
+    );
+    expect(
+      decoration.focusedErrorBorder!.borderSide.color,
+      const Color(0xFFB00020),
+    );
+    expect(
+      decoration.disabledBorder!.borderSide.color,
+      const Color(0xFFCCCCCC),
+    );
+    expect(decoration.hintStyle!.color, green);
+    expect(decoration.labelStyle!.fontSize, 18);
+    expect(decoration.helperStyle!.fontWeight, FontWeight.w700);
+  });
 }

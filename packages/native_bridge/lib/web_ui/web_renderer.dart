@@ -192,55 +192,107 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   /// stated, so the two are stated for it, and let go of at the end.
   void _moveSizes(Map<web.HTMLElement, (double, double)> before) {
     for (final MapEntry(key: box, value: (width, height)) in before.entries) {
-      if (!box.isConnected) continue;
-      final ms = _num(_nodes[box]?.props['animateMs']) ?? 0;
-      final nowWidth = box.offsetWidth.toDouble();
-      final nowHeight = box.offsetHeight.toDouble();
-      if (ms <= 0 ||
-          ((nowWidth - width).abs() < 0.5 && (nowHeight - height).abs() < 0.5)) {
-        continue;
-      }
-      // The child is laid out once, at the size it has come to, and the box
-      // moves over it: held at that width, it does not wrap again at every
-      // width the box passes through.
-      final child = box.firstElementChild;
-      final held = child is web.HTMLElement ? child : null;
-      if (held != null) {
-        held.style
-          ..setProperty('min-width', '${held.offsetWidth}px')
-          ..setProperty('flex-shrink', '0');
-      }
-      final motion = box.animate(
-        [
-          {'width': '${width}px', 'height': '${height}px'},
-          {'width': '${nowWidth}px', 'height': '${nowHeight}px'},
-        ].jsify() as JSObject,
-        {
-          'duration': ms.toDouble(),
-          'easing': _timing(_nodes[box]?.props ?? const {}),
-        }.jsify()!,
-      );
-      if (held != null) {
-        void release(web.Event _) {
-          held.style
-            ..removeProperty('min-width')
-            ..removeProperty('flex-shrink');
-        }
+      if (box.isConnected) _moveSize(box, width, height);
+    }
+  }
 
-        motion
-          ..addEventListener('finish', release.toJS)
-          ..addEventListener('cancel', release.toJS);
+  /// The size each box that moves to its size last came to, and the child
+  /// of each that is watched for changing size between renders.
+  final Expando<(double, double)> _settledSizes = Expando();
+  final Expando<web.Element> _watchedChild = Expando();
+
+  /// Watches the child of each box that moves to its size, so one that
+  /// changes size by itself - a picture arriving in it - is moved to, as a
+  /// render's change is.
+  late final web.ResizeObserver _sizeWatch = web.ResizeObserver(
+    ((JSArray<web.ResizeObserverEntry> entries, web.ResizeObserver _) {
+      for (final entry in entries.toDart) {
+        final box = entry.target.parentElement;
+        if (box is! web.HTMLElement || !box.isConnected) continue;
+        final settled = _settledSizes[box];
+        // One the render is moving already is moving to its child's size.
+        if (settled == null || box.getAnimations().toDart.isNotEmpty) continue;
+        final (width, height) = settled;
+        _moveSize(box, width, height);
       }
-      // A move that got there says so, to a box that asked.
-      final ended = _nodes[box]?.props['sizeEndEventId'];
-      if (ended is String) {
-        motion.addEventListener(
-          'finish',
-          ((web.Event _) {
-            handleEvent(ended, const {});
-          }).toJS,
+    }).toJS,
+  );
+
+  /// Notes where each box that moves to its size has come to, and watches
+  /// its child.
+  void _settleSizes() {
+    final boxes = rootElement.querySelectorAll('[data-animate-size]');
+    for (var i = 0; i < boxes.length; i++) {
+      final box = boxes.item(i) as web.HTMLElement;
+      final child = box.firstElementChild;
+      if (child == null) continue;
+      if (!identical(_watchedChild[box], child)) {
+        final before = _watchedChild[box];
+        if (before != null) _sizeWatch.unobserve(before);
+        _watchedChild[box] = child;
+        _sizeWatch.observe(child);
+      }
+      if (box.getAnimations().toDart.isEmpty) {
+        _settledSizes[box] = (
+          box.offsetWidth.toDouble(),
+          box.offsetHeight.toDouble(),
         );
       }
+    }
+  }
+
+  /// Moves [box] from [width] by [height] to the size it has come to.
+  void _moveSize(web.HTMLElement box, double width, double height) {
+    final ms = _num(_nodes[box]?.props['animateMs']) ?? 0;
+    final nowWidth = box.offsetWidth.toDouble();
+    final nowHeight = box.offsetHeight.toDouble();
+    _settledSizes[box] = (nowWidth, nowHeight);
+    if (ms <= 0 ||
+        ((nowWidth - width).abs() < 0.5 && (nowHeight - height).abs() < 0.5)) {
+      return;
+    }
+    // The child is laid out once, at the size it has come to, and the box
+    // moves over it: held at that size, it does not wrap again at every
+    // width the box passes through, nor squash to every height.
+    final child = box.firstElementChild;
+    final held = child is web.HTMLElement ? child : null;
+    if (held != null) {
+      held.style
+        ..setProperty('min-width', '${held.offsetWidth}px')
+        ..setProperty('min-height', '${held.offsetHeight}px')
+        ..setProperty('flex-shrink', '0');
+    }
+    final motion = box.animate(
+      [
+        {'width': '${width}px', 'height': '${height}px'},
+        {'width': '${nowWidth}px', 'height': '${nowHeight}px'},
+      ].jsify() as JSObject,
+      {
+        'duration': ms.toDouble(),
+        'easing': _timing(_nodes[box]?.props ?? const {}),
+      }.jsify()!,
+    );
+    if (held != null) {
+      void release(web.Event _) {
+        held.style
+          ..removeProperty('min-width')
+          ..removeProperty('min-height')
+          ..removeProperty('flex-shrink');
+      }
+
+      motion
+        ..addEventListener('finish', release.toJS)
+        ..addEventListener('cancel', release.toJS);
+    }
+    // A move that got there says so, to a box that asked.
+    final ended = _nodes[box]?.props['sizeEndEventId'];
+    if (ended is String) {
+      motion.addEventListener(
+        'finish',
+        ((web.Event _) {
+          handleEvent(ended, const {});
+        }).toJS,
+      );
     }
   }
 
@@ -292,6 +344,10 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
   }
 
+  /// What the heroes in the copy of the old page said stands in their room
+  /// while they fly.
+  final Expando<Map<dynamic, dynamic>> _copiedPlaceholders = Expando();
+
   /// A copy of what the root shows, laid over it: the page that is about to
   /// be replaced, kept for the length of a page transition
   /// ([RootProps.pageTransition]). Null when there is nothing to copy.
@@ -309,6 +365,13 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       final source = from.item(i) as web.Element;
       if (source.scrollTop != 0 || source.scrollLeft != 0) {
         scrolled.add((to.item(i) as web.Element, source.scrollTop, source.scrollLeft));
+      }
+      // A hero's placeholder, for the copy to show if the hero flies.
+      if (source.hasAttribute('data-hero')) {
+        final props = _nodes[source]?.props;
+        if (props != null) _copiedProps[to.item(i)!] = props;
+        final placeholder = props?['heroPlaceholder'];
+        if (placeholder is Map) _copiedPlaceholders[to.item(i)!] = placeholder;
       }
     }
     // Ids are unique in a document, and the page they belong to is the live
@@ -345,7 +408,13 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final page = transition['page'];
     final picture = transition['picture'];
     if (page is Map || picture is Map) {
-      _moveByRoute(leaving, ms, page is Map ? page : null, picture as Map?);
+      _moveByRoute(
+        leaving,
+        ms,
+        page is Map ? page : null,
+        picture is Map ? picture : null,
+        popped: kind == 'pop',
+      );
       return;
     }
     // Towards the end of the screen: the right, where it reads left to right.
@@ -375,73 +444,87 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
   }
 
-  /// Moves the pages the way a route's own transition says (see
-  /// [RootProps.pageTransition]): the new [page] from where it starts to its
-  /// place over [leaving], which lies still beneath it - or [leaving] from
-  /// its place to where [picture] says, over the new page.
+  /// Moves the pages the way a route's transitions say (see
+  /// [RootProps.pageTransition]): the new page from where [page] says to its
+  /// place, and [leaving] - the picture of the old one - from its place to
+  /// where [picture] says. The page that moves in its own right is on top:
+  /// the arriving one, unless the move is a pop.
   void _moveByRoute(
     web.HTMLElement leaving,
     double ms,
     Map<dynamic, dynamic>? page,
-    Map<dynamic, dynamic>? picture,
-  ) {
-    final motion = page ?? picture!;
-    final timing = {
+    Map<dynamic, dynamic>? picture, {
+    required bool popped,
+  }) {
+    // A route's animation runs straight through unless its transition
+    // names a curve.
+    JSAny timing(Map<dynamic, dynamic> motion) => {
       'duration': ms,
-      // A route's animation runs straight through unless its transition
-      // names a curve.
       'easing': _timing({'curve': motion['curve'] ?? 'linear'}),
     }.jsify()!;
-    final moved = {
+    Map<String, Object> moved(Map<dynamic, dynamic> motion) => {
       'opacity': _num(motion['opacity']) ?? 1,
       'transform': _routeTransform(motion),
     };
     const still = {'opacity': 1, 'transform': 'none'};
-    void remove() => leaving.remove();
     // A page lets the body's colour through where it paints nothing, as a
     // Flutter page does not: what moves is given it, so the page beneath does
     // not show through the one above.
     final paper = web.document.body == null
         ? ''
         : web.window.getComputedStyle(web.document.body!).backgroundColor;
-    if (picture != null) {
-      leaving.style.backgroundColor = paper;
-      leaving.animate([still, moved].jsify() as JSObject, timing)
-        ..onfinish = ((web.Event _) => remove()).toJS
-        ..oncancel = ((web.Event _) => remove()).toJS;
-      return;
-    }
-    // The picture beneath, the page above it for as long as the move takes.
     final root = rootElement as web.HTMLElement;
-    leaving.style.zIndex = '2147482000';
+    final arriving = rootElement.firstElementChild;
     final position = root.style.position;
     final layer = root.style.zIndex;
-    if (web.window.getComputedStyle(root).position == 'static') {
-      root.style.position = 'relative';
-    }
-    root.style.zIndex = '2147482001';
-    void restore() {
-      remove();
+    final painted = arriving is web.HTMLElement
+        ? arriving.style.backgroundColor
+        : '';
+    var running = 0;
+    void done() {
+      if (--running > 0) return;
+      leaving.remove();
       root.style
         ..position = position
         ..zIndex = layer;
+      if (arriving is web.HTMLElement) {
+        arriving.style.backgroundColor = painted;
+      }
     }
 
-    final arriving = rootElement.firstElementChild;
-    if (arriving is! web.HTMLElement || ms <= 0) {
-      restore();
-      return;
+    if (!popped) {
+      // The picture beneath, the page above it for as long as the move
+      // takes.
+      leaving.style.zIndex = '2147482000';
+      if (web.window.getComputedStyle(root).position == 'static') {
+        root.style.position = 'relative';
+      }
+      root.style.zIndex = '2147482001';
     }
-    final painted = arriving.style.backgroundColor;
-    arriving.style.backgroundColor = paper;
-    void done() {
-      restore();
-      arriving.style.backgroundColor = painted;
+    running++;
+    if (picture != null && ms > 0) {
+      running++;
+      leaving.style.backgroundColor = paper;
+      leaving.animate([still, moved(picture)].jsify() as JSObject, timing(picture))
+        ..onfinish = ((web.Event _) => done()).toJS
+        ..oncancel = ((web.Event _) => done()).toJS;
+    } else if (popped) {
+      // Nothing says where the picture goes: it is simply gone.
+      leaving.style.visibility = 'hidden';
     }
-
-    arriving.animate([moved, still].jsify() as JSObject, timing)
-      ..onfinish = ((web.Event _) => done()).toJS
-      ..oncancel = ((web.Event _) => done()).toJS;
+    if (page != null && arriving is web.HTMLElement && ms > 0) {
+      running++;
+      // Only behind a page that paints nothing of its own: a scaffold with a
+      // background keeps it.
+      final own = web.window.getComputedStyle(arriving).backgroundColor;
+      if (own == 'rgba(0, 0, 0, 0)' || own == 'transparent') {
+        arriving.style.backgroundColor = paper;
+      }
+      arriving.animate([moved(page), still].jsify() as JSObject, timing(page))
+        ..onfinish = ((web.Event _) => done()).toJS
+        ..oncancel = ((web.Event _) => done()).toJS;
+    }
+    done();
   }
 
   /// A route's motion as a CSS transform: moved by parts of its own size,
@@ -463,12 +546,55 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final boxes = rootElement.querySelectorAll('[data-hero]');
     for (var i = 0; i < boxes.length; i++) {
       final box = boxes.item(i) as web.Element;
-      final rect = box.getBoundingClientRect();
+      final rect = _heroRoom(box);
       // One that takes no room is not on screen to fly from.
       if (rect.width <= 0 || rect.height <= 0) continue;
       found.putIfAbsent(box.getAttribute('data-hero') ?? '', () => rect);
     }
     return found;
+  }
+
+  /// The props a box that is only a hero has.
+  static const Set<String> _heroKeys = {
+    'id',
+    'hero',
+    'heroArc',
+    'heroShuttle',
+    'heroPlaceholder',
+  };
+
+  /// What the heroes in the copy of the old page were drawn from.
+  final Expando<Map<String, dynamic>> _copiedProps = Expando();
+
+  /// The room [hero] takes on screen: what its children cover. A box that
+  /// is only a hero paints nothing of its own and can be stretched wider
+  /// than they are, while a Flutter `Hero` is exactly its child's size.
+  web.DOMRect _heroRoom(web.Element hero) {
+    final whole = hero.getBoundingClientRect();
+    // One that sizes or paints itself is its own room.
+    final props = _nodes[hero]?.props ?? _copiedProps[hero];
+    if (props == null || !props.keys.every(_heroKeys.contains)) return whole;
+    double? left, top, right, bottom;
+    for (var child = hero.firstElementChild;
+        child != null;
+        child = child.nextElementSibling) {
+      if (child.classList.contains('dnn-hero-placeholder')) continue;
+      final r = child.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      left = math.min(left ?? r.left, r.left);
+      top = math.min(top ?? r.top, r.top);
+      right = math.max(right ?? r.right, r.right);
+      bottom = math.max(bottom ?? r.bottom, r.bottom);
+    }
+    if (left == null || top == null || right == null || bottom == null) {
+      return whole;
+    }
+    left = math.max(left, whole.left);
+    top = math.max(top, whole.top);
+    right = math.min(right, whole.right);
+    bottom = math.min(bottom, whole.bottom);
+    if (right <= left || bottom <= top) return whole;
+    return web.DOMRect(left, top, right - left, bottom - top);
   }
 
   /// Flies each hero of the page now in the root that [from] has a place
@@ -489,18 +615,21 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       final tag = hero.getAttribute('data-hero') ?? '';
       final start = from[tag];
       if (start == null || !flown.add(tag)) continue;
-      final end = hero.getBoundingClientRect();
+      final end = _heroRoom(hero);
       if (end.width <= 0 || end.height <= 0) continue;
       for (var j = 0; j < old.length; j++) {
         final was = old.item(j) as web.HTMLElement;
         if (was.getAttribute('data-hero') == tag) {
           was.style.visibility = 'hidden';
+          // Its placeholder stands in its room as the page goes.
+          final placeholder = _copiedPlaceholders[was];
+          if (placeholder != null) _standInOver(was, placeholder);
         }
       }
       final props = _nodes[hero]?.props ?? const <String, dynamic>{};
       final shuttle = props['heroShuttle'];
-      // What the hero said flies in its place, stretched over it; or else a
-      // copy of the hero.
+      // What the hero said flies in its place, laid out at each size it
+      // passes through; or else a copy of the hero, stretched.
       final flight = shuttle is Map
           ? ((web.document.createElement('div') as web.HTMLElement)
               ..className = 'dnn-hero-shuttle'
@@ -537,6 +666,12 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       web.document.body?.appendChild(flight);
       final shown = hero.style.visibility;
       hero.style.visibility = 'hidden';
+      // What the hero said stands in its place meanwhile, over its room.
+      final placeholder = props['heroPlaceholder'];
+      final position = hero.style.position;
+      final standIn = placeholder is Map
+          ? _standInOver(hero, placeholder)
+          : null;
       // The hero as it will stand, stretched over where the old one stood
       // and let go: what is in it grows or shrinks with it.
       // Where the flight is, as a stretch of the hero where it will stand.
@@ -559,16 +694,25 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         end.right.toDouble(),
         end.bottom.toDouble(),
       );
+      // A shuttle is laid out at each size: its place, not a stretch.
+      Map<String, Object> frame(ArcRect at) {
+        if (shuttle is! Map) return {'transform': over(at)};
+        final (left, top, right, bottom) = at;
+        return {
+          'left': '${left}px',
+          'top': '${top}px',
+          'width': '${right - left}px',
+          'height': '${bottom - top}px',
+        };
+      }
+
       // Along an arc, a point at a time; the easing runs over the whole.
       final path = props['heroArc'] == true ? ArcRectPath(begin, finish) : null;
       final frames = path == null
-          ? [
-              {'transform': over(begin)},
-              {'transform': 'none'},
-            ]
+          ? [frame(begin), frame(finish)]
           : [
               for (var i = 0; i <= _arcSteps; i++)
-                {'transform': over(path.at(i / _arcSteps))},
+                frame(path.at(i / _arcSteps)),
             ];
       final run = flight.animate(
         frames.jsify() as JSObject,
@@ -577,11 +721,57 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       void land() {
         flight.remove();
         hero.style.visibility = shown;
+        if (standIn != null) {
+          standIn.remove();
+          hero.style.position = position;
+        }
       }
 
       run.onfinish = ((web.Event _) => land()).toJS;
       run.oncancel = ((web.Event _) => land()).toJS;
     }
+  }
+
+  /// Draws [placeholder], what [hero] said stands in its room while it
+  /// flies, over the hero and laid out to its room, as Flutter's is to its
+  /// size. The hero is made a positioned box for it if it was not one.
+  web.HTMLElement _standInOver(
+    web.HTMLElement hero,
+    Map<dynamic, dynamic> placeholder,
+  ) {
+    if (web.window.getComputedStyle(hero).position == 'static') {
+      hero.style.position = 'relative';
+    }
+    final standIn = (web.document.createElement('div') as web.HTMLElement)
+      ..className = 'dnn-hero-placeholder'
+      ..setAttribute('aria-hidden', 'true')
+      ..appendChild(
+        _create(WidgetNode.fromJson(Map<String, dynamic>.from(placeholder))),
+      );
+    // Over what its children cover, inside the box.
+    final whole = hero.getBoundingClientRect();
+    final room = _heroRoom(hero);
+    standIn.style
+      ..position = 'absolute'
+      ..left = '${room.left - whole.left}px'
+      ..top = '${room.top - whole.top}px'
+      ..width = '${room.width}px'
+      ..height = '${room.height}px'
+      ..display = 'flex'
+      ..visibility = 'visible'
+      ..pointerEvents = 'none';
+    final drawn = standIn.firstElementChild;
+    if (drawn is web.HTMLElement) {
+      drawn.style
+        ..flex = '1 1 auto'
+        ..minWidth = '0';
+    }
+    final named = standIn.querySelectorAll('[id]');
+    for (var j = 0; j < named.length; j++) {
+      (named.item(j) as web.Element).removeAttribute('id');
+    }
+    hero.appendChild(standIn);
+    return standIn;
   }
 
   /// Whether the tree on screen reads right to left.
@@ -607,6 +797,18 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       rootElement.removeAttribute('dir');
     }
     return UIBuilder.withTextDirection(tree, null);
+  }
+
+  /// Whether the browser's language writes a 24-hour clock, by how it
+  /// formats a time when left to itself.
+  static bool _languageUses24Hours() {
+    try {
+      final format = _DateTimeFormat(null, {'hour': 'numeric'}.jsify());
+      final cycle = format.resolvedOptions().hourCycle;
+      return cycle == 'h23' || cycle == 'h24';
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Forgets the tree the DOM is believed to show, so the next render rebuilds
@@ -848,6 +1050,21 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     } else if (before.props['id'] is String) {
       existing.removeAttribute('id');
     }
+    _syncDirection(existing, node);
+  }
+
+  /// A node that reads the other way from what is around it (a
+  /// `Directionality` deep in a screen) is laid out that way, with
+  /// everything below it: `dir` is the whole of it for the browser.
+  static void _syncDirection(web.Element element, WidgetNode node) {
+    final direction = node.props['layoutDirection'];
+    if (direction == 'rtl' || direction == 'ltr') {
+      if (element.getAttribute('dir') != direction) {
+        element.setAttribute('dir', direction as String);
+      }
+    } else if (element.hasAttribute('dir')) {
+      element.removeAttribute('dir');
+    }
   }
 
   /// Whether a node other than a box was told it is something else to a
@@ -969,13 +1186,61 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // than the column it is in.
     set('box-sizing', padding == null ? null : 'border-box');
 
+    // The outline of the state the field is in, where the app gave that
+    // state one: disabled, in error, focused - or at rest.
+    final focused = web.document.activeElement == input;
+    String? inState;
+    if (p['enabled'] == false && p['disabledBorderColor'] != null) {
+      inState = 'disabled';
+    } else if (p['error'] != null && p['errorBorderColor'] != null) {
+      inState = 'error';
+    } else if (focused && p['focusedBorderColor'] != null) {
+      inState = 'focused';
+    }
+    final colourKey = inState == null ? 'borderColor' : '${inState}BorderColor';
+    final widthKey = inState == null ? 'borderWidth' : '${inState}BorderWidth';
     final line =
-        '${_num(p['borderWidth']) ?? 1}px solid '
-        '${colour(p['borderColor']) ?? 'var(--dnn-divider)'}';
-    final stated = p['borderColor'] != null;
+        '${_num(p[widthKey]) ?? _num(p['borderWidth']) ?? 1}px solid '
+        '${colour(p[colourKey]) ?? 'var(--dnn-divider)'}';
+    final stated = p[colourKey] != null;
+    // Focus moves without a render, so the field redraws its own outline.
+    if (p['focusedBorderColor'] != null) {
+      _fieldLooks[input] = p;
+      if (input.getAttribute('data-state-border') == null) {
+        input.setAttribute('data-state-border', '');
+        void repaint(web.Event _) {
+          final looks = _fieldLooks[input];
+          if (looks != null) _applyFieldLook(input, looks);
+        }
+
+        input
+          ..addEventListener('focus', repaint.toJS)
+          ..addEventListener('blur', repaint.toJS);
+      }
+    } else {
+      _fieldLooks[input] = null;
+    }
     // The one side first: taking it away after the whole border is set
     // takes that side of the whole border with it.
     set('border-bottom', null);
+    // The hint's own colour, size and weight, by the stylesheet's rules for
+    // a placeholder - which an inline style cannot reach.
+    final hint = p['hintStyle'];
+    final hintStyle = hint is Map ? hint : const {};
+    for (final (key, property, value) in [
+      ('color', 'color', colour(hintStyle['color'])),
+      ('fontSize', 'size', pixels(hintStyle['fontSize'])),
+      (
+        'fontWeight',
+        'weight',
+        hintStyle['fontWeight'] is num
+            ? '${(hintStyle['fontWeight'] as num).toInt()}'
+            : null,
+      ),
+    ]) {
+      set('--dnn-hint-$property', value);
+      input.classList.toggle('dnn-hint-$property', hintStyle[key] != null);
+    }
     switch (p['border']) {
       case 'none':
         set('border', 'none');
@@ -990,12 +1255,31 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       case 'outline':
         set('border', stated ? line : null);
         set('border-radius', pixels(p['borderRadius']));
-        set('box-shadow', null);
+        // The ring a kit draws round a focused field would sit inside an
+        // outline the app gave the focused state itself.
+        set('box-shadow', p['focusedBorderColor'] != null ? 'none' : null);
       default:
         set('border', null);
         set('border-radius', null);
         set('box-shadow', null);
     }
+  }
+
+  /// The look a field was last given, for one that redraws its outline as
+  /// focus comes and goes.
+  final Expando<Map<String, dynamic>> _fieldLooks = Expando();
+
+  /// [element]'s colour, size and weight from a style the tree gave it
+  /// (`labelStyle`, `helperStyle`), or the stylesheet's again where it gave
+  /// none.
+  void _applyTextStyle(web.Element element, Object? style) {
+    final given = style is Map ? style : const {};
+    final size = given['fontSize'];
+    final weight = given['fontWeight'];
+    final color = given['color'];
+    _set(element, 'color', color is String ? cssColor(color) : null);
+    _set(element, 'font-size', size is num ? '${size}px' : null);
+    _set(element, 'font-weight', weight is num ? '${weight.toInt()}' : null);
   }
 
   /// Sets `--dnn-control-<part>` on [element] to [color], or takes it away
@@ -1098,6 +1382,9 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     WidgetNode node,
     List<WidgetNode> previous,
   ) {
+    // A text's widgets in the line are its runs', not children: the boxes
+    // in them host their own.
+    if (node.type == 'Text') return;
     final host = _childHost(element);
     if (host == null) return;
     _syncChildren(host, node.children ?? const [], previous);
@@ -1116,6 +1403,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     _applyFocusAsk();
     _applyScrollAsks();
     _stackStickies();
+    if (animations) _settleSizes();
     if (!_viewportDelivered) _reportViewport();
     _clearSnackbarOfBottomBar();
     _pruneSnackbarTimers();
@@ -1216,6 +1504,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // inside it already has an id of its own (`dnn-input-…`, `dnn-select-…`)
     // for its label to point at, and is found as `#id input` / `#id select`.
     if (id is String) element.id = id;
+    _syncDirection(element, node);
     _syncHosted(element, node, const []);
     // After the children, because a box that holds a button is not one.
     if (node.type == 'Box' || node.type == 'Canvas') {
@@ -1633,6 +1922,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       case 'Dialog':
         return _modal(p, kind: 'dialog');
       case 'BottomSheet':
+        final side = p['side'];
+        if (side == 'start' || side == 'end') return _drawer(p, side as String);
         return _modal(p, kind: 'sheet');
       case 'Snackbar':
         return _snackbar(p);
@@ -1678,10 +1969,24 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       // run does.
       for (final run in spans) {
         if (run is! Map) continue;
+        final widget = run['widget'];
+        if (widget is Map) {
+          // The widget itself, in the line: its taps are its own.
+          final holder = _el('span', 'dnn-text__widget')
+            ..appendChild(
+              _create(WidgetNode.fromJson(Map<String, dynamic>.from(widget))),
+            );
+          _style(holder, 'display', 'inline-block');
+          _style(holder, 'vertical-align', 'middle');
+          text.appendChild(holder);
+          continue;
+        }
         final span = _el('span', 'dnn-text__span', text: _str(run['text']));
         _applyRunStyle(span, Map<String, dynamic>.from(run));
         final eventId = run['eventId'];
         if (eventId is String) _linkRun(span, eventId);
+        final held = run['longPressEventId'];
+        if (held is String) _holdRun(span, held);
         text.appendChild(span);
       }
     }
@@ -1715,6 +2020,71 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
           ..stopPropagation();
         handleEvent(eventId, const {});
       }).toJS,
+    );
+  }
+
+  /// How long a press on a run is held before it is a long one.
+  static const int _holdMs = 500;
+
+  /// Makes a run of text something that can be held: [eventId] is sent once
+  /// a press on it has lasted [_holdMs] without straying, and the tap that
+  /// letting go would make - and the browser's own menu - are not.
+  void _holdRun(web.Element span, String eventId) {
+    _style(span, 'cursor', 'pointer');
+    _style(span, '-webkit-touch-callout', 'none');
+    int? timer;
+    var fired = false;
+    double x = 0;
+    double y = 0;
+    void stop() {
+      final pending = timer;
+      if (pending != null) web.window.clearTimeout(pending);
+      timer = null;
+    }
+
+    span.addEventListener(
+      'pointerdown',
+      ((web.PointerEvent event) {
+        stop();
+        fired = false;
+        x = event.placeX;
+        y = event.placeY;
+        timer = web.window.setTimeout(
+          (() {
+            timer = null;
+            fired = true;
+            handleEvent(eventId, const {});
+          }).toJS,
+          _holdMs.toJS,
+        );
+      }).toJS,
+    );
+    span.addEventListener(
+      'pointermove',
+      ((web.PointerEvent event) {
+        final dx = event.placeX - x;
+        final dy = event.placeY - y;
+        if (dx * dx + dy * dy > _tapSlop * _tapSlop) stop();
+      }).toJS,
+    );
+    for (final end in ['pointerup', 'pointercancel', 'pointerleave']) {
+      span.addEventListener(end, ((web.Event _) => stop()).toJS);
+    }
+    // Once held, letting go is not also a tap, here or on a box around it.
+    span.addEventListener(
+      'click',
+      ((web.Event event) {
+        if (!fired) return;
+        fired = false;
+        event
+          ..preventDefault()
+          ..stopImmediatePropagation();
+      }).toJS,
+      true.toJS,
+    );
+    span.addEventListener(
+      'contextmenu',
+      ((web.Event event) => event.preventDefault()).toJS,
     );
   }
 
@@ -2193,6 +2563,62 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       _focusBeforeModalId = id == null || id.isEmpty ? null : id;
     }
     _pendingFocus = surface;
+    return modal;
+  }
+
+  /// A sheet with a side: a drawer, the height of the screen, sliding in
+  /// from the [side] edge of the reading direction, and swiped back towards
+  /// it to close where the sheet may be dismissed.
+  web.Element _drawer(Map<String, dynamic> p, String side) {
+    final modal = _modal(p, kind: 'drawer');
+    modal.classList.add('dnn-modal--drawer-$side');
+    final surface = modal.querySelector('.dnn-drawer')! as web.HTMLElement;
+    final width = _num(p['width']);
+    if (width != null) {
+      _style(surface, 'width', 'min(${width}px, calc(100vw - 56px))');
+    }
+    final eventId = p['dismissEventId'];
+    if (p['dismissible'] == false || eventId is! String) return modal;
+    // Towards its own edge: the left for a start drawer read left to right.
+    double? from;
+    double moved = 0;
+    double toward() {
+      final rtl = web.window.getComputedStyle(surface).direction == 'rtl';
+      return (side == 'start') != rtl ? -1 : 1;
+    }
+
+    surface.addEventListener(
+      'pointerdown',
+      ((web.PointerEvent event) {
+        if (event.pointerType == 'mouse') return;
+        from = event.placeX;
+        moved = 0;
+      }).toJS,
+    );
+    surface.addEventListener(
+      'pointermove',
+      ((web.PointerEvent event) {
+        final start = from;
+        if (start == null) return;
+        moved = math.max(0, (event.placeX - start) * toward());
+        surface.style
+          ..transition = 'none'
+          ..transform = 'translateX(${moved * toward()}px)';
+      }).toJS,
+    );
+    void release(web.Event _) {
+      if (from == null) return;
+      from = null;
+      surface.style
+        ..transition = 'transform 200ms ease-out'
+        ..transform = '';
+      if (moved > surface.getBoundingClientRect().width / 3) {
+        handleEvent(eventId, {'reason': 'swipe'});
+      }
+    }
+
+    surface.addEventListener('pointerup', release.toJS);
+    surface.addEventListener('pointercancel', release.toJS);
     return modal;
   }
 
@@ -3201,6 +3627,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
     final labelText = _optStr(p['label']);
     parts.label.textContent = labelText ?? '';
+    _applyTextStyle(parts.label, p['labelStyle']);
     _setHidden(parts.label, labelText == null);
     // A label floats in the field's outline unless the app said otherwise; the
     // CSS does the moving, driven by :focus-within and :placeholder-shown, so
@@ -3325,6 +3752,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
     if (helper != null) {
       helper.textContent = helperText ?? '';
+      _applyTextStyle(helper, p['helperStyle']);
       final shown = helperText != null && errorText == null;
       _setHidden(helper, !shown);
       if (fieldId != null) {
@@ -3425,6 +3853,77 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       background == null ? null : cssColor(background),
     );
     _set(scaffold, 'color', background == null ? null : textOn(background));
+    _drawerEdges[scaffold] = (
+      _optStr(p['drawerEdgeEventId']),
+      _optStr(p['endDrawerEdgeEventId']),
+    );
+    if (_drawerEdgeWatched[scaffold] != true) {
+      _drawerEdgeWatched[scaffold] = true;
+      _watchDrawerEdges(scaffold as web.HTMLElement);
+    }
+  }
+
+  /// The drawers a scaffold opens from its start and its end edge
+  /// (`drawerEdgeEventId`, `endDrawerEdgeEventId`).
+  final Expando<(String?, String?)> _drawerEdges = Expando();
+  final Expando<bool> _drawerEdgeWatched = Expando();
+
+  /// How far in from an edge a drag opens a drawer from, as Flutter's.
+  static const double _drawerEdgeWidth = 20;
+
+  /// Raises a scaffold's drawer event when a finger that went down by one
+  /// of its edges moves in from it - further across than up or down, by
+  /// more than a touch slop. A mouse does not open one, as it does not
+  /// swipe one shut.
+  void _watchDrawerEdges(web.HTMLElement scaffold) {
+    String? opening;
+    double fromX = 0;
+    double fromY = 0;
+    double inward = 1;
+    scaffold.addEventListener(
+      'pointerdown',
+      ((web.PointerEvent event) {
+        opening = null;
+        if (event.pointerType == 'mouse') return;
+        final (start, end) = _drawerEdges[scaffold] ?? (null, null);
+        if (start == null && end == null) return;
+        final box = scaffold.getBoundingClientRect();
+        final rtl = web.window.getComputedStyle(scaffold).direction == 'rtl';
+        final x = event.placeX;
+        final nearLeft = x - box.left <= _drawerEdgeWidth;
+        final nearRight = box.right - x <= _drawerEdgeWidth;
+        final (left, right) = rtl ? (end, start) : (start, end);
+        if (nearLeft && left != null) {
+          opening = left;
+          inward = 1;
+        } else if (nearRight && right != null) {
+          opening = right;
+          inward = -1;
+        } else {
+          return;
+        }
+        fromX = x;
+        fromY = event.placeY;
+      }).toJS,
+    );
+    scaffold.addEventListener(
+      'pointermove',
+      ((web.PointerEvent event) {
+        final eventId = opening;
+        if (eventId == null) return;
+        final across = (event.placeX - fromX) * inward;
+        final down = (event.placeY - fromY).abs();
+        if (down > across && down > 18) {
+          opening = null;
+        } else if (across > 18) {
+          opening = null;
+          handleEvent(eventId, const {});
+        }
+      }).toJS,
+    );
+    void release(web.Event _) => opening = null;
+    scaffold.addEventListener('pointerup', release.toJS);
+    scaffold.addEventListener('pointercancel', release.toJS);
   }
 
   /// The bar across the top: a leading button, the title, the actions.
@@ -5759,6 +6258,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       // scaled their text by the difference.
       'textScale': rootSize == null || rootSize <= 0 ? 1.0 : rootSize / 16,
       'dark': web.window.matchMedia('(prefers-color-scheme: dark)').matches,
+      // A browser has no 24-hour switch of its own: its language's clock.
+      'use24Hour': _languageUses24Hours(),
     };
     if (_viewport != null && _valueEqual(_viewport, viewport)) return;
     _viewport = viewport;
@@ -6385,12 +6886,21 @@ void _replayCanvasCommands(
       ..textBaseline = 'top'
       ..textAlign = align
       ..fillStyle = cssColor(color is String ? color : ink).toJS;
+    // Room after each letter, where the paint said; `letterSpacing` on a
+    // canvas is newer than the rest, so set by name.
+    (context as JSObject).setProperty(
+      'letterSpacing'.toJS,
+      '${options['letterSpacing'] is num ? options['letterSpacing'] : 0}px'
+          .toJS,
+    );
 
     // Within a width, the text wraps and is aligned inside it; without one
     // it is a single run aligned about x.
+    // A text already broken into lines (`wrap: false`) is not broken again.
+    final wraps = options['wrap'] != false;
     final lines = <String>[];
     for (final paragraph in '${c.length > 1 ? c[1] : ''}'.split('\n')) {
-      if (maxWidth == null) {
+      if (maxWidth == null || !wraps) {
         lines.add(paragraph);
         continue;
       }
@@ -6585,3 +7095,14 @@ String _compositeOf(Object? blend) => switch (blend) {
   'luminosity' => 'luminosity',
   _ => 'source-over',
 };
+
+/// The browser's `Intl.DateTimeFormat`, for how it writes a time.
+@JS('Intl.DateTimeFormat')
+extension type _DateTimeFormat._(JSObject _) implements JSObject {
+  external factory _DateTimeFormat(JSAny? locales, JSAny? options);
+  external _ResolvedTime resolvedOptions();
+}
+
+extension type _ResolvedTime._(JSObject _) implements JSObject {
+  external String? get hourCycle;
+}

@@ -130,4 +130,97 @@ void main() {
     expect(flight, findsNothing);
     expect(shown(tester, 'two'), 1);
   });
+
+  testWidgets('a shuttle is laid out at each size it passes through, not '
+      'stretched', (tester) async {
+    await show(tester, page('one', size: 40, down: 0));
+    final two = UIBuilder.column(
+      children: [
+        UIBuilder.sizedBox(height: 200),
+        UIBuilder.box(
+          hero: 'picture',
+          heroShuttle: UIBuilder.text('flying'),
+          width: 120,
+          height: 120,
+          child: UIBuilder.text('two'),
+        ),
+      ],
+    );
+    await show(tester, pushed(two));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(
+      find.descendant(of: flight, matching: find.byType(FittedBox)),
+      findsNothing,
+    );
+    // Laid out at the size the flight has got to, half way between the two.
+    final shuttle = find.descendant(of: flight, matching: find.text('flying'));
+    expect(tester.getSize(shuttle).width, inExclusiveRange(40, 120));
+    expect(
+      tester.getSize(shuttle).width,
+      closeTo(tester.getSize(shuttle).height, 1),
+    );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('what stands in for the hero shows in its room while it flies, '
+      'and goes when it lands', (tester) async {
+    await show(tester, page('one', size: 40, down: 0));
+    final two = UIBuilder.column(
+      children: [
+        UIBuilder.sizedBox(height: 200),
+        UIBuilder.box(
+          hero: 'picture',
+          heroPlaceholder: UIBuilder.text('waiting'),
+          width: 120,
+          height: 120,
+          child: UIBuilder.text('two'),
+        ),
+      ],
+    );
+    await show(tester, pushed(two));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('waiting'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('waiting')).dy,
+      closeTo(tester.getTopLeft(find.text('two').first).dy, 1),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('waiting'), findsNothing);
+    expect(shown(tester, 'two'), 1);
+  });
+
+  testWidgets('the hero it leaves shows its own stand-in on the old page', (
+    tester,
+  ) async {
+    await show(
+      tester,
+      UIBuilder.column(
+        children: [
+          UIBuilder.box(
+            hero: 'picture',
+            heroPlaceholder: UIBuilder.text('left behind'),
+            width: 40,
+            height: 40,
+            child: UIBuilder.text('one'),
+          ),
+        ],
+      ),
+    );
+    await show(tester, pushed(page('two', size: 120, down: 200)));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('left behind'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('left behind')),
+      tester.getTopLeft(find.text('one').first),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('left behind'), findsNothing);
+  });
 }

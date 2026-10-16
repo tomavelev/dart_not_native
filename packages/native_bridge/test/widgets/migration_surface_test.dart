@@ -318,14 +318,37 @@ void main() {
       },
     );
 
-    test('Scaffold.of opens the drawer as a sheet', () async {
+    test('Scaffold.of opens the drawer from the start edge', () async {
       final renderer = _mount(screen());
       expect(nodesOfType(renderer.tree!, 'BottomSheet'), isEmpty);
       Scaffold.of(inside).openDrawer();
       await _settle();
-      expect(nodesOfType(renderer.tree!, 'BottomSheet'), hasLength(1));
+      final sheet = nodesOfType(renderer.tree!, 'BottomSheet').single;
+      expect(sheet.props['side'], 'start');
+      expect(sheet.props.containsKey('width'), isFalse);
       expect(_shows(renderer, 'Destinations'), isTrue);
       expect(Scaffold.of(inside).isDrawerOpen, isTrue);
+    });
+
+    test('an end drawer slides from the end, as wide as it says', () async {
+      final renderer = _mount(
+        MaterialApp(
+          home: Scaffold(
+            endDrawer: const Drawer(width: 250, child: Text('filters')),
+            body: Builder(
+              builder: (c) {
+                inside = c;
+                return const Text('body');
+              },
+            ),
+          ),
+        ),
+      );
+      Scaffold.of(inside).openEndDrawer();
+      await _settle();
+      final sheet = nodesOfType(renderer.tree!, 'BottomSheet').single;
+      expect(sheet.props['side'], 'end');
+      expect(sheet.props['width'], 250);
     });
 
     test('so does a GlobalKey, and closeDrawer closes it', () async {
@@ -339,6 +362,35 @@ void main() {
       expect(nodesOfType(renderer.tree!, 'BottomSheet'), isEmpty);
       expect(key.currentState!.isDrawerOpen, isFalse);
       expect(changes, [true, false]);
+    });
+
+    test('a swipe in from the edge opens it', () async {
+      final renderer = _mount(screen());
+      final frame = nodesOfType(renderer.tree!, 'Scaffold').single;
+      expect(frame.props.containsKey('endDrawerEdgeEventId'), isFalse);
+      await renderer.handleEvent(
+        frame.props['drawerEdgeEventId'] as String,
+        {},
+      );
+      await _settle();
+      final sheet = nodesOfType(renderer.tree!, 'BottomSheet').single;
+      expect(sheet.props['side'], 'start');
+    });
+
+    test('unless the scaffold says not', () {
+      final renderer = _mount(
+        const MaterialApp(
+          home: Scaffold(
+            drawerEnableOpenDragGesture: false,
+            drawer: Drawer(child: Text('menu')),
+            endDrawer: Drawer(child: Text('filters')),
+            body: Text('body'),
+          ),
+        ),
+      );
+      final frame = nodesOfType(renderer.tree!, 'Scaffold').single;
+      expect(frame.props.containsKey('drawerEdgeEventId'), isFalse);
+      expect(frame.props['endDrawerEdgeEventId'], isA<String>());
     });
 
     test('opening it twice shows one', () async {

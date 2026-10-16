@@ -86,6 +86,58 @@ void main() {
       expect(root.firstElementChild!.getAnimations().toDart, isEmpty);
     });
 
+    test('moves the page beneath as well: under, as one is pushed over it',
+        () async {
+      await renderer.render(screen('one'));
+      await renderer.render(
+        UIBuilder.withPageTransition(screen('two'), {
+          'kind': 'push',
+          'ms': 400,
+          'page': {'dx': 1.0},
+          'picture': {'dx': -0.5},
+        }),
+      );
+      final picture = leaving()!.getAnimations().toDart.single..pause();
+      picture.currentTime = 399.toJS;
+      // Half its own width, to the start.
+      final box = root.getBoundingClientRect();
+      expect(
+        leaving()!.getBoundingClientRect().left,
+        closeTo(box.left - box.width / 2, 5),
+      );
+      expect(root.firstElementChild!.getAnimations().toDart, hasLength(1));
+      expect(
+        int.parse(root.style.zIndex),
+        greaterThan(int.parse(leaving()!.style.zIndex)),
+      );
+    });
+
+    test('and out from under, as the one over it is popped', () async {
+      await renderer.render(screen('one'));
+      await renderer.render(
+        UIBuilder.withPageTransition(screen('two'), {
+          'kind': 'pop',
+          'ms': 400,
+          'picture': {'opacity': 0.0},
+          'page': {'dx': -0.5},
+        }),
+      );
+      final page = root.firstElementChild!;
+      final run = page.getAnimations().toDart.single..pause();
+      run.currentTime = 0.toJS;
+      expect(
+        page.getBoundingClientRect().left,
+        closeTo(
+          root.getBoundingClientRect().left -
+              page.getBoundingClientRect().width / 2,
+          1,
+        ),
+      );
+      expect(leaving()!.getAnimations().toDart, hasLength(1));
+      // The picture leaving stays on top.
+      expect(root.style.zIndex, isEmpty);
+    });
+
     test('an empty one does not move at all', () async {
       await renderer.render(screen('one'));
       await renderer.render(
@@ -138,6 +190,120 @@ void main() {
         ),
       );
       expect(flight().textContent, 'in the air');
+    });
+
+    test('a shuttle is laid out at the size the flight has got to',
+        () async {
+      await renderer.render(page('one', down: 0));
+      await renderer.render(
+        UIBuilder.withPageTransition(
+          page('two', down: 300, shuttle: UIBuilder.text('in the air')),
+          {'kind': 'push', 'ms': 400},
+        ),
+      );
+      final run = flight().getAnimations().toDart.single..pause();
+      run.currentTime = 0.toJS;
+      // Its own width where it starts: not the end's, stretched.
+      expect(flight().getBoundingClientRect().width, closeTo(40, 1));
+      expect(web.window.getComputedStyle(flight()).transform, 'none');
+    });
+
+    test('what stands in for it shows in its room while it flies', () async {
+      await renderer.render(page('one', down: 0));
+      final two = page('two', down: 300);
+      final hero = two.children!.last;
+      await renderer.render(
+        UIBuilder.withPageTransition(
+          UIBuilder.column(
+            crossAxisAlignment: 'start',
+            children: [
+              two.children!.first,
+              UIBuilder.box(
+                hero: 'picture',
+                heroPlaceholder: UIBuilder.text('waiting'),
+                width: 40,
+                height: 40,
+                child: hero.children!.single,
+              ),
+            ],
+          ),
+          {'kind': 'push', 'ms': 400},
+        ),
+      );
+      final standIn =
+          root.querySelector('.dnn-hero-placeholder')! as web.HTMLElement;
+      expect(standIn.textContent, 'waiting');
+      expect(web.window.getComputedStyle(standIn).visibility, 'visible');
+      final run = flight().getAnimations().toDart.single..finish();
+      await run.finished.toDart;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(root.querySelector('.dnn-hero-placeholder'), isNull);
+    });
+
+    test("a box that is only a hero is its child's size, stretched or not",
+        () async {
+      await renderer.render(page('one', down: 0));
+      await renderer.render(
+        UIBuilder.withPageTransition(
+          UIBuilder.column(
+            crossAxisAlignment: 'stretch',
+            children: [
+              UIBuilder.box(
+                hero: 'picture',
+                heroPlaceholder: UIBuilder.text('waiting'),
+                child: UIBuilder.box(width: 60, height: 50, color: '#3366ff'),
+              ),
+            ],
+          ),
+          {'kind': 'push', 'ms': 400},
+        ),
+      );
+      final hero = root.querySelector('[data-hero]')!;
+      expect(hero.getBoundingClientRect().width, greaterThan(100));
+      final standIn = root.querySelector('.dnn-hero-placeholder')!;
+      expect(standIn.getBoundingClientRect().width, closeTo(60, 1));
+      expect(standIn.getBoundingClientRect().height, closeTo(50, 1));
+      final run = flight().getAnimations().toDart.single..finish();
+      await run.finished.toDart;
+      expect(
+        flight().getBoundingClientRect().width,
+        closeTo(60, 1),
+        reason: 'it lands on the child, not the stretched box',
+      );
+    });
+
+    test('the hero it leaves shows its own stand-in in the old page',
+        () async {
+      await renderer.render(
+        UIBuilder.column(
+          crossAxisAlignment: 'start',
+          children: [
+            UIBuilder.box(
+              hero: 'picture',
+              heroPlaceholder: UIBuilder.text('left behind'),
+              width: 40,
+              height: 40,
+              child: UIBuilder.text('one'),
+            ),
+          ],
+        ),
+      );
+      await renderer.render(
+        UIBuilder.withPageTransition(
+          page('two', down: 300),
+          {'kind': 'push', 'ms': 400},
+        ),
+      );
+      final standIn =
+          leaving()!.querySelector('.dnn-hero-placeholder')! as web.HTMLElement;
+      expect(standIn.textContent, 'left behind');
+      expect(web.window.getComputedStyle(standIn).visibility, 'visible');
+      expect(standIn.getBoundingClientRect().height, closeTo(40, 1));
+      expect(
+        root.querySelector('.dnn-hero-placeholder'),
+        isNull,
+        reason: 'the arriving hero said nothing stands in for it',
+      );
     });
 
     test('along an arc, it is off the straight line half way', () async {

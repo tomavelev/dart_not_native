@@ -381,7 +381,7 @@ void main() {
       (
         'iOS (Swift) turns every view for an rtl tree',
         swift,
-        'private func applyDirection(_ view: UIView) {',
+        'private func applyDirection(_ view: UIView, rtl around: Bool? = nil) {',
         ['.forceRightToLeft'],
       ),
       (
@@ -465,13 +465,13 @@ void main() {
         'iOS (Swift) flies a hero',
         swift,
         'private func flyHeroes(',
-        ['heroViews', 'flightPicture(view, size: end.size)'],
+        ['heroViews', 'flightPicture(view, size: start.size)'],
       ),
       (
         'iOS (Swift) flies a picture of the hero, or of its shuttle',
         swift,
         'private func flightPicture(',
-        ['heroShuttles', 'snapshotView(afterScreenUpdates: true)'],
+        ['heroShuttles', 'resizableSnapshotView(', 'heroRoom(hero)'],
       ),
       // An image's tint, blended as `blend` says.
       (

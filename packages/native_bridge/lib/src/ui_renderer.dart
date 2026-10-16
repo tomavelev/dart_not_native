@@ -221,6 +221,13 @@ class UIBuilder {
   /// is false - which is what a body that lays itself out against the screen's
   /// height wants: one with an [expanded] in it, a [scroll] of its own, a
   /// [stack]. [safeArea] false lets the body run under the system insets.
+  ///
+  /// [onDrawerEdge] is called - `drawerEdgeEventId` raised - when a drag
+  /// starts within 20 pixels of the screen's start edge and moves in from it,
+  /// and [onEndDrawerEdge] the same from the end: what opens a drawer. Where
+  /// the system takes a strip along an edge for its own back gesture
+  /// (Android's gesture navigation), the 20 pixels are counted from inside
+  /// that strip, as in Flutter.
   static WidgetNode scaffold({
     WidgetNode? appBar,
     required WidgetNode body,
@@ -229,12 +236,24 @@ class UIBuilder {
     bool bodyScrolls = true,
     String? backgroundColor,
     bool safeArea = true,
+    void Function()? onDrawerEdge,
+    String? drawerEdgeEventId,
+    void Function()? onEndDrawerEdge,
+    String? endDrawerEdgeEventId,
   }) => WidgetNode(
     type: 'Scaffold',
     props: {
       if (!bodyScrolls) 'bodyScrolls': false,
       if (backgroundColor != null) 'backgroundColor': backgroundColor,
       if (!safeArea) 'safeArea': false,
+      if (onDrawerEdge != null || drawerEdgeEventId != null)
+        'drawerEdgeEventId': _bindTap(drawerEdgeEventId, onDrawerEdge, null),
+      if (onEndDrawerEdge != null || endDrawerEdgeEventId != null)
+        'endDrawerEdgeEventId': _bindTap(
+          endDrawerEdgeEventId,
+          onEndDrawerEdge,
+          null,
+        ),
     },
     children: [
       if (appBar != null) appBar,
@@ -764,6 +783,15 @@ class UIBuilder {
   /// happens to what does not fit: 'ellipsis' ends the last line with `…`,
   /// 'clip' cuts it off. Without [maxLines] the text wraps as far as it likes,
   /// which is what every renderer already did.
+  ///
+  /// [spans] are runs with styles of their own: `text`, and what a run says
+  /// of `color`, `fontSize`, `fontWeight`, `decoration` and `italic`. A run
+  /// with an `eventId` sends it when tapped, and one with a
+  /// `longPressEventId` sends that when held. A run with a `widget` - a node
+  /// tree - is that widget in the line, standing in for its `text` (one
+  /// U+FFFC); its `eventId` is for a renderer that draws it as a picture,
+  /// where a tap on the picture sends it, and one that draws the widget
+  /// itself leaves taps to it.
   static WidgetNode text(
     String content, {
     double? fontSize,
@@ -1343,6 +1371,7 @@ class UIBuilder {
     String? hero,
     bool heroArc = false,
     WidgetNode? heroShuttle,
+    WidgetNode? heroPlaceholder,
     bool animateSize = false,
     void Function()? onSizeEnd,
     bool sticky = false,
@@ -1494,9 +1523,13 @@ class UIBuilder {
         // than a straight line.
         if (hero != null && heroArc) 'heroArc': true,
         // What flies instead of the box itself, built by the renderer for the
-        // flight and stretched over it as the box would be.
+        // flight and laid out at each size it passes through.
         if (hero != null && heroShuttle != null)
           'heroShuttle': heroShuttle.toJson(),
+        // What stands in the box's room, over it, while it is in the air -
+        // where otherwise there is nothing.
+        if (hero != null && heroPlaceholder != null)
+          'heroPlaceholder': heroPlaceholder.toJson(),
         if (animateSize) 'animateSize': true,
         // In a vertical scroller: once the content has scrolled past the
         // box, it stays at the top of the view - drawn over what scrolls
@@ -1693,7 +1726,7 @@ class UIBuilder {
   /// | `line` | x1, y1, x2, y2, p |
   /// | `arc` | l, t, w, h, start, sweep, useCenter, p |
   /// | `path` | segments, p |
-  /// | `text` | string, x, y, {size, color, weight, align, maxWidth, family} |
+  /// | `text` | string, x, y, {size, color, weight, letterSpacing, align, maxWidth, wrap, family} |
   /// | `save`, `restore` | |
   /// | `translate` | dx, dy |
   /// | `rotate` | radians |
@@ -1710,7 +1743,9 @@ class UIBuilder {
   /// 'butt'|'round'|'square', join: 'miter'|'round'|'bevel'}`; `style`
   /// defaults to fill. `text` is drawn from its top-left corner; `align`
   /// ('left', 'center', 'right') is relative to `maxWidth` when there is one,
-  /// and otherwise to `x`.
+  /// and otherwise to `x`. Within `maxWidth` the text wraps, unless `wrap` is
+  /// false: then its lines are the ones at its `\n`s, and a box narrower than
+  /// them is widened about its alignment.
   ///
   /// [width]/[height] fix the surface; [expand] fills the parent as a [box]
   /// does. [onSize] reports the size it was actually given, which is what a
@@ -1999,12 +2034,19 @@ class UIBuilder {
   /// A modal sheet rising from the bottom edge, holding [content] top to
   /// bottom. Dismissed like [dialog], and by swiping it down where the platform
   /// has the gesture.
+  ///
+  /// With a [side] - `'start'` or `'end'`, of the reading direction - it is a
+  /// drawer instead: a panel the height of the screen, [width] wide (304
+  /// unless said), sliding in from that edge over a scrim, its [content]
+  /// edge to edge, and swiped back towards the edge to close it.
   static WidgetNode bottomSheet({
     String? title,
     required List<WidgetNode> content,
     void Function()? onDismiss,
     String? dismissEventId,
     bool dismissible = true,
+    String? side,
+    double? width,
     String? id,
   }) => WidgetNode(
     type: 'BottomSheet',
@@ -2012,6 +2054,8 @@ class UIBuilder {
       if (title != null) 'title': title,
       'dismissible': dismissible,
       ...?_dismiss(dismissEventId, onDismiss, id),
+      if (side == 'start' || side == 'end') 'side': side,
+      if (side != null && width != null) 'width': width,
       if (id != null) 'id': id,
     },
     children: content,

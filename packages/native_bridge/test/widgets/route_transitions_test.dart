@@ -189,6 +189,90 @@ void main() {
     expect(transition(), {'kind': 'push', 'ms': 300});
   });
 
+  group('the page beneath', () {
+    // Slides a third of the way off as it is covered, as Cupertino's does.
+    Widget parallax(
+      BuildContext _,
+      Animation<double> animation,
+      Animation<double> secondaryAnimation,
+      Widget child,
+    ) => SlideTransition(
+      position: Tween(
+        begin: Offset.zero,
+        end: const Offset(-1 / 3, 0),
+      ).animate(secondaryAnimation),
+      child: FadeTransition(opacity: animation, child: child),
+    );
+
+    Future<void> pushOver(Route<void> route) async {
+      Navigator.of(page).push(
+        PageRouteBuilder<void>(
+          pageBuilder: (_, _, _) => screen('under'),
+          transitionsBuilder: parallax,
+        ),
+      );
+      await pumpEventQueue();
+      Navigator.of(page).push(route);
+      await pumpEventQueue();
+    }
+
+    test('moves as its secondaryAnimation says when one is pushed over it, '
+        'and back when that one is popped', () async {
+      await pushOver(
+        PageRouteBuilder<void>(
+          pageBuilder: (_, _, _) => screen('over'),
+          transitionsBuilder: (_, animation, _, child) =>
+              FadeTransition(opacity: animation, child: child),
+        ),
+      );
+      expect(transition(), {
+        'kind': 'push',
+        'ms': 300,
+        'page': {'opacity': 0.0},
+        'picture': {'dx': -1 / 3},
+      });
+
+      Navigator.of(page).pop();
+      await pumpEventQueue();
+      expect(transition(), {
+        'kind': 'pop',
+        'ms': 300,
+        'picture': {'opacity': 0.0},
+        'page': {'dx': -1 / 3},
+      });
+    });
+
+    test('under a page that leaves the move to the renderer, that move is '
+        'said so both go together', () async {
+      await pushOver(MaterialPageRoute<void>(builder: (_) => screen('over')));
+      expect(transition(), {
+        'kind': 'push',
+        'ms': 300,
+        'page': {'dx': 0.25, 'curve': 'easeOut'},
+        'picture': {'dx': -1 / 3},
+      });
+    });
+
+    test(
+      'a transition that ignores it leaves the page beneath still',
+      () async {
+        await push(
+          (_, animation, _, child) =>
+              FadeTransition(opacity: animation, child: child),
+        );
+        Navigator.of(page).push(
+          PageRouteBuilder<void>(
+            pageBuilder: (_, _, _) => screen('three'),
+            transitionsBuilder: (_, animation, _, child) =>
+                FadeTransition(opacity: animation, child: child),
+          ),
+        );
+        await pumpEventQueue();
+        expect(transition()!.containsKey('picture'), isFalse);
+      },
+    );
+  });
+
   test('ReverseAnimation runs the other way', () {
     const reversed = ReverseAnimation(kAlwaysCompleteAnimation);
     expect(reversed.value, 0);

@@ -259,6 +259,37 @@ class TapGestureRecognizer extends GestureRecognizer {
   VoidCallback? onTap;
 }
 
+/// A long press on a run of text: a word to define, a link to copy.
+///
+/// Only `onLongPress` is heard, when the press has been held for the
+/// platform's long-press time; a run can have this or a tap, as a span has
+/// one recogniser in Flutter.
+class LongPressGestureRecognizer extends GestureRecognizer {
+  LongPressGestureRecognizer({this.debugOwner, this.duration});
+  final Object? debugOwner;
+
+  /// Flutter's own hold before a press is long; the platform's is used.
+  final Duration? duration;
+  VoidCallback? onLongPress;
+}
+
+/// One run of a line of text: words with the style they inherit and what a
+/// touch on them does, or a widget among them.
+class _Run {
+  const _Run.text(this.text, this.style, this.tap, this.longPress)
+    : widget = null;
+  const _Run.widget(Widget this.widget)
+    : text = null,
+      style = null,
+      tap = null,
+      longPress = null;
+  final String? text;
+  final TextStyle? style;
+  final VoidCallback? tap;
+  final VoidCallback? longPress;
+  final Widget? widget;
+}
+
 /// Text with a style, and runs of text inside it with styles of their own.
 class TextSpan extends InlineSpan {
   const TextSpan({
@@ -273,14 +304,21 @@ class TextSpan extends InlineSpan {
   final List<InlineSpan>? children;
 
   /// What a touch on this span's own [text] does - not on its children's,
-  /// which is Flutter's rule too. A [TapGestureRecognizer] is the one kind
-  /// that is heard.
+  /// which is Flutter's rule too. A [TapGestureRecognizer] and a
+  /// [LongPressGestureRecognizer] are the kinds that are heard.
   final GestureRecognizer? recognizer;
   final String? semanticsLabel;
 
   VoidCallback? get _onTap {
     final recognizer = this.recognizer;
     return recognizer is TapGestureRecognizer ? recognizer.onTap : null;
+  }
+
+  VoidCallback? get _onLongPress {
+    final recognizer = this.recognizer;
+    return recognizer is LongPressGestureRecognizer
+        ? recognizer.onLongPress
+        : null;
   }
 
   @override
@@ -293,26 +331,59 @@ class TextSpan extends InlineSpan {
   }
 
   /// Every run, with the style it inherits from the spans around it.
-  void _flatten(
-    TextStyle? inherited,
-    List<(String, TextStyle?, VoidCallback?)> into,
-  ) {
+  void _flatten(TextStyle? inherited, List<_Run> into) {
     final own = inherited == null ? style : inherited.merge(style);
     final text = this.text;
-    if (text != null && text.isNotEmpty) into.add((text, own, _onTap));
+    if (text != null && text.isNotEmpty) {
+      into.add(_Run.text(text, own, _onTap, _onLongPress));
+    }
     for (final child in children ?? const <InlineSpan>[]) {
-      if (child is TextSpan) child._flatten(own, into);
+      switch (child) {
+        case TextSpan():
+          child._flatten(own, into);
+        case WidgetSpan(:final child):
+          into.add(_Run.widget(child));
+      }
     }
   }
 }
 
-/// A widget in a line of text. The protocol's runs are text only, so the
-/// widget is left out of the line - put it beside the text in a [Row].
+/// A widget in a line of text: an icon among the words, a badge.
+///
+/// It sits on the line, its middle level with the middle of the text
+/// ([alignment] and [baseline] are accepted and not read). In the
+/// browser and the Flutter host it is the widget itself; on iOS and Android
+/// it is a picture of the widget as it was first laid out - a network image
+/// in it shows what had loaded by then, which is nothing - and a tap on the
+/// picture is a tap on the first thing in it that takes one.
 class WidgetSpan extends InlineSpan {
-  const WidgetSpan({required this.child, super.style});
+  const WidgetSpan({
+    required this.child,
+    this.alignment,
+    this.baseline,
+    super.style,
+  });
   final Widget child;
+  final Object? alignment;
+  final Object? baseline;
+
+  /// One object-replacement character, as Flutter's is.
   @override
-  String toPlainText() => '';
+  String toPlainText() => '\uFFFC';
+}
+
+/// The event of the first thing in [node] a tap is heard by.
+String? _firstTap(WidgetNode node) {
+  final props = node.props;
+  final tap = props['tapEventId'];
+  if (tap is String) return tap;
+  final event = props['eventId'];
+  if (event is String && node.type.contains('Button')) return event;
+  for (final child in node.children ?? const <WidgetNode>[]) {
+    final found = _firstTap(child);
+    if (found != null) return found;
+  }
+  return null;
 }
 
 /// The protocol's name for [align] where [owner] is building.
@@ -370,44 +441,63 @@ WidgetNode _textNode(
   }
   List<Map<String, dynamic>>? spans;
   if (span is TextSpan) {
-    final runs = <(String, TextStyle?, VoidCallback?)>[];
+    final runs = <_Run>[];
     // The root span's style is the node's; its children inherit from there.
     for (final child in span.children ?? const <InlineSpan>[]) {
-      if (child is TextSpan) child._flatten(null, runs);
+      switch (child) {
+        case TextSpan():
+          child._flatten(null, runs);
+        case WidgetSpan(:final child):
+          runs.add(_Run.widget(child));
+      }
     }
     final root = span.text;
     final rootTap = root == null || root.isEmpty ? null : span._onTap;
-    if (runs.isNotEmpty || rootTap != null) {
-      // A run that can be tapped carries the event its tap sends. Named by
-      // the node's id and the run's place when the node has one, so that a
-      // link keeps its event from one build to the next.
+    final rootPress = root == null || root.isEmpty ? null : span._onLongPress;
+    if (runs.isNotEmpty || rootTap != null || rootPress != null) {
+      // A run that can be tapped carries the event its tap sends, and one
+      // that can be held the event its long press sends. Named by the
+      // node's id and the run's place when the node has one, so that a link
+      // keeps its event from one build to the next.
       var place = 0;
-      String? tap(VoidCallback? onTap) {
-        final index = place++;
-        if (onTap == null) return null;
+      String? event(VoidCallback? handler, int index, String kind) {
+        if (handler == null) return null;
         final bindings = EventBindings.required;
         final eventId = bindings.allocate(
-          key: id == null ? null : '$id.span$index',
+          key: id == null ? null : '$id.span$index$kind',
         );
-        bindings.onTap(eventId, onTap);
+        bindings.onTap(eventId, handler);
         return eventId;
       }
 
+      Map<String, dynamic> run(
+        String text,
+        VoidCallback? onTap,
+        VoidCallback? onLongPress, [
+        TextStyle? runStyle,
+      ]) {
+        final index = place++;
+        return {
+          'text': text,
+          'eventId': ?event(onTap, index, ''),
+          'longPressEventId': ?event(onLongPress, index, '.long'),
+          if (runStyle?.color != null) 'color': runStyle!.color!._hex,
+          if (runStyle?.fontSize != null) 'fontSize': runStyle!.fontSize,
+          if (runStyle?.fontWeight != null)
+            'fontWeight': runStyle!.fontWeight!.value,
+          if (runStyle?.decoration != null)
+            'decoration': runStyle!.decoration!._name,
+          if (runStyle?.fontStyle == FontStyle.italic) 'italic': true,
+        };
+      }
+
       spans = [
-        if (root != null && root.isNotEmpty)
-          {'text': root, 'eventId': ?tap(rootTap)},
-        for (final (text, runStyle, onTap) in runs)
-          {
-            'text': text,
-            'eventId': ?tap(onTap),
-            if (runStyle?.color != null) 'color': runStyle!.color!._hex,
-            if (runStyle?.fontSize != null) 'fontSize': runStyle!.fontSize,
-            if (runStyle?.fontWeight != null)
-              'fontWeight': runStyle!.fontWeight!.value,
-            if (runStyle?.decoration != null)
-              'decoration': runStyle!.decoration!._name,
-            if (runStyle?.fontStyle == FontStyle.italic) 'italic': true,
-          },
+        if (root != null && root.isNotEmpty) run(root, rootTap, rootPress),
+        for (final item in runs)
+          if (item.widget case final widget?)
+            _widgetRun(owner, widget, place++)
+          else
+            run(item.text!, item.tap, item.longPress, item.style),
       ];
     }
     effective = effective == null ? span.style : effective.merge(span.style);
@@ -431,6 +521,18 @@ WidgetNode _textNode(
     spans: spans,
     id: id,
   );
+}
+
+/// A [WidgetSpan]'s run: the widget's tree, which a renderer that cannot
+/// put a widget in a line draws as a picture - with, for that picture, the
+/// event of the first thing in it a tap is heard by.
+Map<String, dynamic> _widgetRun(_Owner owner, Widget widget, int index) {
+  final node = _renderChild(owner, widget, 'span$index');
+  return {
+    'text': '\uFFFC',
+    'widget': node.toJson(),
+    'eventId': ?_firstTap(node),
+  };
 }
 
 /// Text from the translation table, redrawn when the locale changes.
@@ -611,16 +713,31 @@ class RichText extends Widget {
 }
 
 /// Text the user can select and copy.
+///
+/// [SelectableText.rich] takes runs with styles of their own, and a run with
+/// a recogniser can be tapped or held as in a [Text.rich] - on every
+/// renderer, the touch going to the run as well as to the selection.
 class SelectableText extends Widget {
   const SelectableText(
-    this.data, {
+    String this.data, {
     super.key,
     this.style,
     this.textAlign,
     this.maxLines,
     this.onTap,
-  });
-  final String data;
+  }) : textSpan = null;
+
+  const SelectableText.rich(
+    TextSpan this.textSpan, {
+    super.key,
+    this.style,
+    this.textAlign,
+    this.maxLines,
+    this.onTap,
+  }) : data = null;
+
+  final String? data;
+  final TextSpan? textSpan;
   final TextStyle? style;
   final TextAlign? textAlign;
   final int? maxLines;
@@ -631,8 +748,9 @@ class SelectableText extends Widget {
   @override
   WidgetNode _render(_Owner owner) => _textNode(
     owner,
-    data,
+    data ?? textSpan!.toPlainText(),
     style: style,
+    span: textSpan,
     textAlign: textAlign,
     maxLines: maxLines,
     selectable: true,

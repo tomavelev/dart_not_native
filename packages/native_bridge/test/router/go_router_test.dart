@@ -778,6 +778,153 @@ void main() {
       expect(move(), isNull, reason: 'going where it is already is no move');
     });
 
+    group('a page built by pageBuilder', () {
+      Widget fade(
+        BuildContext _,
+        Animation<double> animation,
+        Animation<double> secondaryAnimation,
+        Widget child,
+      ) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween(
+            begin: Offset.zero,
+            end: const Offset(0, -0.5),
+          ).animate(secondaryAnimation),
+          child: child,
+        ),
+      );
+
+      GoRouter pages() => GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              transitionsBuilder: fade,
+              child: _page('home')(context, state),
+            ),
+          ),
+          GoRoute(
+            path: '/form',
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              transitionDuration: const Duration(milliseconds: 120),
+              reverseTransitionDuration: const Duration(milliseconds: 90),
+              transitionsBuilder: fade,
+              child: _page('form')(context, state),
+            ),
+          ),
+          GoRoute(
+            path: '/plain',
+            pageBuilder: (context, state) =>
+                MaterialPage<void>(child: _page('plain')(context, state)),
+          ),
+          GoRoute(
+            path: '/still',
+            pageBuilder: (context, state) =>
+                NoTransitionPage<void>(child: _page('still')(context, state)),
+          ),
+        ],
+      );
+
+      test('is its child', () {
+        final m = _Mounted(pages());
+        expect(m.text('page'), 'home /');
+      });
+
+      test('moves by its transition, and the page beneath by its own', () {
+        final m = _Mounted(pages());
+        Object? move() => m.root.props['pageTransition'];
+
+        m.router.push('/form');
+        expect(m.text('page'), 'form /form');
+        expect(move(), {
+          'kind': 'push',
+          'ms': 120,
+          'page': {'opacity': 0.0},
+          'picture': {'dy': -0.5},
+        });
+
+        m.router.pop();
+        expect(move(), {
+          'kind': 'pop',
+          'ms': 90,
+          'picture': {'opacity': 0.0},
+          'page': {'dy': -0.5},
+        });
+      });
+
+      test('a MaterialPage leaves its move to the renderer', () {
+        final m = _Mounted(pages());
+        m.router.push('/plain');
+        expect(m.root.props['pageTransition'], {
+          'kind': 'push',
+          'ms': 300,
+          'page': {'dx': 0.25, 'curve': 'easeOut'},
+          'picture': {'dy': -0.5},
+        });
+      });
+
+      test('a NoTransitionPage is simply there', () {
+        final m = _Mounted(pages());
+        m.router.go('/still');
+        expect(m.text('page'), 'still /still');
+        expect(m.root.props['pageTransition'], isNull);
+      });
+
+      GoRouter shelled() => GoRouter(
+        routes: [
+          GoRoute(path: '/', builder: _page('home')),
+          ShellRoute(
+            pageBuilder: (context, state, child) => CustomTransitionPage<void>(
+              transitionDuration: const Duration(milliseconds: 200),
+              transitionsBuilder: fade,
+              child: Column(
+                children: [const Text('frame', key: ValueKey('frame')), child],
+              ),
+            ),
+            routes: [
+              GoRoute(path: '/a', builder: _page('a')),
+              GoRoute(path: '/b', builder: _page('b')),
+            ],
+          ),
+        ],
+      );
+
+      test('a shell built by pageBuilder is its frame', () {
+        final m = _Mounted(shelled());
+        m.router.go('/a');
+        expect(m.text('frame'), 'frame');
+        expect(m.text('page'), 'a /a');
+      });
+
+      test('a shell moves by its transition as it is entered and left', () {
+        final m = _Mounted(shelled());
+        Object? move() => m.root.props['pageTransition'];
+
+        m.router.push('/a');
+        expect(move(), {
+          'kind': 'push',
+          'ms': 200,
+          'page': {'opacity': 0.0},
+        });
+
+        m.router.pop();
+        expect(move(), {
+          'kind': 'pop',
+          'ms': 300,
+          'picture': {'opacity': 0.0},
+        });
+      });
+
+      test("a move inside a shell is the inner page's", () {
+        final m = _Mounted(shelled());
+        m.router.go('/a');
+        m.router.push('/b');
+        expect(m.text('page'), 'b /b');
+        expect(m.root.props['pageTransition'], {'kind': 'push', 'ms': 300});
+      });
+    });
+
     test('popping with nothing to pop is an error', () {
       final m = _Mounted(router());
       expect(() => m.router.pop(), throwsA(isA<GoError>()));

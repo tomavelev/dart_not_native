@@ -75,6 +75,20 @@ class _LabelPainter extends CustomPainter {
   bool shouldRepaint(_LabelPainter oldDelegate) => false;
 }
 
+/// Paints two words in a width only one fits in.
+class _WrappedPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final painter = TextPainter(
+      text: const TextSpan(text: 'aaaa bbbb', style: TextStyle(fontSize: 10)),
+    )..layout(maxWidth: 40);
+    painter.paint(canvas, Offset.zero);
+  }
+
+  @override
+  bool shouldRepaint(_WrappedPainter oldDelegate) => false;
+}
+
 AppTester _mount(Widget child) =>
     AppTester.mount(hostApp(Scaffold(body: child)));
 
@@ -204,29 +218,47 @@ void main() {
   });
 
   group('TextPainter', () {
-    test('estimates its size from the font size and the characters', () {
+    test('measures Latin text with Roboto\'s own widths', () {
+      // H 713, e 530, l 243, l 243, o 570 thousandths of an em.
       final latin = TextPainter(
         text: const TextSpan(text: 'Hello', style: TextStyle(fontSize: 20)),
       )..layout();
-      expect(latin.width, closeTo(5 * 0.55 * 20, 1e-9));
+      expect(latin.width, closeTo(2299 * 20 / 1000, 1e-9));
       expect(latin.height, closeTo(1.2 * 20, 1e-9));
 
+      // b 561, c 523: the longer line.
+      final twoLines = TextPainter(
+        text: const TextSpan(text: 'a\nbc', style: TextStyle(fontSize: 10)),
+      )..layout();
+      expect(twoLines.width, closeTo((561 + 523) * 10 / 1000, 1e-9));
+      expect(twoLines.height, closeTo(2 * 1.2 * 10, 1e-9));
+    });
+
+    test('bold is wider, and letter spacing is added to each character', () {
+      double width(TextStyle style) =>
+          (TextPainter(text: TextSpan(text: 'Hello', style: style))..layout())
+              .width;
+      expect(
+        width(const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        closeTo(2343 * 20 / 1000, 1e-9),
+      );
+      expect(
+        width(const TextStyle(fontSize: 20, letterSpacing: 2)),
+        closeTo(width(const TextStyle(fontSize: 20)) + 5 * 2, 1e-9),
+      );
+    });
+
+    test('estimates what Roboto has no width for', () {
       // CJK and emoji are about twice as wide as a Latin letter.
       final wide = TextPainter(
         text: const TextSpan(text: '日本', style: TextStyle(fontSize: 20)),
       )..layout();
       expect(wide.width, closeTo(2 * 1.1 * 20, 1e-9));
-
-      final twoLines = TextPainter(
-        text: const TextSpan(text: 'a\nbc', style: TextStyle(fontSize: 10)),
-      )..layout();
-      expect(twoLines.width, closeTo(2 * 0.55 * 10, 1e-9));
-      expect(twoLines.height, closeTo(2 * 1.2 * 10, 1e-9));
     });
 
     test('wraps at maxWidth and never reports wider than it', () {
-      // Each word is 4 × 5.5 = 22 wide; two of them and a space do not fit
-      // in 40.
+      // Each word is about 22 wide; two of them and a space do not fit in
+      // 40.
       final wrapped = TextPainter(
         text: const TextSpan(
           text: 'aaaa bbbb',
@@ -235,6 +267,15 @@ void main() {
       )..layout(maxWidth: 40);
       expect(wrapped.width, 40);
       expect(wrapped.height, closeTo(2 * 1.2 * 10, 1e-9));
+    });
+
+    test('sends the lines it measured, and asks for no others', () {
+      final tester = _mount(
+        CustomPaint(painter: _WrappedPainter(), size: const Size(100, 50)),
+      );
+      final command = _commands(tester).single;
+      expect(command[1], 'aaaa\nbbbb');
+      expect((command[4] as Map)['wrap'], isFalse);
     });
 
     test('sends the box it measured, so centred text stays centred', () {

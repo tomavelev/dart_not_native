@@ -784,9 +784,9 @@ bridge has a fallback. Three things to know:
 - **Right-to-left follows the locale.** `MaterialApp` lays the screen out
   right to left for ar, fa, he, ps, sd, ur, ug, yi and dv, and
   `EdgeInsetsDirectional`, `AlignmentDirectional` and `TextAlign.start`
-  resolve against it. Only the screen's direction reaches the renderers: a
-  `Directionality` deep in a screen turns the values and rows below it, not
-  the platform's own controls there.
+  resolve against it. A `Directionality` deep in a screen turns what is
+  below it too, the platform's own controls included - an LTR code field
+  in an Arabic form.
 - The generated code imports Flutter, so this bridge is mobile-only. An app
   with a web target keeps its strings in the framework's own table instead
   (`I18n` and the `Tr` widget - `I18N_GUIDE.md`), or in plain Dart maps.
@@ -802,8 +802,10 @@ dependency and change the import; `GoRouter`, `GoRoute`, `ShellRoute`,
 go_router's signatures, and `MaterialApp.router(routerConfig:)` takes it.
 The deviations, all stated in the library's doc comment:
 
-- no `pageBuilder`, `Page`s or transitions; no `StatefulShellRoute`; no
-  navigator keys; no `onExit`;
+- a `pageBuilder`'s `CustomTransitionPage` moves its page (a shell's, its
+  frame) by the transition widgets its `transitionsBuilder` returns, as a
+  `PageRouteBuilder`'s; other widgets it wraps the page in are not read;
+- no `StatefulShellRoute`; no navigator keys; no `onExit`;
 - a path parameter matches one whole segment - inline patterns
   (`:id(\d+)`) are not supported;
 - with a browser history attached, **`push` changes the URL too** (in
@@ -873,8 +875,8 @@ A painter written for Flutter usually moves over as it is. The canvas records
 a command list that each renderer replays into its own canvas, so what does
 not survive is what a command list cannot say: shaders other than a linear or
 sweep gradient (`gradient.createShader(rect)` is drawn), mask filters other
-than a blur, blend modes, `saveLayer` paints, and `TextPainter` measuring real glyphs
-(§8.9). In the migrated apps: the reminders app's donut chart is a
+than a blur, blend modes, `saveLayer` paints, and `TextPainter` measuring the
+platform's own glyphs - it measures Roboto's (§8.9). In the migrated apps: the reminders app's donut chart is a
 `CustomPaint` and its month calendar is boxes; the games draw snake, frog and
 hangman on a `CustomPaint` and build the other boards from `Container`,
 `Stack`, `Positioned` and `GestureDetector`; the planner's seating screen is
@@ -1040,19 +1042,19 @@ border) - there are many, each documented on the field.
 | In Flutter | Here |
 |---|---|
 | `PopupMenuButton` drops a menu from the button | **A dialog** listing the entries, in the dialog's place. The callbacks are Flutter's; the entry for `initialValue` is ticked |
-| `Hero` flies between pages | It does when a page is pushed or popped and both have a hero of the same tag: the arriving page's hero - or what a `flightShuttleBuilder` builds, its own or else the other hero's - stretched from the old one's place and size to its own over the page transition's time, along Flutter's Material arc in a `MaterialApp` and straight elsewhere, as `createRectTween` says. The shuttle is drawn once, at the end of the flight; `placeholderBuilder` is accepted and not called; tags are compared as they print |
+| `Hero` flies between pages | It does when a page is pushed or popped and both have a hero of the same tag: the arriving page's hero - or what a `flightShuttleBuilder` builds, its own or else the other hero's - stretched from the old one's place and size to its own over the page transition's time, along Flutter's Material arc in a `MaterialApp` and straight elsewhere, as `createRectTween` says. The shuttle is laid out at each size it passes through; what `placeholderBuilder` builds stands in the hero's room meanwhile - the arriving hero's, and the one it leaves in the picture of the old page - laid out to the hero's child (its `heroSize` is `Size.zero`); tags are compared as they print |
 | `MouseRegion` follows the pointer | It draws its child and nothing else |
-| A pushed page slides or fades in | The renderer moves from the old page to the new one: the old fades away, a pushed page slides in from the end of the screen, a popped one slides off towards it. A route with a transition of its own - `PageRouteBuilder.transitionsBuilder`, or an overridden `buildTransitions` - moves as the `FadeTransition`, `SlideTransition`, `ScaleTransition` and `RotationTransition` it returns say at the start of its animation, over `transitionDuration` (zero for none) and along the curve they name; other widgets it wraps the page in are not read. Pages pushed on a `Navigator`, named routes and the pages of `router.dart`'s `GoRouter` transition. Pages beneath keep their `State` |
+| A pushed page slides or fades in | The renderer moves from the old page to the new one: the old fades away, a pushed page slides in from the end of the screen, a popped one slides off towards it. A route with a transition of its own - `PageRouteBuilder.transitionsBuilder`, or an overridden `buildTransitions` - moves as the `FadeTransition`, `SlideTransition`, `ScaleTransition` and `RotationTransition` it returns say at the start of its animation, over `transitionDuration` (zero for none) and along the curve they name; what its `secondaryAnimation` does moves the page beneath as another covers it and uncovers it; other widgets it wraps the page in are not read. Pages pushed on a `Navigator`, named routes and the pages of `router.dart`'s `GoRouter` transition - a `GoRoute.pageBuilder`'s `CustomTransitionPage` by its own transition, a `NoTransitionPage` not at all. Pages beneath keep their `State` |
 | `Dismissible`: the row slides away under the finger | It does, in every direction, with `background` behind it; `confirmDismiss`, `dismissThresholds` and `onDismissed` as in Flutter, and the room it took closes over `resizeDuration` - `onResize` called on the way - before `onDismissed`. `onUpdate` hears each movement and where the row goes when let go. Each movement of the finger is a build |
 | `AnimatedSwitcher`, `AnimatedCrossFade` animate between children | The old child goes as the new one comes: by a fade, or by the `transitionBuilder`, built with the animation at its start and at its end - the `FadeTransition`, `ScaleTransition`, `SlideTransition`, `RotationTransition` and `SizeTransition` in it move between the two, a `Tween` or `CurvedAnimation` between them evaluated at each end. A cross-fade's space moves from the one child's size to the other's |
-| `AnimatedSize` animates between sizes | It does: the renderer moves the box to the size its child came to, the child clipped on the way, and says when it got there (`onEnd`). A child that changes size between renders - a picture arriving - is not moved to |
+| `AnimatedSize` animates between sizes | It does: the renderer moves the box to the size its child came to, the child clipped on the way, and says when it got there (`onEnd`) - also when the child changes size between renders, a picture arriving |
 | `AnimatedContainer` animates every property | Size, colour, opacity, transform, padding, margin and alignment move, and so do `AnimatedPadding` and `AnimatedAlign` |
 | `onEnd` fires when an implicit animation finishes | Called when the renderer says the move has finished - iOS and Android from their own animation, the browser and the Flutter host the duration after they applied the tree. A renderer that never says is waited for a quarter of a second past the duration. Not for `AnimatedSize` |
 | `AnimationController`, `Tween`, `AnimatedBuilder` driven by one | No `AnimationController`. `Animation` exists for signatures and stands still. A `Ticker` is a 16 ms timer; each tick that calls `setState` is a full rebuild and a message to the platform (§10) |
 | Forty-odd `Curves` | Each that is a cubic Bézier in Flutter reaches the renderers as that cubic, with Flutter's numbers - `fastOutSlowIn`, `easeOutBack` with its overshoot, any `Cubic` an app makes. The bounces, springs and three-point curves travel as the nearest of `linear`, `ease`, `easeIn`, `easeOut` and `easeInOut` |
-| `TextPainter` measures real glyphs | **Metrics are estimated**: 0.55 × font size per character (double for CJK and emoji), 1.2 × per line. The text is drawn by the platform with real glyphs, aligned within the estimated box. `didExceedMaxLines` is always false |
+| `TextPainter` measures real glyphs | **It measures Roboto's**: each Latin, Greek or Cyrillic character's advance width in Roboto, regular or bold, plus `letterSpacing` - exact on Android and in the Flutter host, a few per cent narrow for iOS's SF; other scripts are estimated (0.55 × font size, 1.1 × for CJK and emoji), kerning is not counted, and a line is 1.2 × the font size. The text is drawn by the platform in the lines it was measured as, aligned within the measured box. `didExceedMaxLines` is always false |
 | `CustomPainter.shouldRepaint` gates repainting | Not consulted; `paint` runs on every build and a renderer repaints when the commands changed. A paint's blend mode and `saveLayer`'s opacity and blend are drawn; mask filters other than a blur and shaders other than a gradient are not carried - a gradient may be `dart:ui`'s (`Gradient.linear` without the `ui.`), in any tile mode, and a blur in any style; `foregroundPainter` shares the one surface |
-| `TimeOfDay.format` follows each locale's conventions | As Flutter, from Flutter's own table: the pattern and the AM/PM words of each of its locales, and `MediaQueryData.alwaysUse24HourFormat`. The digits are always 0-9, and no renderer reports the device's 24-hour switch |
+| `TimeOfDay.format` follows each locale's conventions | As Flutter, from Flutter's own table: the pattern and the AM/PM words of each of its locales, in the locale's own digits where it has them, and `MediaQueryData.alwaysUse24HourFormat`, which follows the device's 24-hour switch (a browser's language's clock) |
 | Snackbars queue | Queued, as in Flutter: a new one waits for the ones before it, and `hideCurrentSnackBar`, `removeCurrentSnackBar` and `clearSnackBars` do what they say. The bar is a message and one action, in the fill, text colours, corner radius, `width`, `margin`, `behavior` and `elevation` the app gave it |
 | `ScrollController.offset` follows the finger; listeners hear scrolling | Follows a step behind: the renderer reports the offset when the scroller comes to rest and at most every 100 ms on the way, not once a frame - a windowed list (`itemExtent`) included. `animateTo` travels there over the duration and along the curve asked for |
 | `ListView.builder` measures rows and builds lazily | Windowed only with `itemExtent` or `itemExtentBuilder`; without one every row is built. Its `padding` is room inside the scroller either way, and a `RefreshIndicator` attaches to it either way |
@@ -1062,9 +1064,9 @@ border) - there are many, each documented on the field.
 | `KeyboardListener` hears keys while its node has focus | The listener whose `FocusNode` was asked for focus (`requestFocus`, `autofocus`) hears alone, and a dialog takes the keys from the page behind it. With no ask, every listener in the visible tree hears |
 | `Image.errorBuilder` runs when loading fails; `loadingBuilder` during | They do: the renderer says how the load ended. `loadingBuilder`'s widget stands in the image's place while it loads - its `child` is an empty box then, and its `ImageChunkEvent` says how many bytes have come, and of how many when the server said - `errorBuilder` is called only after a failure, with an `ImageLoadFailure` and no stack, and `frameBuilder` hears no frame and then frame 0. `color` tints the picture (as `BlendMode.srcIn`; no other blend is carried) |
 | `await Navigator.pushNamed(...)` waits for the page; the page beneath keeps its state | Both, as in Flutter: the pages on the way to the one on screen are kept, and the future completes with what the page was popped with (null for the back gesture or the browser's button) |
-| `RichText` with `WidgetSpan`, tappable spans | Text runs only: a `WidgetSpan` is left out. A `TextSpan` with a `TapGestureRecognizer` is tapped; the class comes from `widgets.dart` here, where Flutter's is in `gestures.dart`, and a tap is the only gesture heard |
+| `RichText` with `WidgetSpan`, tappable spans | A `WidgetSpan` is its widget in the line - a picture of it as it first lays out on iOS and Android, where a tap on it is the first tap inside it. A `TextSpan` with a `TapGestureRecognizer` is tapped and one with a `LongPressGestureRecognizer` held, in a `SelectableText.rich` too; the classes come from `widgets.dart` here, where Flutter's are in `gestures.dart` |
 | `TextOverflow.fade` | Drawn as `clip` |
-| `Scaffold.drawer` slides in from the side | Shown as a sheet, opened by the menu button the app bar gains or by `Scaffold.of(context).openDrawer()`, and closed when the app moves to another page. A scaffold nested in another's body is composed from a column and a stack |
+| `Scaffold.drawer` slides in from the side | It does, and `endDrawer` from the end: the height of the screen, as wide as the `Drawer` says, over a scrim, opened by the menu button the app bar gains or by `Scaffold.of(context).openDrawer()`, or a swipe in from its edge (unless `drawerEnableOpenDragGesture` is false; the panel then slides in by itself rather than under the finger), closed by the scrim, Back or a swipe back, and closed when the app moves to another page. A scaffold nested in another's body is composed from a column and a stack |
 | `FloatingActionButton` takes colours, `mini`, a location | Its `backgroundColor` and `foregroundColor` are drawn; the size and the place are the platform's |
 | `Checkbox`, `Radio`, `Switch` and `Slider` take colours | Drawn on all four renderers. On the web a browser's own checkbox and range input have one accent colour, so `checkColor`, `inactiveColor` and `thumbColor` show only where a kit draws those parts itself |
 | `NavigationRail` `leading`, `trailing`, `extended` | Drawn: the leading above the destinations, the trailing below, an extended rail wide with each label beside its icon. It does not animate open, and its width is 256 whatever `minExtendedWidth` says |
@@ -1072,7 +1074,7 @@ border) - there are many, each documented on the field.
 | `InheritedWidget.updateShouldNotify`, `didChangeDependencies` on change | As Flutter, for a `State`: `didChangeDependencies` runs again before a build in which something the state read through its own `context` has changed, and `updateShouldNotify` says whether it has. It does not prune the rebuild - everything still rebuilds from the root |
 | `LayoutBuilder` runs once with real constraints | Runs against the viewport first, then again when the renderer reports the box's size |
 | `showDatePicker`/`showTimePicker` take a `builder` and a `locale` | The platform's own picker, in the device's language |
-| Text fields: `style`, `autocorrect`, most of `InputDecoration`'s look | The platform's own field in its theme. Label, hint, helper, error, prefix and suffix icons travel |
+| Text fields: `style`, `autocorrect`, most of `InputDecoration`'s look | The platform's own field in its theme. Label, hint, helper, error, prefix and suffix icons travel, and so do the focused, error and disabled borders' colour and width and the hint's, label's and helper's styles (on Android the hint's colour only) |
 
 On iOS specifically, a text field's label sits above the field rather than
 floating into it - UIKit has no floating label.

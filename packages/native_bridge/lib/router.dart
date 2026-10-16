@@ -32,9 +32,10 @@
 /// void main() => runApp(MaterialApp.router(routerConfig: router));
 /// ```
 ///
-/// It is a subset, and says so where it stops: there are no `Page`s or
-/// transitions (`pageBuilder`), no `StatefulShellRoute`, no navigator keys and
-/// no `onExit`. What is here behaves as `go_router` does unless a doc comment
+/// It is a subset, and says so where it stops: a [GoRoute]'s and a
+/// [ShellRoute]'s `pageBuilder` are read for the page's transition
+/// ([CustomTransitionPage]), and there is no `StatefulShellRoute`, no
+/// navigator keys and no `onExit`. What is here behaves as `go_router` does unless a doc comment
 /// says otherwise.
 ///
 /// Pure Dart: nothing here imports Flutter or the browser, so the same file
@@ -65,10 +66,24 @@ typedef GoRouterRedirect =
 typedef GoRouterWidgetBuilder =
     Widget Function(BuildContext context, GoRouterState state);
 
+/// Builds the page for a [GoRoute] as a [Page] - a [CustomTransitionPage],
+/// a [NoTransitionPage] or a [MaterialPage] - which says how it moves.
+typedef GoRouterPageBuilder =
+    Page<dynamic> Function(BuildContext context, GoRouterState state);
+
 /// Builds the frame a [ShellRoute] draws around whichever of its routes is
 /// showing, which arrives as [child].
 typedef ShellRouteBuilder =
     Widget Function(BuildContext context, GoRouterState state, Widget child);
+
+/// Builds the frame a [ShellRoute] draws as a [Page], which says how the
+/// frame moves when it arrives or leaves.
+typedef ShellRoutePageBuilder =
+    Page<dynamic> Function(
+      BuildContext context,
+      GoRouterState state,
+      Widget child,
+    );
 
 /// Builds the page shown when a location matches no route, or a redirect went
 /// wrong. The problem is in `state.error`.
@@ -123,13 +138,14 @@ class GoRoute extends RouteBase {
     required this.path,
     this.name,
     this.builder,
+    this.pageBuilder,
     super.redirect,
     super.routes = const <RouteBase>[],
   }) : assert(path != '', 'GoRoute path cannot be empty'),
        assert(name != '', 'GoRoute name cannot be empty'),
        assert(
-         builder != null || redirect != null,
-         'builder or redirect must be provided',
+         pageBuilder != null || builder != null || redirect != null,
+         'builder, pageBuilder, or redirect must be provided',
        ),
        super._();
 
@@ -141,6 +157,90 @@ class GoRoute extends RouteBase {
   /// Builds the page. A route with only a [redirect] has none, and must always
   /// redirect: landing on it is an error.
   final GoRouterWidgetBuilder? builder;
+
+  /// Builds the page as a [Page], which says how it moves on and off the
+  /// screen: a [CustomTransitionPage]'s `transitionsBuilder` is read as a
+  /// `PageRouteBuilder`'s is - for the page arriving or leaving, and for the
+  /// page beneath it as one is pushed over it or popped off it. Used before
+  /// [builder] when both are given, as in go_router.
+  final GoRouterPageBuilder? pageBuilder;
+
+  /// What the route draws, from [pageBuilder] or [builder]; null for a
+  /// route that only redirects.
+  GoRouterWidgetBuilder? get _draw {
+    final pageBuilder = this.pageBuilder;
+    if (pageBuilder != null) {
+      return (context, state) => _pageChild(pageBuilder(context, state));
+    }
+    return builder;
+  }
+}
+
+/// The widget a [Page] shows.
+Widget _pageChild(Page<dynamic> page) => switch (page) {
+  CustomTransitionPage(:final child) => child,
+  MaterialPage(:final child) => child,
+  _ => throw GoError(
+    '${page.runtimeType} is not a page this router can show: use a '
+    'CustomTransitionPage, a NoTransitionPage or a MaterialPage',
+  ),
+};
+
+/// A page that moves by a transition of its own: [transitionsBuilder] wraps
+/// [child] in the transition widgets it moves by, as a `PageRouteBuilder`'s
+/// does, over [transitionDuration] as it arrives and
+/// [reverseTransitionDuration] as it leaves. Its `secondaryAnimation` is read
+/// for how it moves when another page is pushed over it.
+class CustomTransitionPage<T> extends Page<T> {
+  const CustomTransitionPage({
+    required this.child,
+    required this.transitionsBuilder,
+    this.transitionDuration = const Duration(milliseconds: 300),
+    this.reverseTransitionDuration = const Duration(milliseconds: 300),
+    this.maintainState = true,
+    this.fullscreenDialog = false,
+    this.opaque = true,
+    this.barrierDismissible = false,
+    this.barrierColor,
+    this.barrierLabel,
+    super.key,
+    super.name,
+    super.arguments,
+    super.restorationId,
+  });
+
+  final Widget child;
+  final RouteTransitionsBuilder transitionsBuilder;
+  final Duration transitionDuration;
+  final Duration reverseTransitionDuration;
+  final bool maintainState;
+  final bool fullscreenDialog;
+  final bool opaque;
+  final bool barrierDismissible;
+  final Color? barrierColor;
+  final String? barrierLabel;
+}
+
+/// A page that is simply there: no move on or off the screen.
+class NoTransitionPage<T> extends CustomTransitionPage<T> {
+  const NoTransitionPage({
+    required super.child,
+    super.key,
+    super.name,
+    super.arguments,
+    super.restorationId,
+  }) : super(
+         transitionsBuilder: _noTransition,
+         transitionDuration: Duration.zero,
+         reverseTransitionDuration: Duration.zero,
+       );
+
+  static Widget _noTransition(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => child;
 }
 
 /// A frame shared by several routes - a navigation bar, a rail - drawn around
@@ -151,11 +251,32 @@ class GoRoute extends RouteBase {
 class ShellRoute extends RouteBase {
   const ShellRoute({
     super.redirect,
-    required ShellRouteBuilder this.builder,
+    this.builder,
+    this.pageBuilder,
     required super.routes,
-  }) : super._();
+  }) : assert(
+         builder != null || pageBuilder != null,
+         'builder or pageBuilder must be provided',
+       ),
+       super._();
 
   final ShellRouteBuilder? builder;
+
+  /// Builds the frame as a [Page]. Its transition moves the frame, with the
+  /// page inside it, when a navigation enters the shell from outside it or
+  /// leaves it; a move between two of the shell's own routes is the inner
+  /// page's. Used before [builder] when both are given, as in go_router.
+  final ShellRoutePageBuilder? pageBuilder;
+
+  /// What the frame draws, from [pageBuilder] or [builder].
+  ShellRouteBuilder get _draw {
+    final pageBuilder = this.pageBuilder;
+    if (pageBuilder != null) {
+      return (context, state, child) =>
+          _pageChild(pageBuilder(context, state, child));
+    }
+    return builder!;
+  }
 }
 
 /// One route's view of the current location.
@@ -223,7 +344,7 @@ class _Match {
   /// redirect-only route draws nothing.
   bool get isPage {
     final route = this.route;
-    return route is GoRoute && route.builder != null;
+    return route is GoRoute && route._draw != null;
   }
 }
 
@@ -324,12 +445,22 @@ class _Entry {
 /// One page to draw: the shells around it, what it is keyed by, and how it
 /// is built.
 class _PageSpec {
-  const _PageSpec(this.shells, this.list, this.tag, this.state, this.builder);
+  const _PageSpec(
+    this.shells,
+    this.list,
+    this.tag,
+    this.state,
+    this.builder, [
+    this.pageBuilder,
+  ]);
   final List<_Match> shells;
   final _MatchList list;
   final String tag;
   final GoRouterState state;
   final GoRouterWidgetBuilder builder;
+
+  /// The route's own, when it describes its page as a [Page].
+  final GoRouterPageBuilder? pageBuilder;
 }
 
 /// How a change to the stack should show in the platform's own history.
@@ -833,6 +964,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
           : stack.length < previous.length
           ? 'pop'
           : 'fade';
+      _movedFrom = previous;
     }
     for (final entry in previous) {
       if (entry.pushId == null) continue;
@@ -1031,7 +1163,8 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
           final move = _move;
           if (move != null && _ready) {
             _move = null;
-            announcePageTransition(context, move);
+            _announce(context, move, _movedFrom);
+            _movedFrom = null;
           }
           return _ready ? _buildTop() : const SizedBox();
         },
@@ -1041,6 +1174,61 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
 
   /// How the page on top was reached, until a build has said so.
   String? _move;
+
+  /// The stack before that move.
+  List<_Entry>? _movedFrom;
+
+  /// Tells the renderer how the page on top was reached ([move]) from the
+  /// one on top of [from], with the transitions of the pages that move.
+  void _announce(BuildContext context, String move, List<_Entry>? from) {
+    final now = _pageSpecs(_stack).lastOrNull;
+    final was = from == null ? null : _pageSpecs(from).lastOrNull;
+    final popped = move == 'pop';
+    final moving = _pageOf(context, popped ? was : now, popped ? now : was);
+    final beneath = move == 'fade'
+        ? null
+        : _pageOf(context, popped ? now : was, popped ? was : now);
+    final custom = moving is CustomTransitionPage ? moving : null;
+    announcePageTransition(
+      context,
+      move,
+      duration: custom == null
+          ? const Duration(milliseconds: 300)
+          : popped
+          ? custom.reverseTransitionDuration
+          : custom.transitionDuration,
+      transitions: custom?.transitionsBuilder,
+      covered: beneath is CustomTransitionPage
+          ? beneath.transitionsBuilder
+          : null,
+    );
+  }
+
+  /// The [Page] that moves when [spec] comes or goes beside [other]: the
+  /// outermost shell around [spec] that [other] is not in, as the whole
+  /// frame arrives or leaves with it, or else [spec]'s own page. Null where
+  /// that route has no `pageBuilder`.
+  Page<dynamic>? _pageOf(
+    BuildContext context,
+    _PageSpec? spec,
+    _PageSpec? other,
+  ) {
+    if (spec == null) return null;
+    for (var depth = 0; depth < spec.shells.length; depth++) {
+      final shell = spec.shells[depth];
+      final theirs = other != null && depth < other.shells.length
+          ? other.shells[depth].route
+          : null;
+      if (identical(shell.route, theirs)) continue;
+      final pageBuilder = (shell.route as ShellRoute).pageBuilder;
+      return pageBuilder?.call(
+        context,
+        spec.list.stateFor(shell),
+        const SizedBox(),
+      );
+    }
+    return spec.pageBuilder?.call(context, spec.state);
+  }
 
   void _attach(BuildContext context) {
     _context = context;
@@ -1052,9 +1240,12 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
   }
 
   /// Every page on the stack, the top one showing.
-  Widget _buildTop() {
+  Widget _buildTop() => _buildPages(_pageSpecs(_stack), 0, '');
+
+  /// The pages [stack] draws, oldest first.
+  List<_PageSpec> _pageSpecs(List<_Entry> stack) {
     final pages = <_PageSpec>[];
-    for (final entry in _stack) {
+    for (final entry in stack) {
       final list = entry.list;
       final pushed = entry.pushId == null ? '' : 'push${entry.pushId}:';
       if (list.page == null) {
@@ -1085,7 +1276,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
         final route = match.route;
         if (route is ShellRoute) {
           shells.add(match);
-        } else if (route is GoRoute && route.builder != null) {
+        } else if (route is GoRoute && route._draw != null) {
           final top = identical(match, list.matches.last);
           pages.add(
             _PageSpec(
@@ -1101,13 +1292,14 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
                   ? 'push${entry.pushId}'
                   : '${pushed}page:${match.matchedLocation}',
               list.stateFor(match),
-              route.builder!,
+              route._draw!,
+              route.pageBuilder,
             ),
           );
         }
       }
     }
-    return _buildPages(pages, 0, '');
+    return pages;
   }
 
   /// Draws [pages], oldest first, each inside the shells it has from [depth]
@@ -1151,7 +1343,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
           key: _RouteKey(this, tag),
           // The frame describes the page showing in it.
           state: inside.last.list.stateFor(inside.last.shells[depth]),
-          builder: (context, state) => shell.builder!(context, state, child),
+          builder: (context, state) => shell._draw(context, state, child),
         ),
       );
       i = end;

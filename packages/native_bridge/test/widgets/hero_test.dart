@@ -190,6 +190,59 @@ void main() {
     expect((shuttle['props'] as Map)['content'], 'shuttle pop');
   });
 
+  test('what stands in for it is sent with every tree', () async {
+    late BuildContext page;
+    late StateSetter rebuild;
+    Size? asked;
+    final tester = AppTester.widget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            page = context;
+            return const Scaffold(body: Hero(tag: 'a', child: Text('small')));
+          },
+        ),
+      ),
+    );
+    Navigator.of(page).push(
+      MaterialPageRoute<void>(
+        builder: (_) => StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return Scaffold(
+              body: Hero(
+                tag: 'a',
+                placeholderBuilder: (_, size, child) {
+                  asked = size;
+                  return Opacity(opacity: 0.5, child: child);
+                },
+                child: const Text('big'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await pumpEventQueue();
+
+    WidgetNode hero() =>
+        tester.ofType('Box').singleWhere((n) => n.props['hero'] == 'a');
+    final standIn = hero().props['heroPlaceholder'] as Map;
+    expect(asked, Size.zero);
+    expect(standIn.toString(), contains('big'));
+    // Not among what is laid out: the hero's child is.
+    expect(
+      tester.ofType('Text').where((n) => n.props['content'] == 'big'),
+      hasLength(1),
+    );
+
+    // Still there after the page has turned: the hero a later flight
+    // leaves is drawn from this tree.
+    rebuild(() {});
+    await pumpEventQueue();
+    expect(hero().props['heroPlaceholder'].toString(), contains('big'));
+  });
+
   group('MaterialRectArcTween', () {
     const begin = Rect.fromLTWH(0, 0, 10, 10);
     const end = Rect.fromLTWH(100, 200, 40, 40);

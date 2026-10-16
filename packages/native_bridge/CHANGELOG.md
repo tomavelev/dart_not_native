@@ -145,6 +145,149 @@ Flutter, it now agrees, and these are the places existing code has to change:
   grey block; under Materialize a disabled tonal button keeps a fill.
   A text button is written in the app's primary under both.
 
+### The page beneath moves too
+
+A route's transition is now also asked what its `secondaryAnimation` does to
+its page - what being covered does to it - and the page beneath moves that
+way as another is pushed over it, and back as that one is popped: the
+Cupertino-style parallax, written with a `PageRouteBuilder` or a route's own
+`buildTransitions`. Both pages move together on all four renderers, the one
+in its own right on top (`page` and `picture` on `RootProps.pageTransition`,
+now both at once). Over a page that leaves its own move to the renderer, that
+move is said in the same terms so the two go together. Seen on an iOS
+simulator, an Android emulator and in Chrome.
+
+### `GoRoute.pageBuilder` and `ShellRoute.pageBuilder`
+
+`GoRoute` takes go_router's `pageBuilder`, returning a
+`CustomTransitionPage` (its `transitionsBuilder`, `transitionDuration` and
+`reverseTransitionDuration`), a `NoTransitionPage` or a `MaterialPage` -
+`Page`, `MaterialPage` and `CupertinoPage` are in `widgets.dart`. A custom
+page moves by its transition as a `PageRouteBuilder` does, the page beneath
+by its own, and a `NoTransitionPage` is simply there.
+`announcePageTransition` takes the transitions for a router of an app's own.
+A `ShellRoute` takes one too (`ShellRoutePageBuilder`, its `builder` now
+optional): its page's transition moves the whole frame when a navigation
+enters the shell from outside or leaves it, while a move between two of the
+shell's own routes is the inner page's, as in go_router.
+
+### A hero's placeholder, and a shuttle laid out as it flies
+
+What `placeholderBuilder` builds stands in the hero's room while it flies
+(`heroPlaceholder`, now sent with every tree); it was accepted and not
+called. That is the arriving hero's room and, in the picture of the page it
+left, the room of the hero it flies from, each with its own placeholder, as
+in Flutter. The `heroSize` it is handed is `Size.zero` - the renderer lays it
+out to the room. A hero's room is its child's: a box that is only a hero
+could be stretched wider than its child on iOS, Android and the web, and the
+placeholder and the flight's two ends were the stretched box's. A
+`flightShuttleBuilder`'s shuttle is laid out at each size the flight passes
+through, so its words keep their size, where it used to be drawn once and
+stretched; a hero with no shuttle is still a picture of itself, stretched.
+Seen on an iOS simulator, an Android emulator, in Chrome and in the Flutter
+host's tests.
+
+### Widgets in a line of text, and words that can be held
+
+- A `WidgetSpan` is its widget in the line, its middle on the middle of the
+  text: the widget itself in the browser and the Flutter host, a picture of
+  it on iOS and Android, where a tap on the picture is a tap on the first
+  thing in it that takes one. It used to be left out.
+- A span with a `LongPressGestureRecognizer` sends its event when held
+  (`longPressEventId`), on all four renderers.
+- `SelectableText.rich` is here, and its links can be tapped and held - on
+  iOS too, where a selectable text's links did nothing.
+
+Seen on an iOS simulator, an Android emulator and in Chrome.
+
+### A `Directionality` deep in a screen turns the platform's controls
+
+A `Directionality` that reads the other way from what is around it tells the
+renderer so on its child's node (`layoutDirection`), and the platform's own
+controls below it run that way - a row of them from the right, a switch
+mirrored, a field's text from the other side - where only the widget layer's
+own values turned before. A `Row` inside one is no longer sent reversed: the
+renderer lays it out. Seen on an iOS simulator, an Android emulator (which
+lays nothing out right to left in an app that has not declared it can, so
+the renderer declares it) and in Chrome.
+
+### A drawer slides in from the side
+
+`Scaffold.drawer` and `endDrawer` are panels from the start and end edge, the
+height of the screen and as wide as the `Drawer` says (304 unless it says),
+over a scrim, closed by a tap on it, Back or a swipe towards the edge (`side`
+and `width` on a `BottomSheet` node). They were sheets from the bottom. A
+drawer's content is laid out to the panel's height, so a `ListView` in it
+scrolls there. A swipe in from the edge opens one too: a drag that starts
+within 20 pixels of the edge and moves in from it raises `drawerEdgeEventId`
+(`endDrawerEdgeEventId`) on the `Scaffold` node, unless
+`drawerEnableOpenDragGesture` says not. The panel then slides in by itself
+rather than under the finger. On Android with gesture navigation the 20 pixels
+start where the system's back strip ends, as in Flutter; on iOS it is a pan
+that may only begin by an edge, so a tap there still reaches what is beneath.
+Seen on an iOS simulator, an Android emulator and in Chrome.
+
+### An image given only a width
+
+An `Image` with a `width` and no `height` is as tall as that width makes the
+picture in its own proportions, as Flutter's is. Android showed the bitmap at
+its own height in pixels, smaller than it should have been; iOS took the
+picture's height in points, and reserved a tall space of no particular
+height before it arrived, where it now reserves none. Seen on an iOS
+simulator and an Android emulator.
+
+### `TextPainter` measures with Roboto's widths
+
+A character is as wide as it is in Roboto - regular, or bold from weight 600
+up - plus the style's `letterSpacing`, for Latin, Greek, Cyrillic and their
+punctuation (`lib/src/glyph_widths.dart`, generated from the Flutter SDK's
+font files by `tool/generate_glyph_widths.dart`); 0.55 of the font size was
+the estimate for every one. The text goes to the renderer broken into the
+lines it was measured as, and is not broken again: SF on iOS, a few per cent
+wider, stands out past the measured box rather than wrapping. A canvas text's
+`letterSpacing` is drawn now. Seen on an iOS simulator, an Android emulator
+and in Chrome.
+
+### Times in a locale's own digits, and the device's clock
+
+`TimeOfDay.format` writes the digits a locale writes numbers in, as Flutter
+does from `intl` - `۱۵:۰۵` in Persian, Bengali's, Egyptian Arabic's
+(`timeDigitZeros`, generated with the time formats). Every renderer reports
+the device's 24-hour setting with its window (`use24Hour`), which is
+`MediaQueryData.alwaysUse24HourFormat`; a browser has no such setting and
+reports its language's clock.
+
+### A text field's states, and the words around it
+
+`InputDecoration`'s `focusedBorder`, `errorBorder` and `disabledBorder` are
+drawn in their own colour and width on all four renderers - the kind is the
+resting border's - and `hintStyle`, `labelStyle` and `helperStyle` give the
+hint, the label and the helper their colour, size and weight. A focused
+field in error has the error's outline. On Android the hint takes its colour
+only. Seen on an iOS simulator, an Android emulator and in Chrome, on fields
+with their labels above them; an Android field with a floating label -
+Material's box, which takes the colours and widths through its own state
+lists - was not looked at.
+
+### `AnimatedSize` follows a child that changes by itself
+
+A box that moves to its size now moves when its child changes size between
+renders - a picture arriving - in the browser and on iOS, as it already did
+on Android and in the Flutter host. Seen on all three. In the browser the
+child is held at its size, both ways, while the box moves over it.
+
+### Smaller things, this round
+
+- Rich text in the browser lost what was inside the boxes of a widget in its
+  line; a long press and a drawer's swipe there read the pointer through
+  the integer-typed `clientX` - the fault "A pointer between two pixels"
+  describes, made again in new code - and did nothing for a real finger or
+  mouse. Both found looking, both fixed, and the tests now press between
+  pixels.
+- A page moving over another in the browser keeps a background of its own;
+  it was painted over with the body's colour for the move.
+- An Android drawer opened while the app rendered again slid in twice.
+
 ### A drag carries its feedback, and says where it ended
 
 `Draggable.feedback` was accepted and not drawn: what followed the finger was
@@ -197,8 +340,8 @@ In a `MaterialApp` a hero flies along Flutter's Material arc
 is called on the tree that turns the page, and what it builds flies in the
 hero's place - its own, or else the one the hero it flies from has. Seen on
 an iOS simulator, an Android emulator, in Chrome and in the Flutter host.
-Short of Flutter: the shuttle is drawn once, at the end of the flight, and
-stretched on the way, and the animation it is handed stands at its end.
+Short of Flutter: the animation the shuttle is handed stands at its end
+(and, until the entry above, it was drawn once and stretched).
 
 ### Pinned headers stack
 

@@ -11,6 +11,11 @@
 /// A regional locale is written only where it differs from its language:
 /// `en_GB` is there because Britain writes `HH:mm` and English `h:mm a`;
 /// `en_CA` is not, because it writes what English does.
+///
+/// The digits come from `intl`, which `flutter_localizations` writes the hour
+/// and the minutes with: the zero of every locale whose numbers are not
+/// written 0-9 (`fa` writes ۰), from the copy of `intl` in the pub cache
+/// that the SDK's constraint allows - the newest one there.
 library;
 
 import 'dart:convert';
@@ -122,11 +127,90 @@ const Map<String, (String, String, String)> timeOfDayFormats = {
   }
   out.writeln('};');
 
+  final zeros = _zeroDigits(flutterRoot);
+  out
+    ..writeln()
+    ..writeln(
+      '/// By locale tag, the zero of the digits a time is written in, where '
+      'they',
+    )
+    ..writeln(
+      '/// are not 0-9 - as `intl`, which Flutter formats the hour and the',
+    )
+    ..writeln(
+      '/// minutes with, has them. The other nine follow it in Unicode.',
+    )
+    ..writeln('const Map<String, String> timeDigitZeros = {');
+  for (final tag in zeros.keys.toList()..sort()) {
+    final zero = zeros[tag]!.runes.single
+        .toRadixString(16)
+        .toUpperCase()
+        .padLeft(4, '0');
+    out.writeln("  ${quoted(tag)}: '\\u$zero',");
+  }
+  out.writeln('};');
+
   final file = File('packages/native_bridge/lib/src/time_formats.dart')
     ..writeAsStringSync(out.toString());
   stdout.writeln(
     '${table.length} locales (of ${stated.length} in the SDK) in ${file.path}',
   );
+}
+
+/// The zero digit of each locale `intl` writes numbers in other digits for.
+Map<String, String> _zeroDigits(String flutterRoot) {
+  final pubspec = File(
+    '$flutterRoot/packages/flutter_localizations/pubspec.yaml',
+  ).readAsStringSync();
+  final wanted = RegExp(
+    r'^\s+intl:\s*\^?(\d+)\.(\d+)\.',
+    multiLine: true,
+  ).firstMatch(pubspec);
+  if (wanted == null) {
+    stderr.writeln('flutter_localizations names no intl version.');
+    exit(2);
+  }
+  final series = 'intl-${wanted.group(1)}.${wanted.group(2)}.';
+  final home =
+      Platform.environment['PUB_CACHE'] ??
+      '${Platform.environment['HOME']}/.pub-cache';
+  final copies =
+      Directory('$home/hosted/pub.dev')
+          .listSync()
+          .whereType<Directory>()
+          .map((dir) => dir.uri.pathSegments.where((s) => s.isNotEmpty).last)
+          .where((name) => name.startsWith(series))
+          .toList()
+        ..sort((a, b) {
+          int patch(String name) =>
+              int.tryParse(name.substring(series.length)) ?? -1;
+          return patch(a).compareTo(patch(b));
+        });
+  if (copies.isEmpty) {
+    stderr.writeln(
+      'No $series* in $home - run `flutter pub get` somewhere '
+      'that uses flutter_localizations.',
+    );
+    exit(2);
+  }
+  final data = File(
+    '$home/hosted/pub.dev/${copies.last}/lib/number_symbols_data.dart',
+  ).readAsStringSync();
+  final zeros = <String, String>{};
+  final entry = RegExp(
+    r"""NAME: "(\w+)",.*?ZERO_DIGIT: '([^']+)'""",
+    dotAll: true,
+  );
+  for (final match in entry.allMatches(data)) {
+    final zero = match
+        .group(2)!
+        .replaceAllMapped(
+          RegExp(r'\\u([0-9A-Fa-f]{4})'),
+          (m) => String.fromCharCode(int.parse(m.group(1)!, radix: 16)),
+        );
+    if (zero != '0') zeros[match.group(1)!] = zero;
+  }
+  return zeros;
 }
 
 /// The SDK the `flutter` on the PATH belongs to.
@@ -138,8 +222,7 @@ String _flutterRootFromPath() {
     exit(2);
   }
   // .../flutter/bin/flutter, through any symlink.
-  return File(path).resolveSymbolicLinksSync().replaceFirst(
-    RegExp(r'/bin/flutter$'),
-    '',
-  );
+  return File(
+    path,
+  ).resolveSymbolicLinksSync().replaceFirst(RegExp(r'/bin/flutter$'), '');
 }

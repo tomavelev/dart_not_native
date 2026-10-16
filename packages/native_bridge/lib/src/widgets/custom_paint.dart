@@ -930,20 +930,32 @@ class _CustomPaintState extends State<CustomPaint> {
   Widget build(BuildContext context) => _NodeWidget(_node);
 }
 
+/// What a character is measured by: its font size, line-height multiple,
+/// whether it is bold, and the spacing after it.
+typedef _Measure = ({double size, double height, bool bold, double spacing});
+
 /// Measures and draws text on a [Canvas] - Flutter's `TextPainter`.
 ///
-/// **The measurements are estimates.** Flutter asks its text engine how wide
-/// a string is; pure Dart has no font to ask. So a character is taken to be
-/// 0.55 × its font size wide - twice that for emoji and CJK (code points from
-/// U+2E80 up) - and a line 1.2 × the font size tall (or the style's own
-/// `height` multiple). Lines break at `\n` and, past `maxWidth`, at the last
-/// space that fits. The default font size is 14.
+/// **The measurements are Roboto's.** Flutter asks its text engine how wide a
+/// string is; pure Dart has no engine to ask, so each character is given its
+/// advance width in Roboto - the font Android and a Flutter app draw in -
+/// regular, or bold from weight 600 up, plus the style's `letterSpacing`
+/// (`glyph_widths.dart`, generated from the font files). That covers Latin,
+/// Greek, Cyrillic and their punctuation; iOS's and a browser's own fonts
+/// come out within a few per cent of it. Anything else is an estimate: 0.55
+/// × the font size, and 1.1 × for emoji and CJK (code points from U+2E80
+/// up). Kerning and ligatures are not counted. A line is 1.2 × the font size
+/// tall (or the style's own `height` multiple). Lines break at `\n` and, past
+/// `maxWidth`, at the last space that fits. The default font size is 14.
 ///
 /// To keep the estimate from showing, [paint] sends the box it measured along
 /// with the text: the command carries `maxWidth` - the estimated width - and
 /// the [textAlign]. A painter that centres text by `(size.width - tp.width) /
 /// 2` with `textAlign: TextAlign.center` therefore gets text centred on the
-/// same point with the real glyphs, however far off the estimate was.
+/// same point with the real glyphs, however far off the estimate was. The
+/// text goes broken into the lines it was measured as (`wrap: false`), so a
+/// platform font a little wider than Roboto - SF on iOS - stands out past
+/// the box by a few points rather than wrapping onto a line nobody measured.
 ///
 /// Child spans are measured with their own font sizes and then drawn as one
 /// run in the root span's style: the `text` command has one style. [maxLines]
@@ -976,6 +988,9 @@ class TextPainter {
   double _height = 0;
   bool _laidOut = false;
 
+  /// The text as [layout] broke it into lines.
+  List<String> _lines = const [];
+
   /// The estimated width - see the class doc.
   double get width => _width;
 
@@ -993,28 +1008,51 @@ class TextPainter {
       (text?.style?.fontSize ?? _defaultFontSize) *
       (text?.style?.height ?? 1.2);
 
-  static double _advance(int codePoint, double fontSize) =>
-      (codePoint >= 0x2E80 ? 1.1 : 0.55) * fontSize;
+  /// How wide [codePoint] is at [fontSize]: Roboto's own width where the
+  /// table has it, the estimate where it does not.
+  static double _advance(int codePoint, double fontSize, {bool bold = false}) {
+    final known = _glyphWidth(codePoint, bold: bold);
+    if (known != null) return known * fontSize / 1000;
+    return (codePoint >= 0x2E80 ? 1.1 : 0.55) * fontSize;
+  }
 
-  /// The span tree as characters, each with the font size and line-height
-  /// multiple it inherits.
+  /// Roboto's width for [rune] in thousandths of an em, or null where the
+  /// table has none.
+  static int? _glyphWidth(int rune, {required bool bold}) {
+    for (final (start, regular, heavy) in glyphWidthRuns) {
+      final index = rune - start;
+      if (index < 0 || index >= regular.length) continue;
+      final width = (bold ? heavy : regular)[index];
+      return width == 0 ? null : width;
+    }
+    return null;
+  }
+
+  /// The span tree as characters, each with the font size, line-height
+  /// multiple, weight and letter spacing it inherits.
   static void _flatten(
     InlineSpan span,
-    double fontSize,
-    double lineHeight,
-    List<(int, double, double)> out,
+    _Measure inherited,
+    List<(int, _Measure)> out,
   ) {
     if (span is! TextSpan) return;
-    final size = span.style?.fontSize ?? fontSize;
-    final height = span.style?.height ?? lineHeight;
+    final style = span.style;
+    final measure = (
+      size: style?.fontSize ?? inherited.size,
+      height: style?.height ?? inherited.height,
+      bold: style?.fontWeight == null
+          ? inherited.bold
+          : style!.fontWeight!.value >= 600,
+      spacing: style?.letterSpacing ?? inherited.spacing,
+    );
     final own = span.text;
     if (own != null) {
       for (final rune in own.runes) {
-        out.add((rune, size, height));
+        out.add((rune, measure));
       }
     }
     for (final child in span.children ?? const <InlineSpan>[]) {
-      _flatten(child, size, height, out);
+      _flatten(child, measure, out);
     }
   }
 
@@ -1025,8 +1063,14 @@ class TextPainter {
     final root = text;
     final rootSize = root?.style?.fontSize ?? _defaultFontSize;
     final rootHeight = root?.style?.height ?? 1.2;
-    final characters = <(int, double, double)>[];
-    if (root != null) _flatten(root, rootSize, rootHeight, characters);
+    final characters = <(int, _Measure)>[];
+    if (root != null) {
+      _flatten(
+        root,
+        (size: rootSize, height: rootHeight, bold: false, spacing: 0),
+        characters,
+      );
+    }
 
     // One pass, breaking as it goes. `lineWidths` are as wrapped;
     // `longestUnwrapped` is what the text would take with all the room in
@@ -1042,6 +1086,11 @@ class TextPainter {
     // which is where a line that runs out of room is cut.
     double? widthAtSpace;
     var afterSpace = 0.0;
+    // Where each line starts among the characters, and where the current
+    // line's last space is: the words each line holds, for [paint].
+    final starts = <int>[0];
+    final ends = <int>[];
+    int? spaceAt;
 
     void endLine() {
       lineHeights.add(lineHeight);
@@ -1053,14 +1102,19 @@ class TextPainter {
       afterSpace = 0;
     }
 
-    for (final (rune, size, height) in characters) {
+    for (var i = 0; i < characters.length; i++) {
+      final (rune, measure) = characters[i];
+      final (:size, :height, :bold, :spacing) = measure;
       if (rune == 0x0A) {
         longestUnwrapped = math.max(longestUnwrapped, unwrapped);
         unwrapped = 0;
         endLine();
+        ends.add(i);
+        starts.add(i + 1);
+        spaceAt = null;
         continue;
       }
-      final advance = _advance(rune, size);
+      final advance = _advance(rune, size, bold: bold) + spacing;
       unwrapped += advance;
       if (hasInk && lineWidth + advance > maxWidth) {
         final cut = widthAtSpace;
@@ -1071,9 +1125,14 @@ class TextPainter {
           endLine();
           lineWidth = carried;
           hasInk = carried > 0;
+          ends.add(spaceAt!);
+          starts.add(spaceAt + 1);
         } else {
           endLine();
+          ends.add(i);
+          starts.add(i);
         }
+        spaceAt = null;
       }
       lineWidth += advance;
       lineHeight = hasInk
@@ -1083,12 +1142,20 @@ class TextPainter {
       if (rune == 0x20) {
         widthAtSpace = lineWidth;
         afterSpace = 0;
+        spaceAt = i;
       } else if (widthAtSpace != null) {
         afterSpace += advance;
       }
     }
     longestUnwrapped = math.max(longestUnwrapped, unwrapped);
     endLine();
+    ends.add(characters.length);
+    _lines = [
+      for (var line = 0; line < starts.length; line++)
+        String.fromCharCodes([
+          for (var at = starts[line]; at < ends[line]; at++) characters[at].$1,
+        ]),
+    ];
 
     final limit = maxLines;
     final lines = limit != null && limit > 0 && lineHeights.length > limit
@@ -1118,15 +1185,25 @@ class TextPainter {
       TextAlign.start => rtl ? 'right' : 'left',
       TextAlign.end => rtl ? 'left' : 'right',
     };
+    final limit = maxLines;
+    final lines = limit != null && limit > 0 && _lines.length > limit
+        ? _lines.sublist(0, limit)
+        : _lines;
     canvas._commands.add([
       'text',
-      root.toPlainText(),
+      // Broken where the measuring broke it, and not again: a renderer's
+      // glyphs a little wider than the measure stand out past the box
+      // rather than wrap onto a line nobody measured.
+      lines.join('\n'),
       offset.dx,
       offset.dy,
       <String, dynamic>{
+        'wrap': false,
         'size': style?.fontSize ?? _defaultFontSize,
         if (style?.color != null) 'color': style!.color!._hex,
         if (style?.fontWeight != null) 'weight': style!.fontWeight!.value,
+        if (style?.letterSpacing != null && style!.letterSpacing != 0)
+          'letterSpacing': style.letterSpacing,
         'align': align,
         'maxWidth': _width,
         if (style?.fontFamily != null) 'family': style!.fontFamily,

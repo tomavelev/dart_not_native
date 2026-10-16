@@ -330,7 +330,7 @@ class NativeUIRenderer(
         val page = transition["page"] as? Map<*, *>
         val moved = transition["picture"] as? Map<*, *>
         if (page != null || moved != null) {
-            moveByRoute(root, picture, ms, page, moved)
+            moveByRoute(root, picture, ms, page, moved, transition["kind"] == "pop")
             return
         }
         val leaving = android.graphics.drawable.BitmapDrawable(root.resources, picture)
@@ -364,11 +364,12 @@ class NativeUIRenderer(
     }
 
     /**
-     * Moves the pages the way a route's own transition says (see Dart's
-     * `RootProps.pageTransition`): the new [page] from where it starts to its
-     * place, over [shot] of the old one lying still beneath it as the root's
-     * background - or [shot] from its place to where [moved] says, over the
-     * new page.
+     * Moves the pages the way a route's transitions say (see Dart's
+     * `RootProps.pageTransition`): the new page from where [page] says to its
+     * place, and [shot] of the old one from its place to where [moved] says.
+     * The page that moves in its own right is on top: the new one - [shot]
+     * lying beneath it as the root's background - unless the move is a pop,
+     * when [shot] is laid over it.
      */
     private fun moveByRoute(
         root: ViewGroup,
@@ -376,52 +377,64 @@ class NativeUIRenderer(
         ms: Long,
         page: Map<*, *>?,
         moved: Map<*, *>?,
+        popped: Boolean,
     ) {
-        val motion = page ?: moved ?: return
-        fun n(key: String, fallback: Float) = (motion[key] as? Number)?.toFloat() ?: fallback
-        val opacity = n("opacity", 1f).coerceIn(0f, 1f)
-        val dx = n("dx", 0f)
-        val dy = n("dy", 0f)
-        val scale = n("scale", 1f)
-        val rotate = Math.toDegrees(n("rotate", 0f).toDouble()).toFloat()
+        class Motion(private val m: Map<*, *>) {
+            fun n(key: String, fallback: Float) = (m[key] as? Number)?.toFloat() ?: fallback
+            val opacity = n("opacity", 1f).coerceIn(0f, 1f)
+            val dx = n("dx", 0f)
+            val dy = n("dy", 0f)
+            val scale = n("scale", 1f)
+            val rotate = Math.toDegrees(n("rotate", 0f).toDouble()).toFloat()
+            // Straight through, as a route's animation runs, unless it says.
+            val curve = interpolator(mapOf("curve" to (m["curve"] ?: "linear")))
+        }
+        val arriving = page?.let { Motion(it) }
+        val leaving = moved?.let { Motion(it) }
         val width = root.width.toFloat()
         val height = root.height.toFloat()
         val picture = MovingPicture(shot)
         picture.setBounds(0, 0, root.width, root.height)
         val background = root.background
-        if (page != null) root.background = picture else root.overlay.add(picture)
+        if (popped) root.overlay.add(picture) else root.background = picture
+        // Nothing says where a popped page's picture goes: it is simply gone.
+        if (popped && leaving == null) picture.alpha = 0
         // How far along the move is: from where the page starts to its place,
-        // or from the picture's place to where it goes.
+        // and from the picture's place to where it goes.
         fun place(t: Float) {
-            fun lerp(from: Float, to: Float) = from + (to - from) * t
-            if (page != null) {
-                val view = currentRoot ?: return
-                view.alpha = lerp(opacity, 1f)
-                view.translationX = lerp(dx * width, 0f)
-                view.translationY = lerp(dy * height, 0f)
-                view.scaleX = lerp(scale, 1f)
-                view.scaleY = lerp(scale, 1f)
-                view.rotation = lerp(rotate, 0f)
-            } else {
-                picture.alpha = (255 * lerp(1f, opacity)).toInt()
-                picture.dx = lerp(0f, dx * width)
-                picture.dy = lerp(0f, dy * height)
-                picture.scale = lerp(1f, scale)
-                picture.rotate = lerp(0f, rotate)
+            fun lerp(from: Float, to: Float, along: Float) = from + (to - from) * along
+            if (arriving != null) {
+                currentRoot?.let { view ->
+                    val e = arriving.curve.getInterpolation(t)
+                    view.alpha = lerp(arriving.opacity, 1f, e)
+                    view.translationX = lerp(arriving.dx * width, 0f, e)
+                    view.translationY = lerp(arriving.dy * height, 0f, e)
+                    view.scaleX = lerp(arriving.scale, 1f, e)
+                    view.scaleY = lerp(arriving.scale, 1f, e)
+                    view.rotation = lerp(arriving.rotate, 0f, e)
+                }
+            }
+            if (leaving != null) {
+                val e = leaving.curve.getInterpolation(t)
+                picture.alpha = (255 * lerp(1f, leaving.opacity, e)).toInt()
+                picture.dx = lerp(0f, leaving.dx * width, e)
+                picture.dy = lerp(0f, leaving.dy * height, e)
+                picture.scale = lerp(1f, leaving.scale, e)
+                picture.rotate = lerp(0f, leaving.rotate, e)
                 picture.invalidateSelf()
             }
         }
         val run = android.animation.ValueAnimator.ofFloat(0f, 1f)
         run.duration = ms
-        // Straight through, as a route's animation runs, unless it says.
-        run.interpolator = interpolator(mapOf("curve" to (motion["curve"] ?: "linear")))
+        // Each move runs along its own curve, inside [place].
+        run.interpolator = android.view.animation.LinearInterpolator()
         run.addUpdateListener { step ->
             place(step.animatedValue as Float)
             root.invalidate()
         }
         run.addListener(object : android.animation.AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: android.animation.Animator) {
-                if (page != null) root.background = background else root.overlay.remove(picture)
+                if (popped) root.overlay.remove(picture) else root.background = background
                 place(1f)
                 currentRoot?.let {
                     it.alpha = 1f
@@ -457,30 +470,74 @@ class NativeUIRenderer(
     /** What flies in a hero's place (`heroShuttle`), by view. */
     private val heroShuttles = java.util.WeakHashMap<View, Map<*, *>>()
 
-    /**
-     * A picture of what flies for [hero]: its shuttle drawn at [width] by
-     * [height], or the hero itself.
-     */
-    private fun flightPicture(hero: View, width: Int, height: Int): android.graphics.Bitmap? {
-        val shuttle = heroShuttles[hero]?.let { renderWidget(normalized(it)) }
-        val drawn = shuttle ?: hero
-        val w = if (shuttle != null) width else hero.width
-        val h = if (shuttle != null) height else hero.height
-        if (w <= 0 || h <= 0) return null
-        if (shuttle != null) {
-            shuttle.measure(
-                View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
-            )
-            shuttle.layout(0, 0, w, h)
-        }
+    /** The props a box that is only a hero has. */
+    private val HERO_KEYS = setOf("id", "hero", "heroArc", "heroShuttle", "heroPlaceholder")
+
+    /** The heroes whose box sizes or paints itself, and so is their room. */
+    private val selfRoomHeroes = java.util.WeakHashMap<View, Boolean>()
+
+    /** What stands in a hero's room while it flies (`heroPlaceholder`). */
+    private val heroPlaceholders = java.util.WeakHashMap<View, Map<*, *>>()
+
+    /** A picture of [hero]'s room as it is, to stretch over its flight. */
+    private fun flightPicture(hero: View): android.graphics.Bitmap? {
+        val room = heroRoom(hero)
+        if (room.width() <= 0 || room.height() <= 0) return null
         val picture = try {
-            android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            android.graphics.Bitmap.createBitmap(
+                room.width(), room.height(), android.graphics.Bitmap.Config.ARGB_8888,
+            )
         } catch (e: OutOfMemoryError) {
             return null
         }
-        drawn.draw(android.graphics.Canvas(picture))
+        val canvas = android.graphics.Canvas(picture)
+        canvas.translate(-room.left.toFloat(), -room.top.toFloat())
+        hero.draw(canvas)
         return picture
+    }
+
+    /**
+     * The room a hero takes, in its own space: what its children cover. Its
+     * box paints nothing of its own and can be stretched wider than they are,
+     * while a Flutter `Hero` is exactly its child's size.
+     */
+    private fun heroRoom(hero: View): android.graphics.Rect {
+        val whole = android.graphics.Rect(0, 0, hero.width, hero.height)
+        if (selfRoomHeroes[hero] == true) return whole
+        val group = hero as? ViewGroup ?: return whole
+        val covered = android.graphics.Rect()
+        for (i in 0 until group.childCount) {
+            val child = group.getChildAt(i)
+            if (child.visibility != View.VISIBLE || child.width <= 0 || child.height <= 0) continue
+            covered.union(child.left, child.top, child.right, child.bottom)
+        }
+        return if (covered.isEmpty || !covered.intersect(whole)) whole else covered
+    }
+
+    /** Lays [view], which belongs to an overlay, out over [box]. */
+    private fun placeOver(view: View, left: Int, top: Int, right: Int, bottom: Int) {
+        val w = (right - left).coerceAtLeast(0)
+        val h = (bottom - top).coerceAtLeast(0)
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
+        )
+        view.layout(left, top, right, bottom)
+    }
+
+    /**
+     * What [hero] said stands in its room while it flies, laid out over it
+     * in its parent's overlay; null when it said nothing.
+     */
+    private fun placeholderOver(hero: View): Pair<ViewGroup, View>? {
+        val parent = hero.parent as? ViewGroup ?: return null
+        val standIn = heroPlaceholders[hero]?.let { renderWidget(normalized(it)) }
+            ?: return null
+        val room = heroRoom(hero)
+        room.offset(hero.left, hero.top)
+        placeOver(standIn, room.left, room.top, room.right, room.bottom)
+        parent.overlay.add(standIn)
+        return parent to standIn
     }
 
     /** Every hero's name in [node] and below it. */
@@ -490,7 +547,7 @@ class NativeUIRenderer(
         return into
     }
 
-    /** Where [view] is drawn in [root], or null when it is not on screen. */
+    /** Where hero [view]'s room is drawn in [root], or null when it is not on screen. */
     private fun placeIn(root: View, view: View): android.graphics.Rect? {
         if (!view.isAttachedToWindow || !view.isShown) return null
         if (view.width <= 0 || view.height <= 0) return null
@@ -498,9 +555,9 @@ class NativeUIRenderer(
         val origin = IntArray(2)
         view.getLocationInWindow(at)
         root.getLocationInWindow(origin)
-        val x = at[0] - origin[0]
-        val y = at[1] - origin[1]
-        return android.graphics.Rect(x, y, x + view.width, y + view.height)
+        val room = heroRoom(view)
+        room.offset(at[0] - origin[0], at[1] - origin[1])
+        return room
     }
 
     /** The heroes on screen with one of [names], and where each stands. */
@@ -569,12 +626,25 @@ class NativeUIRenderer(
         end: android.graphics.Rect,
         ms: Long,
     ) {
-        val picture = flightPicture(hero, end.width(), end.height()) ?: return
-        val flight = android.graphics.drawable.BitmapDrawable(root.resources, picture)
-        flight.bounds = start
-        root.overlay.add(flight)
+        // What the hero said flies in its place, laid out at each size it
+        // passes through; or else a picture of the hero, stretched.
+        // A drawable either way, so it is drawn over the old page's picture
+        // in the same overlay rather than under it.
+        val shuttle = heroShuttles[hero]?.let { renderWidget(normalized(it)) }
+        val picture = if (shuttle == null) flightPicture(hero) ?: return else null
+        val drawn: android.graphics.drawable.Drawable = if (shuttle != null) {
+            LaidOutView(shuttle)
+        } else {
+            android.graphics.drawable.BitmapDrawable(root.resources, picture)
+        }
+        fun place(left: Int, top: Int, right: Int, bottom: Int) =
+            drawn.setBounds(left, top, right, bottom)
+        place(start.left, start.top, start.right, start.bottom)
+        root.overlay.add(drawn)
         val shown = hero.alpha
         hero.alpha = 0f
+        // What stands in its room meanwhile, over it in its parent.
+        val (parent, standIn) = placeholderOver(hero) ?: (null to null)
         val run = android.animation.ValueAnimator.ofFloat(0f, 1f)
         run.duration = ms
         run.interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)
@@ -586,11 +656,9 @@ class NativeUIRenderer(
             val t = step.animatedValue as Float
             if (arc != null) {
                 val at = arc.at(t)
-                flight.setBounds(
-                    at.left.toInt(), at.top.toInt(), at.right.toInt(), at.bottom.toInt(),
-                )
+                place(at.left.toInt(), at.top.toInt(), at.right.toInt(), at.bottom.toInt())
             } else {
-                flight.setBounds(
+                place(
                     between(start.left, end.left, t),
                     between(start.top, end.top, t),
                     between(start.right, end.right, t),
@@ -601,9 +669,10 @@ class NativeUIRenderer(
         }
         run.addListener(object : android.animation.AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: android.animation.Animator) {
-                root.overlay.remove(flight)
+                root.overlay.remove(drawn)
+                if (standIn != null) parent?.overlay?.remove(standIn)
                 hero.alpha = shown
-                picture.recycle()
+                picture?.recycle()
             }
         })
         run.start()
@@ -1025,6 +1094,8 @@ class NativeUIRenderer(
             // paint: an app in "system" mode is the one that needs to know.
             "dark" to ((configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES),
+            // The device's 24-hour switch, as Flutter reads it.
+            "use24Hour" to android.text.format.DateFormat.is24HourFormat(activity),
         )
         if (viewport == lastViewport) return
         lastViewport = viewport
@@ -1349,10 +1420,22 @@ class NativeUIRenderer(
             val heroes = heroPlaces(root, heroNames(next, HashSet()))
             val hidden = heroes.keys.map { it to it.alpha }
             hidden.forEach { (view, _) -> view.alpha = 0f }
+            // What each said stands in its room meanwhile, in the picture: in
+            // the root's own overlay, which drawing the root into a picture
+            // draws - a parent's is not, when it paints nothing itself.
+            val standIns = heroes.mapNotNull { (hero, place) ->
+                val standIn = heroPlaceholders[hero]?.let { renderWidget(normalized(it)) }
+                    ?: return@mapNotNull null
+                val at = place.second
+                placeOver(standIn, at.left, at.top, at.right, at.bottom)
+                root.overlay.add(standIn)
+                standIn
+            }
             movePages(root, transition, next["textDirection"] == "rtl")
             // A patch may keep these very views: they are only out of sight
             // for the picture.
             hidden.forEach { (view, alpha) -> view.alpha = alpha }
+            standIns.forEach { root.overlay.remove(it) }
             if (heroes.isNotEmpty()) {
                 flyHeroes(root, heroes, (transition["ms"] as? Number)?.toLong() ?: 300L)
             }
@@ -2130,7 +2213,21 @@ class NativeUIRenderer(
         if (oldNode["bodyScrolls"] != newNode["bodyScrolls"]) return false
         if (oldNode["safeArea"] != newNode["safeArea"]) return false
         scaffold.setBackgroundColor(color(newNode["backgroundColor"], themeSurface))
+        watchDrawerEdges(scaffold, newNode)
         return true
+    }
+
+    /**
+     * Has a drag in from [scaffold]'s start or end edge raise the drawer
+     * event for that edge (`drawerEdgeEventId`, `endDrawerEdgeEventId`).
+     */
+    private fun watchDrawerEdges(scaffold: ScaffoldLayout, node: Map<*, *>) {
+        fun opener(key: String): (() -> Unit)? {
+            val eventId = node[key] as? String ?: return null
+            return { sendEvent(eventId, emptyMap()) }
+        }
+        scaffold.openStart = opener("drawerEdgeEventId")
+        scaffold.openEnd = opener("endDrawerEdgeEventId")
     }
 
     /** Re-derives a checkbox/switch/radio's label, enabled and checked state. */
@@ -2327,6 +2424,43 @@ class NativeUIRenderer(
     // Dispatch
     // -------------------------------------------------------------------------
 
+    /**
+     * Lays [view] out the way [node] reads (`layoutDirection`, a
+     * `Directionality` deep in a screen), and everything below it with it,
+     * which inherits it; or as what is around it, when the node says
+     * nothing.
+     */
+    private fun turn(view: View, node: Map<*, *>) {
+        val rtl = when (node["layoutDirection"]) {
+            "rtl" -> true
+            "ltr" -> false
+            else -> null
+        }
+        // A view never turned is left as it was made: inheriting.
+        if (rtl == null && turnedViews.remove(view) == null) return
+        if (rtl != null) turnedViews[view] = rtl
+        // Nothing resolves to right to left in an app that has not declared
+        // it can, which a node asking for it does - as a screen asking for it
+        // does in applyDirection.
+        if (rtl == true) {
+            val info = activity.applicationInfo
+            info.flags = info.flags or android.content.pm.ApplicationInfo.FLAG_SUPPORTS_RTL
+        }
+        view.layoutDirection = when (rtl) {
+            true -> View.LAYOUT_DIRECTION_RTL
+            false -> View.LAYOUT_DIRECTION_LTR
+            null -> View.LAYOUT_DIRECTION_INHERIT
+        }
+        view.textDirection = when (rtl) {
+            true -> View.TEXT_DIRECTION_RTL
+            false -> View.TEXT_DIRECTION_LTR
+            null -> View.TEXT_DIRECTION_INHERIT
+        }
+    }
+
+    /** The views [turn] gave a direction of their own. */
+    private val turnedViews = java.util.WeakHashMap<View, Boolean>()
+
     /** Builds the view for [node], and tells accessibility which node it is. */
     private fun renderWidget(node: Map<*, *>): View? =
         drawWidget(node)?.also { identify(it, node) }
@@ -2348,6 +2482,7 @@ class NativeUIRenderer(
      * test fills.
      */
     private fun identify(view: View, node: Map<*, *>) {
+        turn(view, node)
         val id = (node["id"] as? String)?.takeIf { it.isNotEmpty() }
         // The field is what a test fills and reads, not the layout around it.
         val target = when (node["type"]) {
@@ -2497,6 +2632,7 @@ class NativeUIRenderer(
             layoutParams = matchParent()
             setBackgroundColor(color(node["backgroundColor"], themeSurface))
         }
+        watchDrawerEdges(scaffold, node)
         val scrolls = node["bodyScrolls"] != false
         val area = scaffold.bodyArea
         val fill = FrameLayout.LayoutParams(
@@ -3032,11 +3168,49 @@ class NativeUIRenderer(
         // A run that can be tapped is a span the view has to listen for. Not
         // with LinkMovementMethod, which takes every touch on the view: a
         // touch on the words between the links is the row's behind them.
-        if (spans?.any { it["eventId"] is String } == true) {
+        // One held long enough sends its long press instead, and letting go
+        // is then not also a tap.
+        if (spans?.any { it["eventId"] is String || it["longPressEventId"] is String } == true) {
+            var pressed: RunEvents? = null
+            var held = false
+            var downX = 0f
+            var downY = 0f
+            val slop = ViewConfiguration.get(label.context).scaledTouchSlop
+            val hold = Runnable {
+                val run = pressed ?: return@Runnable
+                held = true
+                run.longPress?.let { sendEvent(it, emptyMap()) }
+            }
             label.setOnTouchListener { _, event ->
-                val link = linkAt(label, event.x, event.y)
-                if (link != null && event.action == MotionEvent.ACTION_UP) link.onClick(label)
-                link != null && event.action != MotionEvent.ACTION_CANCEL
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        pressed = linkAt(label, event.x, event.y)
+                        held = false
+                        downX = event.x
+                        downY = event.y
+                        if (pressed?.longPress != null) {
+                            label.postDelayed(hold, ViewConfiguration.getLongPressTimeout().toLong())
+                        }
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (Math.hypot((event.x - downX).toDouble(), (event.y - downY).toDouble()) > slop) {
+                            label.removeCallbacks(hold)
+                            if (pressed != null && !held) pressed = null
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        label.removeCallbacks(hold)
+                        val run = pressed
+                        if (run != null && !held && linkAt(label, event.x, event.y) === run) {
+                            run.tap?.let { sendEvent(it, emptyMap()) }
+                        }
+                    }
+                    MotionEvent.ACTION_CANCEL -> {
+                        label.removeCallbacks(hold)
+                        pressed = null
+                    }
+                }
+                pressed != null
             }
         } else {
             label.setOnTouchListener(null)
@@ -3044,8 +3218,18 @@ class NativeUIRenderer(
         clampLines(label, node)
     }
 
-    /** The tappable run of [label] under a touch, if the touch is on one. */
-    private fun linkAt(label: AppCompatTextView, touchX: Float, touchY: Float): ClickableSpan? {
+    /** What a touch on a run of text does: its tap, its long press. */
+    private class RunEvents(val tap: String?, val longPress: String?) : ClickableSpan() {
+        // Sent from the label's own touches, which know a hold from a tap.
+        override fun onClick(widget: View) {}
+
+        // How a link looks is the run's own style: Android would otherwise
+        // colour and underline it as it does a URL.
+        override fun updateDrawState(paint: TextPaint) {}
+    }
+
+    /** The run of [label] under a touch, if the touch is on one that listens. */
+    private fun linkAt(label: AppCompatTextView, touchX: Float, touchY: Float): RunEvents? {
         val layout = label.layout ?: return null
         val text = label.text as? Spanned ?: return null
         val x = touchX - label.totalPaddingLeft + label.scrollX
@@ -3055,7 +3239,7 @@ class NativeUIRenderer(
         // Past the end of a short line there is no text, only the nearest.
         if (x < layout.getLineLeft(line) || x > layout.getLineRight(line)) return null
         val offset = layout.getOffsetForHorizontal(line, x)
-        return text.getSpans(offset, offset, ClickableSpan::class.java).firstOrNull()
+        return text.getSpans(offset, offset, RunEvents::class.java).firstOrNull()
     }
 
     /**
@@ -3070,6 +3254,11 @@ class NativeUIRenderer(
             val end = text.length
             if (end == start) continue
             fun mark(what: Any) = text.setSpan(what, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+            // A widget in the line: a picture of it, as it first lays out.
+            (span["widget"] as? Map<*, *>)?.let { widget ->
+                widgetPicture(widget)?.let { mark(it) }
+            }
 
             parseColorOrNull(span["color"])?.let { mark(ForegroundColorSpan(it)) }
             (span["fontSize"] as? Number)?.toFloat()?.let { size ->
@@ -3091,17 +3280,32 @@ class NativeUIRenderer(
                 "lineThrough" -> mark(StrikethroughSpan())
                 "underline" -> mark(UnderlineSpan())
             }
-            (span["eventId"] as? String)?.let { eventId ->
-                mark(object : ClickableSpan() {
-                    override fun onClick(widget: View) = sendEvent(eventId, emptyMap())
-
-                    // How a link looks is the run's own style: Android would
-                    // otherwise colour and underline it as it does a URL.
-                    override fun updateDrawState(paint: TextPaint) {}
-                })
-            }
+            val tap = span["eventId"] as? String
+            val longPress = span["longPressEventId"] as? String
+            if (tap != null || longPress != null) mark(RunEvents(tap, longPress))
         }
         return text
+    }
+
+    /**
+     * A picture of [widget] - a node tree - to stand in a line of text, its
+     * middle on the middle of the line.
+     */
+    private fun widgetPicture(widget: Map<*, *>): android.text.style.ReplacementSpan? {
+        val view = renderWidget(normalized(widget)) ?: return null
+        val unbounded = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        view.measure(unbounded, unbounded)
+        val w = view.measuredWidth
+        val h = view.measuredHeight
+        if (w <= 0 || h <= 0) return null
+        view.layout(0, 0, w, h)
+        val picture = try {
+            android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        } catch (e: OutOfMemoryError) {
+            return null
+        }
+        view.draw(android.graphics.Canvas(picture))
+        return InlinePicture(picture)
     }
 
     /**
@@ -3170,6 +3374,12 @@ class NativeUIRenderer(
             // shape in one colour when it says nothing.
             parseColorOrNull(node["color"])?.let {
                 colorFilter = tintFilter(it, node["blend"] as? String)
+            }
+            // A width alone: the height follows from it in the picture's
+            // proportions, as Flutter's does, rather than being the bitmap's
+            // own height in pixels.
+            if (node["width"] is Number && node["height"] !is Number) {
+                adjustViewBounds = true
             }
         }
         container.addView(image, FrameLayout.LayoutParams(
@@ -4037,6 +4247,7 @@ class NativeUIRenderer(
                 text = it
                 textSize = 13f
                 setTextColor(color(null, themeTextSecondary))
+                applyTextStyle(this, node["labelStyle"])
                 // Ties the label to the field, so TalkBack announces the two
                 // together. Without it the label is a separate piece of text
                 // and the field reaches the user unnamed.
@@ -4071,6 +4282,7 @@ class NativeUIRenderer(
                     text = helper
                     textSize = 12f
                     setTextColor(color(null, themeTextSecondary))
+                    applyTextStyle(this, node["helperStyle"])
                 }, matchWidth())
             }
         }
@@ -4194,7 +4406,23 @@ class NativeUIRenderer(
     private val fieldLookKeys = listOf(
         "textColor", "fontSize", "fontWeight", "fillColor", "border",
         "borderColor", "borderWidth", "borderRadius", "contentPadding",
+        "focusedBorderColor", "focusedBorderWidth", "errorBorderColor",
+        "errorBorderWidth", "disabledBorderColor", "disabledBorderWidth",
+        "hintStyle", "labelStyle", "helperStyle",
     )
+
+    /** A label's, hint's or helper's style (`labelStyle`...) on [view]. */
+    private fun applyTextStyle(view: TextView, style: Any?) {
+        val given = style as? Map<*, *> ?: return
+        parseColorOrNull(given["color"])?.let { view.setTextColor(it) }
+        (given["fontSize"] as? Number)?.let { view.textSize = it.toFloat() }
+        (given["fontWeight"] as? Number)?.toInt()?.let { weight ->
+            view.typeface = Typeface.create(
+                view.typeface,
+                if (weight >= 600) Typeface.BOLD else Typeface.NORMAL,
+            )
+        }
+    }
 
     /**
      * The look the app gave a field: the style of what is typed, what the
@@ -4226,14 +4454,48 @@ class NativeUIRenderer(
             ?.mapNotNull { (it as? Number)?.toInt() }
             ?.takeIf { it.size == 4 }
 
+        // The outline in each state the app gave one: focused, disabled; an
+        // error's is the layout's own error colour, or drawn here.
+        val focusedStroke = parseColorOrNull(node["focusedBorderColor"])
+        val disabledStroke = parseColorOrNull(node["disabledBorderColor"])
+        val errorStroke = parseColorOrNull(node["errorBorderColor"])
+        fun widthOf(key: String) =
+            (node[key] as? Number)?.let { dp(it.toInt()).coerceAtLeast(1) } ?: width
+        val hintStyle = node["hintStyle"] as? Map<*, *>
+        parseColorOrNull(hintStyle?.get("color"))?.let { field.setHintTextColor(it) }
+
         if (layout != null) {
             fill?.let { layout.boxBackgroundColor = it }
             if (kind == "none") {
                 layout.boxStrokeWidth = 0
                 layout.boxStrokeWidthFocused = 0
-            } else if (stroke != null) {
-                layout.setBoxStrokeColorStateList(ColorStateList.valueOf(stroke))
+            } else if (stroke != null || focusedStroke != null || disabledStroke != null) {
+                val rest = stroke ?: color(null, themeTextSecondary)
+                layout.setBoxStrokeColorStateList(ColorStateList(
+                    arrayOf(
+                        intArrayOf(-android.R.attr.state_enabled),
+                        intArrayOf(android.R.attr.state_focused),
+                        intArrayOf(),
+                    ),
+                    intArrayOf(
+                        disabledStroke ?: rest,
+                        focusedStroke ?: stroke ?: color(null, themePrimary),
+                        rest,
+                    ),
+                ))
                 layout.boxStrokeWidth = width
+                layout.boxStrokeWidthFocused =
+                    if (focusedStroke != null) widthOf("focusedBorderWidth") else width
+            }
+            errorStroke?.let { layout.boxStrokeErrorColor = ColorStateList.valueOf(it) }
+            parseColorOrNull(hintStyle?.get("color"))?.let {
+                layout.placeholderTextColor = ColorStateList.valueOf(it)
+            }
+            parseColorOrNull((node["labelStyle"] as? Map<*, *>)?.get("color"))?.let {
+                layout.defaultHintTextColor = ColorStateList.valueOf(it)
+            }
+            parseColorOrNull((node["helperStyle"] as? Map<*, *>)?.get("color"))?.let {
+                layout.setHelperTextColor(ColorStateList.valueOf(it))
             }
             radius?.let {
                 val px = dp(it).toFloat()
@@ -4248,24 +4510,50 @@ class NativeUIRenderer(
         }
 
         if (fill != null || kind != null) {
-            val line = stroke ?: color(null, themeTextSecondary)
-            val body = GradientDrawable().apply { setColor(fill ?: Color.TRANSPARENT) }
-            field.background = when (kind) {
-                "none" -> body
-                "outline" -> body.apply {
-                    cornerRadius = dp(radius ?: 4).toFloat()
-                    setStroke(width, line)
+            val resting = stroke ?: color(null, themeTextSecondary)
+            // A field drawn in error keeps its error's outline: an error
+            // coming or going rebuilds a field with its label above it.
+            val inError = node["error"] != null && errorStroke != null
+            fun box(line: Int, lineWidth: Int): android.graphics.drawable.Drawable {
+                val body = GradientDrawable().apply { setColor(fill ?: Color.TRANSPARENT) }
+                return when (kind) {
+                    "none" -> body
+                    "outline" -> body.apply {
+                        cornerRadius = dp(radius ?: 4).toFloat()
+                        setStroke(lineWidth, line)
+                    }
+                    // A line under the field, and under a field that is only
+                    // filled, which is how Material draws a filled one: a box
+                    // stroked all round and pushed off three of its edges.
+                    else -> LayerDrawable(arrayOf(
+                        body,
+                        GradientDrawable().apply {
+                            setColor(Color.TRANSPARENT)
+                            setStroke(lineWidth, line)
+                        },
+                    )).apply { setLayerInset(1, -lineWidth, -lineWidth, -lineWidth, 0) }
                 }
-                // A line under the field, and under a field that is only
-                // filled, which is how Material draws a filled one: a box
-                // stroked all round and pushed off three of its edges.
-                else -> LayerDrawable(arrayOf(
-                    body,
-                    GradientDrawable().apply {
-                        setColor(Color.TRANSPARENT)
-                        setStroke(width, line)
-                    },
-                )).apply { setLayerInset(1, -width, -width, -width, 0) }
+            }
+            field.background = if (inError) {
+                box(errorStroke!!, widthOf("errorBorderWidth"))
+            } else if (focusedStroke != null || disabledStroke != null) {
+                android.graphics.drawable.StateListDrawable().apply {
+                    disabledStroke?.let {
+                        addState(
+                            intArrayOf(-android.R.attr.state_enabled),
+                            box(it, widthOf("disabledBorderWidth")),
+                        )
+                    }
+                    focusedStroke?.let {
+                        addState(
+                            intArrayOf(android.R.attr.state_focused),
+                            box(it, widthOf("focusedBorderWidth")),
+                        )
+                    }
+                    addState(intArrayOf(), box(resting, width))
+                }
+            } else {
+                box(resting, width)
             }
             // The platform's padding went with the background it came from.
             field.setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -5167,6 +5455,8 @@ class NativeUIRenderer(
      * dismiss event and springs back; the app removes it.
      */
     private fun renderBottomSheet(node: Map<*, *>): View {
+        val side = node["side"] as? String
+        if (side == "start" || side == "end") return renderDrawer(node, side == "start")
         val dismiss = dismissEvent(node)
         val padding = dp(16)
         val content = LinearLayout(activity).apply {
@@ -5233,6 +5523,77 @@ class NativeUIRenderer(
         }
         return modalLayer(node, sheet)
     }
+
+    /**
+     * A sheet with a side: a drawer the height of the screen, sliding in from
+     * the start edge ([start]) or the end over the scrim, and swiped back
+     * towards it to close.
+     */
+    private fun renderDrawer(node: Map<*, *>, start: Boolean): View {
+        val dismiss = dismissEvent(node)
+        val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+        (node["title"] as? String)?.let { title ->
+            content.addView(AppCompatTextView(activity).apply {
+                text = title
+                textSize = 22f
+                setTextColor(color(null, themeText))
+                setPaddingRelative(dp(16), dp(16), dp(16), dp(8))
+            }, linear())
+        }
+        for (child in childNodes(node)) {
+            renderWidget(child)?.let {
+                content.addView(it, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+                ))
+            }
+        }
+        val radius = dp(16).toFloat()
+        val wanted = dp(((node["width"] as? Number)?.toFloat() ?: 304f).roundToInt())
+        // In from its edge the first time it is drawn only: a render that
+        // builds it again, while it is open, leaves it where it is.
+        val id = node["id"] as? String
+        val panel = DrawerFrame(
+            activity,
+            wanted = wanted,
+            margin = dp(56),
+            start = start,
+            slidesIn = id == null || openedDrawers.add(id),
+            onSwipe = dismiss?.let { eventId ->
+                { sendEvent(eventId, mapOf("reason" to "swipe")) }
+            },
+        ).apply {
+            background = GradientDrawable().apply {
+                setColor(color(null, themeSurfaceVariant))
+            }
+            elevation = dp(16).toFloat()
+            clipToOutline = true
+            outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: android.graphics.Outline) {
+                    // Round on the side towards the screen, square on its edge.
+                    val onLeft = start != (view.layoutDirection == View.LAYOUT_DIRECTION_RTL)
+                    val extra = radius.toInt()
+                    if (onLeft) {
+                        outline.setRoundRect(-extra, 0, view.width, view.height, radius)
+                    } else {
+                        outline.setRoundRect(0, 0, view.width + extra, view.height, radius)
+                    }
+                }
+            }
+            addView(content, matchParent())
+        }
+        panel.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            if (start) Gravity.START else Gravity.END,
+        )
+        onSystemBars(panel) { bars ->
+            content.setPadding(0, bars.top, 0, bars.bottom)
+        }
+        return modalLayer(node, panel)
+    }
+
+    /** The drawers already drawn, by their overlay's id - see [renderDrawer]. */
+    private val openedDrawers = LinkedHashSet<String>()
 
     /**
      * The full-screen layer a dialog or sheet sits in: a scrim under [surface]
@@ -5425,9 +5786,23 @@ class NativeUIRenderer(
     private fun configureBox(box: BoxLayout, node: Map<*, *>, animate: Boolean) {
         val hero = node["hero"] as? String
         if (hero != null) heroViews[box] = hero else heroViews.remove(box)
+        // A box that is only a hero is its child's size, as a Flutter `Hero`
+        // is; one that sizes or paints itself is its own.
+        val props = node["props"] as? Map<*, *> ?: node
+        if (hero != null && !props.keys.all { it in HERO_KEYS }) {
+            selfRoomHeroes[box] = true
+        } else {
+            selfRoomHeroes.remove(box)
+        }
         if (hero != null && node["heroArc"] == true) heroArcs[box] = true else heroArcs.remove(box)
         val shuttle = node["heroShuttle"] as? Map<*, *>
         if (hero != null && shuttle != null) heroShuttles[box] = shuttle else heroShuttles.remove(box)
+        val placeholder = node["heroPlaceholder"] as? Map<*, *>
+        if (hero != null && placeholder != null) {
+            heroPlaceholders[box] = placeholder
+        } else {
+            heroPlaceholders.remove(box)
+        }
         val style = boxStyle(node)
         val before = box.style
         val existing = box.layoutParams
@@ -7164,6 +7539,89 @@ class NativeUIRenderer(
         }
     }
 
+    /**
+     * A drawer's panel: [wanted] wide but leaving [margin] of the screen,
+     * sliding in from its edge when it is first shown, and following a drag
+     * back towards that edge - far enough, [onSwipe].
+     */
+    private class DrawerFrame(
+        context: Context,
+        private val wanted: Int,
+        private val margin: Int,
+        private val start: Boolean,
+        private val slidesIn: Boolean,
+        private val onSwipe: (() -> Unit)?,
+    ) : FrameLayout(context) {
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+        private var downX = 0f
+        private var dragging = false
+
+        /** Towards its own edge, on screen: -1 for the left. */
+        private val toward: Float
+            get() = if (start == (layoutDirection == LAYOUT_DIRECTION_RTL)) 1f else -1f
+
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val room = MeasureSpec.getSize(widthMeasureSpec)
+            super.onMeasure(
+                MeasureSpec.makeMeasureSpec(min(wanted, room - margin), MeasureSpec.EXACTLY),
+                heightMeasureSpec,
+            )
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            if (!slidesIn) return
+            // In from its edge: set there before it is first drawn, once it
+            // knows how wide it is, so it is never seen in place first.
+            viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    if (width <= 0) return true
+                    viewTreeObserver.removeOnPreDrawListener(this)
+                    translationX = toward * width
+                    animate().translationX(0f).setDuration(250)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+                    return true
+                }
+            })
+        }
+
+        override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+            if (onSwipe == null) return false
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX
+                    dragging = false
+                }
+                MotionEvent.ACTION_MOVE -> if (
+                    !dragging && (event.rawX - downX) * toward > touchSlop
+                ) {
+                    dragging = true
+                    downX = event.rawX
+                }
+            }
+            return dragging
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX
+                    dragging = onSwipe != null
+                }
+                MotionEvent.ACTION_MOVE -> if (dragging) {
+                    translationX = toward * max(0f, (event.rawX - downX) * toward)
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val released = event.actionMasked == MotionEvent.ACTION_UP
+                    if (dragging && released && abs(translationX) > width / 3f) onSwipe?.invoke()
+                    dragging = false
+                    animate().translationX(0f).setDuration(200).start()
+                }
+            }
+            return true
+        }
+    }
+
     /** A ScrollView that reports its layouts and scrolls, for a lazy list. */
     private class ReportingScrollView(
         context: Context,
@@ -7345,6 +7803,84 @@ private class FlowLayout(context: Context) : ViewGroup(context) {
             }
             y += line.height + vSpacing
         }
+    }
+}
+
+/**
+ * A view drawn as a drawable, laid out again at the size of its bounds each
+ * time they change: a hero's shuttle, laid out at every size its flight
+ * passes through.
+ */
+private class LaidOutView(private val view: View) : android.graphics.drawable.Drawable() {
+    override fun onBoundsChange(bounds: android.graphics.Rect) {
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(bounds.width().coerceAtLeast(0), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(bounds.height().coerceAtLeast(0), View.MeasureSpec.EXACTLY),
+        )
+        view.layout(0, 0, bounds.width(), bounds.height())
+        invalidateSelf()
+    }
+
+    override fun draw(canvas: android.graphics.Canvas) {
+        val save = canvas.save()
+        canvas.translate(bounds.left.toFloat(), bounds.top.toFloat())
+        canvas.clipRect(0, 0, bounds.width(), bounds.height())
+        view.draw(canvas)
+        canvas.restoreToCount(save)
+    }
+
+    override fun setAlpha(alpha: Int) {
+        view.alpha = alpha / 255f
+    }
+
+    override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
+
+/**
+ * A picture standing in a line of text - a widget there - with its middle on
+ * the middle of the font's height, and the line made tall enough for it.
+ */
+private class InlinePicture(private val picture: android.graphics.Bitmap) :
+    android.text.style.ReplacementSpan() {
+    private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+
+    override fun getSize(
+        paint: android.graphics.Paint,
+        text: CharSequence?,
+        start: Int,
+        end: Int,
+        fm: android.graphics.Paint.FontMetricsInt?,
+    ): Int {
+        if (fm != null) {
+            val font = paint.fontMetricsInt
+            val middle = (font.ascent + font.descent) / 2
+            val top = middle - picture.height / 2
+            val bottom = top + picture.height
+            fm.ascent = minOf(font.ascent, top)
+            fm.top = minOf(font.top, top)
+            fm.descent = maxOf(font.descent, bottom)
+            fm.bottom = maxOf(font.bottom, bottom)
+        }
+        return picture.width
+    }
+
+    override fun draw(
+        canvas: android.graphics.Canvas,
+        text: CharSequence?,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: android.graphics.Paint,
+    ) {
+        val font = paint.fontMetricsInt
+        val middle = y + (font.ascent + font.descent) / 2f
+        canvas.drawBitmap(picture, x, middle - picture.height / 2f, this.paint)
     }
 }
 

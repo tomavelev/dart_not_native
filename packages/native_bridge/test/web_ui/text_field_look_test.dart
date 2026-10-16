@@ -115,4 +115,52 @@ void main() {
     expect(style.getPropertyValue('border-top-style'), isEmpty);
     expect(style.getPropertyValue('font-size'), isEmpty);
   });
+
+  test('the outline changes as the field is focused, in error or disabled',
+      () async {
+    const look = {
+      'border': 'outline',
+      'borderColor': '#111111',
+      'focusedBorderColor': '#2e7d32',
+      'focusedBorderWidth': 2,
+      'errorBorderColor': '#b00020',
+      'disabledBorderColor': '#cccccc',
+    };
+    var style = await show(look);
+    expect(style.getPropertyValue('border'), contains('rgb(17, 17, 17)'));
+
+    final input = root.querySelector('input')! as web.HTMLElement;
+    input.focus();
+    expect(style.getPropertyValue('border'), contains('2px'));
+    expect(style.getPropertyValue('border'), contains('rgb(46, 125, 50)'));
+    input.blur();
+    expect(style.getPropertyValue('border'), contains('rgb(17, 17, 17)'));
+
+    style = await show({...look, 'error': 'Required'});
+    expect(style.getPropertyValue('border'), contains('rgb(176, 0, 32)'));
+
+    style = await show({...look, 'enabled': false});
+    expect(style.getPropertyValue('border'), contains('rgb(204, 204, 204)'));
+  });
+
+  test('the hint, label and helper take their styles', () async {
+    final style = await show({
+      'label': 'Name',
+      'floatingLabel': false,
+      'helper': 'Help',
+      'hintStyle': {'color': '#2e7d32', 'fontSize': 12},
+      'labelStyle': {'color': '#b00020'},
+      'helperStyle': {'fontWeight': 700},
+    });
+    expect(style.getPropertyValue('--dnn-hint-color'), '#2e7d32');
+    expect(style.getPropertyValue('--dnn-hint-size'), '12px');
+    final input = root.querySelector('input')!;
+    expect(input.classList.contains('dnn-hint-color'), isTrue);
+    expect(input.classList.contains('dnn-hint-weight'), isFalse);
+    final label = root.querySelector('[data-part="label"]')! as web.HTMLElement;
+    expect(label.style.color, 'rgb(176, 0, 32)');
+    final helper =
+        root.querySelector('[data-part="helper"]')! as web.HTMLElement;
+    expect(helper.style.fontWeight, '700');
+  });
 }

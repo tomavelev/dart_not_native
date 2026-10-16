@@ -7,6 +7,8 @@
 /// mouse.
 library;
 
+import 'dart:js_interop';
+
 import 'package:dart_not_native/core.dart';
 import 'package:dart_not_native/web_ui/web_renderer.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -185,5 +187,105 @@ void main() {
     );
 
     expect(web.document.body!.contains(web.document.activeElement), isTrue);
+  });
+
+  test('a sheet with a side is a drawer from that edge, and a swipe towards '
+      'it closes it', () async {
+    final reasons = <Object?>[];
+    renderer.onEvent('closed', (data) => reasons.add(data['reason']));
+    await renderer.render(
+      screen(
+        overlays: [
+          UIBuilder.bottomSheet(
+            content: [UIBuilder.text('Menu')],
+            side: 'start',
+            width: 200,
+            dismissEventId: 'closed',
+          ),
+        ],
+      ),
+    );
+    final modal = root.querySelector('.dnn-modal')!;
+    expect(modal.classList.contains('dnn-modal--drawer-start'), isTrue);
+    final panel = modal.querySelector('.dnn-drawer')! as web.HTMLElement;
+    expect(panel.style.width, contains('200px'));
+    expect(panel.textContent, contains('Menu'));
+
+    // In fractions of a pixel, as a finger is reported.
+    web.PointerEvent touch(String type, double x) => web.PointerEvent(
+      type,
+      {
+            'bubbles': true,
+            'pointerType': 'touch',
+            'clientX': x,
+            'clientY': 100.5,
+          }.jsify()!
+          as web.PointerEventInit,
+    );
+    panel
+      ..dispatchEvent(touch('pointerdown', 150.5))
+      ..dispatchEvent(touch('pointermove', 10.25))
+      ..dispatchEvent(touch('pointerup', 10.25));
+    expect(reasons, ['swipe']);
+  });
+
+  group('a swipe in from the edge', () {
+    late List<String> opened;
+    late web.HTMLElement scaffold;
+
+    setUp(() async {
+      opened = [];
+      renderer
+        ..onEvent('start', (_) => opened.add('start'))
+        ..onEvent('end', (_) => opened.add('end'));
+      await renderer.render(
+        UIBuilder.scaffold(
+          body: UIBuilder.text('page'),
+          drawerEdgeEventId: 'start',
+          endDrawerEdgeEventId: 'end',
+        ),
+      );
+      scaffold = root.querySelector('.dnn-scaffold')! as web.HTMLElement;
+    });
+
+    void swipe(double from, double to, {double down = 0, String? kind}) {
+      final box = scaffold.getBoundingClientRect();
+      web.PointerEvent touch(String type, double x, double y) =>
+          web.PointerEvent(
+            type,
+            {
+                  'bubbles': true,
+                  'pointerType': kind ?? 'touch',
+                  'clientX': box.left + x,
+                  'clientY': box.top + y,
+                }.jsify()!
+                as web.PointerEventInit,
+          );
+      scaffold
+        ..dispatchEvent(touch('pointerdown', from, 100.5))
+        ..dispatchEvent(touch('pointermove', to, 100.5 + down))
+        ..dispatchEvent(touch('pointerup', to, 100.5 + down));
+    }
+
+    test('opens the drawer at that edge', () {
+      final width = scaffold.getBoundingClientRect().width;
+      swipe(4.5, 80.25);
+      swipe(width - 4.5, width - 80.25);
+      expect(opened, ['start', 'end']);
+    });
+
+    test('not from further in, nor up or down, nor with a mouse', () {
+      swipe(60.5, 160.25);
+      swipe(4.5, 20.25, down: 80);
+      swipe(4.5, 80.25, kind: 'mouse');
+      expect(opened, isEmpty);
+    });
+
+    test('reads from the right in a screen that does', () async {
+      root.setAttribute('dir', 'rtl');
+      final width = scaffold.getBoundingClientRect().width;
+      swipe(width - 4.5, width - 80.25);
+      expect(opened, ['start']);
+    });
   });
 }

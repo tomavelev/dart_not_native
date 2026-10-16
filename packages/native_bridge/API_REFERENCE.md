@@ -222,14 +222,23 @@ Each `UIBuilder` method's doc comment is the specification; in brief:
 - `column`, `row`: `mainAxisSize`, `spaceAround`/`spaceEvenly`, `spacing`;
   `wrap`: `alignment`, `crossAxisAlignment`; `expanded`: `fit`.
 - `text`: `textAlign`, `letterSpacing`, `lineHeight`, `fontFamily`, `italic`,
-  `selectable`, `spans` (styled runs; no tap on a span), `maxLines`,
-  `overflow`.
+  `selectable`, `spans` (styled runs; `eventId` for a tap on one,
+  `longPressEventId` for a hold, `widget` - a tree - for a widget in the
+  line), `maxLines`, `overflow`.
 - `image`: an optional `fallback` child, drawn while loading and on failure.
 - `button`: `'outlined'` and `'tonal'` variants, `iconCodepoint`,
   `foregroundColor`, `expand`; `floatingActionButton`: `label` (extended).
 - `textField`: prefix and suffix icons (`<eventId>_suffix` on tap),
   `maxLength`, `textCapitalization`, `textAlign`, and the read-only tappable
-  field a picker opens from.
+  field a picker opens from. Its look: `focusedBorderColor`/`Width`,
+  `errorBorderColor`/`Width`, `disabledBorderColor`/`Width` beside the
+  resting `borderColor`, and `hintStyle`, `labelStyle`, `helperStyle` as
+  `{color, fontSize, fontWeight}`.
+- `bottomSheet`: `side` (`'start'`, `'end'`) and `width` make it a drawer, a
+  panel the height of the screen from that edge.
+- `scaffold`: `onDrawerEdge`/`drawerEdgeEventId` and
+  `onEndDrawerEdge`/`endDrawerEdgeEventId`, raised by a drag in from the
+  start or the end edge.
 - `checkbox`, and the `Radio` and `Toggle` nodes: `disabled`.
 
 ### Root props and renderer events
@@ -243,15 +252,21 @@ coordinates) does not.
 
 `RootProps.pageTransition`: `{kind, ms}` on the first tree of a new page -
 `push`, `pop` or `fade`. A route with a transition of its own adds `page` -
-where the new page starts, moving to its place over the old one - or
-`picture` - where the picture of the old page goes, over the new one - as
-`{opacity, dx, dy, scale, rotate, curve}`, `dx`, `dy` in parts of the screen.
+where the new page starts, moving to its place - and `picture` - where the
+picture of the old page goes - as `{opacity, dx, dy, scale, rotate, curve}`,
+`dx`, `dy` in parts of the screen; one or both, the moving page's and the
+covered page's. The page that moves in its own right is on top: the new one,
+unless the move is a pop.
+
+Any node may carry `layoutDirection` (`'rtl'`, `'ltr'`): it and everything
+below it are laid out that way, the platform's own controls included,
+whatever the screen's direction.
 
 `RendererEvents` are sent by a renderer on its own account:
 
 | Event | Payload |
 |---|---|
-| `RendererEvents.viewport` (`dnn:viewport`) | `{width, height, paddingTop, paddingBottom, paddingLeft, paddingRight, keyboardInset, devicePixelRatio, textScale, dark}` - what `MediaQuery` answers from |
+| `RendererEvents.viewport` (`dnn:viewport`) | `{width, height, paddingTop, paddingBottom, paddingLeft, paddingRight, keyboardInset, devicePixelRatio, textScale, dark, use24Hour}` - what `MediaQuery` answers from |
 | `RendererEvents.key` (`dnn:key`) | `{key, down}` - what `KeyboardListener` hears |
 | `RendererEvents.slotRect` (`dnn:slotRect`) | `{slotId, x, y, width, height, visible}` - where a `FlutterSlot` is |
 | `RendererEvents.lifecycle` (`dnn:lifecycle`) | `{state}` - `resumed`, `inactive`, `paused`, `detached` |
@@ -262,11 +277,12 @@ Props a node carries for the renderer to act on by itself:
 |---|---|---|
 | `eventId` | `Image` | Sends `{state: 'loaded'}` once the picture is showing, or `{state: 'failed'}` when it has given up - each time it makes the image anew, so the same answer may come twice. `loadAsk` beside it is a number that changes when a new asker takes the place of an old one |
 | `hero` | `Box` | On a page transition (`RootProps.pageTransition`), flies the new page's box of this name from where the old page's stood to its own place, over the transition's time, and shows neither meanwhile |
-| `heroArc`, `heroShuttle` | `Box` with `hero` | Flies along a Material arc - two opposite corners each on an arc of a circle - rather than straight; flies the tree in `heroShuttle`, built for the flight and stretched over it, rather than the box |
+| `heroArc`, `heroShuttle` | `Box` with `hero` | Flies along a Material arc - two opposite corners each on an arc of a circle - rather than straight; flies the tree in `heroShuttle`, built for the flight and laid out at each size it passes through, rather than the box |
+| `heroPlaceholder` | `Box` with `hero` | A tree drawn over the box's room, laid out to it, while the box is in the air |
 | `tapDownEventId` | `Box` | Sends `{x, y}` as a pointer goes down on the box, and `_cancel` when it does not make a tap after all - moved off, taken by a scroller or a long press, let go off the box |
 | `dragFeedback` | `Box` with `dragData` | A tree of its own, built when the drag begins and carried under the pointer, held by the point the box was taken by. The drag's `_end`, and a drop, carry `x`, `y` - where its top left was on the screen - and the end `vx`, `vy` too |
 | `endEventId`, `endAsk` | `Box`, `AnimatedOpacity` | Sends `{ask}` once the move this tree asked for has finished - at once, if nothing moved - and nothing for a move a newer ask overtook. `endAsk` is a number for the change; one already answered is not answered again |
-| `animateSize` | `Box` | With `animateMs`, moves the box from the size it was to the size its child came to in this render, the child laid out once at its new size and clipped to the box on the way when `clip` says so. `sizeEndEventId` beside it is sent `{}` when a move gets there |
+| `animateSize` | `Box` | With `animateMs`, moves the box from the size it was to the size its child came to - in this render, or by itself between renders - the child laid out once at its new size and clipped to the box on the way when `clip` says so. `sizeEndEventId` beside it is sent `{}` when a move gets there |
 | `sticky` | `Box` in a vertical `Scroll` | Once the content has scrolled past the box, keeps it at the top of the view, over what scrolls beneath, until it scrolls back to its place |
 | `scrollMs`, `scrollCurve` | `Scroll`, `LazyList` with `scrollAnimated` | Travels to `scrollOffset` over that long along that curve, a frame at a time, rather than by the platform's own smooth scroll |
 | `progress` | `Image` with `eventId` | Also sends `{state: 'loading', loaded, expected}` on the way - bytes come, and the bytes there are when the server said - a few times a second |
@@ -360,11 +376,12 @@ runApp(MaterialApp.router(routerConfig: router));
 |---|---|
 | `GoRouter(routes:, initialLocation:, redirect:, refreshListenable:, errorBuilder:, redirectLimit:)` | a `ChangeNotifier` and a `RouterConfig` |
 | `go`, `goNamed`, `push`, `pushNamed`, `replace`, `pop`, `canPop`, `refresh`, `namedLocation` | on the router and, through `GoRouterHelper`, on `BuildContext` |
-| `GoRoute(path:, name:, builder:, redirect:, routes:)`, `ShellRoute(builder:, routes:)` | the route table |
+| `GoRoute(path:, name:, builder:, pageBuilder:, redirect:, routes:)`, `ShellRoute(builder:, pageBuilder:, routes:)` | the route table |
+| `CustomTransitionPage`, `NoTransitionPage`, `MaterialPage` | what a `pageBuilder` returns: how the page moves on and off the screen |
 | `GoRouterState` | `pathParameters`, `uri`, `matchedLocation`, `extra`, `error` |
 | `attachHistory(HistoryAdapter)` | keeps the platform's history in step - on web, `BrowserHistoryAdapter()` from `web.dart`, followed by `bindBrowserBack()` |
 
-Not there: `pageBuilder`/`Page`s and transitions, `StatefulShellRoute`,
+Not there: `StatefulShellRoute`,
 navigator keys, `onExit`, inline path patterns. Unlike go_router, `push`
 writes a history entry too.
 

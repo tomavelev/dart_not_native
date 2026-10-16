@@ -134,11 +134,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       _pageKind = transition['kind'];
       final page = transition['page'];
       final picture = transition['picture'];
-      _pageMotion = page is Map
-          ? _RouteMotion.of(page, arriving: true)
-          : picture is Map
-          ? _RouteMotion.of(picture, arriving: false)
-          : null;
+      _pageMotion = page is Map ? _RouteMotion.of(page) : null;
+      _pictureMotion = picture is Map ? _RouteMotion.of(picture) : null;
       _pageTime = Duration(
         milliseconds: (transition['ms'] as num?)?.toInt() ?? 300,
       );
@@ -229,9 +226,11 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   Object? _pageKind;
   Duration _pageTime = const Duration(milliseconds: 300);
 
-  /// How a route with a transition of its own moves, for the page turned
-  /// last; null for the renderer's own move.
+  /// How a route's transitions move the page turned last - the arriving
+  /// page from where it starts, the leaving one's picture to where it goes;
+  /// both null for the renderer's own move.
   _RouteMotion? _pageMotion;
+  _RouteMotion? _pictureMotion;
 
   @override
   void onEvent(String eventId, Function(Map<String, dynamic>) handler) {
@@ -286,6 +285,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         page: page,
         kind: kind,
         motion: _pageMotion,
+        pictureMotion: _pictureMotion,
         time: _pageTime,
         rtl: rtl,
         heroes: _heroes,
@@ -304,7 +304,43 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   }
 
   /// Builds one node. Public so a host can render a subtree of its own.
+  ///
+  /// A node that reads the other way from what is around it
+  /// (`layoutDirection`) is built under a [Directionality] that says so -
+  /// inside whatever places it in a row or a stack, which has to stay next
+  /// to that.
   Widget buildNode(WidgetNode node, BuildContext context) {
+    final direction = switch (node.props['layoutDirection']) {
+      'rtl' => TextDirection.rtl,
+      'ltr' => TextDirection.ltr,
+      _ => null,
+    };
+    if (direction == null) return _buildNode(node, context);
+    Widget turned(Widget child) =>
+        Directionality(textDirection: direction, child: child);
+    final built = _buildNode(node, context);
+    return switch (built) {
+      Flexible(:final flex, :final fit, :final child) => Flexible(
+        key: built.key,
+        flex: flex,
+        fit: fit,
+        child: turned(child),
+      ),
+      Positioned() => Positioned(
+        key: built.key,
+        left: built.left,
+        top: built.top,
+        right: built.right,
+        bottom: built.bottom,
+        width: built.width,
+        height: built.height,
+        child: turned(built.child),
+      ),
+      _ => turned(built),
+    };
+  }
+
+  Widget _buildNode(WidgetNode node, BuildContext context) {
     final p = node.props;
     final children = node.children ?? const <WidgetNode>[];
     List<Widget> build(List<WidgetNode> nodes) => [
@@ -410,7 +446,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         // safe in an unbounded parent, so the minimum length is honoured.
         return SizedBox(height: _double(p['minLength']) ?? 0);
       case 'Text':
-        return _text(p);
+        return _text(p, context: context);
       case 'Image':
         return _image(p, children, context);
       case 'Divider':
@@ -512,6 +548,9 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       case 'Dialog':
         return _dialog(p, children, context);
       case 'BottomSheet':
+        if (p['side'] == 'start' || p['side'] == 'end') {
+          return _NodeDrawer(renderer: this, props: p, children: children);
+        }
         return _NodeBottomSheet(renderer: this, props: p, children: children);
       case 'Snackbar':
         // Keyed by identity, so the same snackbar rendered again keeps its
@@ -671,7 +710,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         );
       });
     }
-    return Scaffold(
+    final scaffold = Scaffold(
       backgroundColor: _color(p['backgroundColor']),
       appBar: appBar == null ? null : _appBar(appBar, context),
       body: bodyWidget,
@@ -693,6 +732,14 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
               ),
               child: _bottomBar(bottomBar, context),
             ),
+    );
+    // Always the same shape, so the scaffold keeps its widgets when a
+    // drawer comes or goes.
+    return _DrawerEdges(
+      start: _optString(p['drawerEdgeEventId']),
+      end: _optString(p['endDrawerEdgeEventId']),
+      onOpen: (eventId) => handleEvent(eventId, const {}),
+      child: scaffold,
     );
   }
 
@@ -892,7 +939,8 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
   Widget _text(
     Map<String, dynamic> p, {
-    GestureRecognizer Function(String eventId)? recognizer,
+    required BuildContext context,
+    GestureRecognizer Function(String eventId, {bool held})? recognizer,
   }) {
     final content = _string(p['content']);
     final maxLines = _double(p['maxLines'])?.toInt();
@@ -916,21 +964,43 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // kept and let go of, which a widget built afresh each time cannot do.
     if (recognizer == null &&
         rawSpans is List &&
-        rawSpans.any((span) => span is Map && span['eventId'] is String)) {
+        rawSpans.any(
+          (span) =>
+              span is Map &&
+              span['widget'] == null &&
+              (span['eventId'] is String || span['longPressEventId'] is String),
+        )) {
       return _LinkRecognizers(
         renderer: this,
-        builder: (recognizerFor) => _text(p, recognizer: recognizerFor),
+        builder: (recognizerFor) =>
+            _text(p, context: context, recognizer: recognizerFor),
       );
     }
     final spans = rawSpans is List && rawSpans.isNotEmpty
         ? TextSpan(
             children: [
               for (final span in rawSpans)
-                if (span is Map)
+                if (span is Map && span['widget'] is Map)
+                  // The widget itself, in the line: its taps are its own.
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: buildNode(
+                      WidgetNode.fromJson(
+                        Map<String, dynamic>.from(span['widget'] as Map),
+                      ),
+                      context,
+                    ),
+                  )
+                else if (span is Map)
                   TextSpan(
                     text: _string(span['text']),
                     recognizer: span['eventId'] is String
                         ? recognizer?.call(span['eventId'] as String)
+                        : span['longPressEventId'] is String
+                        ? recognizer?.call(
+                            span['longPressEventId'] as String,
+                            held: true,
+                          )
                         : null,
                     style: TextStyle(
                       color: _color(span['color']),
@@ -2132,19 +2202,20 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     if (tooltip != null) box = Tooltip(message: tooltip, child: box);
     final hero = _optString(p['hero']);
     if (hero != null) {
-      final shuttle = p['heroShuttle'];
+      Widget? built(Object? node) => node is Map
+          ? Builder(
+              builder: (context) => buildNode(
+                WidgetNode.fromJson(Map<String, dynamic>.from(node)),
+                context,
+              ),
+            )
+          : null;
       box = _HeroBox(
         tag: hero,
         heroes: _heroes,
         arc: p['heroArc'] == true,
-        shuttle: shuttle is Map
-            ? Builder(
-                builder: (context) => buildNode(
-                  WidgetNode.fromJson(Map<String, dynamic>.from(shuttle)),
-                  context,
-                ),
-              )
-            : null,
+        shuttle: built(p['heroShuttle']),
+        placeholder: built(p['heroPlaceholder']),
         child: box,
       );
     }
@@ -2808,13 +2879,23 @@ class _NodeTextField extends StatefulWidget {
 class _NodeTextFieldState extends State<_NodeTextField> {
   /// The field's outline as the node states it: `border` is its kind, with
   /// a colour, a width and a radius where the app chose them.
-  static InputBorder _border(Map<String, dynamic> p) {
-    final color = FlutterUIRenderer._color(p['borderColor']);
+  /// The outline [p] asks for, in the colour and width of [state] -
+  /// `focused`, `error`, `disabled` - where it gives that state one, and
+  /// otherwise the resting one's.
+  static InputBorder _border(Map<String, dynamic> p, [String? state]) {
+    final stated = state != null && p['${state}BorderColor'] != null;
+    final color = FlutterUIRenderer._color(
+      stated ? p['${state}BorderColor'] : p['borderColor'],
+    );
     final side = color == null
         ? const BorderSide()
         : BorderSide(
             color: color,
-            width: FlutterUIRenderer._double(p['borderWidth']) ?? 1,
+            width:
+                FlutterUIRenderer._double(
+                  stated ? p['${state}BorderWidth'] : p['borderWidth'],
+                ) ??
+                1,
           );
     final radius = FlutterUIRenderer._double(p['borderRadius']);
     return switch (p['border']) {
@@ -2979,7 +3060,20 @@ class _NodeTextFieldState extends State<_NodeTextField> {
         // a field at rest and one with the caret in it.
         border: _border(p),
         enabledBorder: p['borderColor'] == null ? null : _border(p),
-        focusedBorder: p['borderColor'] == null ? null : _border(p),
+        focusedBorder:
+            p['borderColor'] == null && p['focusedBorderColor'] == null
+            ? null
+            : _border(p, 'focused'),
+        errorBorder: p['errorBorderColor'] == null ? null : _border(p, 'error'),
+        focusedErrorBorder: p['errorBorderColor'] == null
+            ? null
+            : _border(p, 'error'),
+        disabledBorder: p['disabledBorderColor'] == null
+            ? null
+            : _border(p, 'disabled'),
+        hintStyle: _textStyle(p['hintStyle']),
+        labelStyle: _textStyle(p['labelStyle']),
+        helperStyle: _textStyle(p['helperStyle']),
       ),
       onChanged: (value) =>
           widget.renderer.handleEvent('${_eventId}_change', {'value': value}),
@@ -3003,11 +3097,21 @@ class _NodeTextFieldState extends State<_NodeTextField> {
             style: TextStyle(
               fontSize: 13,
               color: widget.renderer._textSecondaryColor,
-            ),
+            ).merge(_textStyle(p['labelStyle'])),
           ),
         ),
         field,
       ],
+    );
+  }
+
+  /// A label's, hint's or helper's style, from what the tree says of it.
+  static TextStyle? _textStyle(Object? style) {
+    if (style is! Map) return null;
+    return TextStyle(
+      color: FlutterUIRenderer._color(style['color']),
+      fontSize: FlutterUIRenderer._double(style['fontSize']),
+      fontWeight: FlutterUIRenderer._fontWeight(style['fontWeight']),
     );
   }
 }
@@ -3173,6 +3277,137 @@ class _NodeBottomSheetState extends State<_NodeBottomSheet> {
                 maxHeight: constraints.maxHeight * 0.9,
               ),
               child: SizedBox(width: double.infinity, child: sheet),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A sheet with a side: a drawer the height of the screen, sliding in from
+/// that edge over a scrim, and swiped back towards it to close.
+class _NodeDrawer extends StatefulWidget {
+  const _NodeDrawer({
+    required this.renderer,
+    required this.props,
+    required this.children,
+  });
+
+  final FlutterUIRenderer renderer;
+  final Map<String, dynamic> props;
+  final List<WidgetNode> children;
+
+  @override
+  State<_NodeDrawer> createState() => _NodeDrawerState();
+}
+
+class _NodeDrawerState extends State<_NodeDrawer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shown = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+  )..forward();
+
+  /// How far it has been swiped towards its edge.
+  double _swiped = 0;
+
+  @override
+  void dispose() {
+    _shown.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final renderer = widget.renderer;
+    final p = widget.props;
+    final dismiss = renderer._dismiss(p, 'swipe');
+    final title = FlutterUIRenderer._optString(p['title']);
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final start = p['side'] != 'end';
+    // Towards its own edge, on screen.
+    final toward = start != rtl ? -1.0 : 1.0;
+    final width = math.min(
+      (p['width'] as num?)?.toDouble() ?? 304,
+      MediaQuery.sizeOf(context).width - 56,
+    );
+    const round = Radius.circular(16);
+    final panel = renderer._modalSurface(
+      p,
+      Material(
+        color: Theme.of(context).colorScheme.surface,
+        elevation: 16,
+        borderRadius: BorderRadiusDirectional.horizontal(
+          end: start ? round : Radius.zero,
+          start: start ? Radius.zero : round,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: width,
+          child: SafeArea(
+            right: false,
+            left: false,
+            bottom: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (title != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                for (final child in widget.children)
+                  Expanded(child: renderer.buildNode(child, context)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FadeTransition(opacity: _shown, child: renderer._scrim(p)),
+        Align(
+          alignment: start
+              ? AlignmentDirectional.centerStart
+              : AlignmentDirectional.centerEnd,
+          child: AnimatedBuilder(
+            animation: _shown,
+            builder: (context, child) => Transform.translate(
+              offset: Offset(
+                toward *
+                    (width * Curves.easeOut.transform(1 - _shown.value) +
+                        _swiped),
+                0,
+              ),
+              child: child,
+            ),
+            child: GestureDetector(
+              onHorizontalDragUpdate: dismiss == null
+                  ? null
+                  : (details) => setState(
+                      () => _swiped = math.max(
+                        0,
+                        _swiped + details.delta.dx * toward,
+                      ),
+                    ),
+              onHorizontalDragEnd: dismiss == null
+                  ? null
+                  : (details) {
+                      final flung =
+                          (details.primaryVelocity ?? 0) * toward > 700;
+                      if (_swiped > width / 3 || flung) dismiss();
+                      setState(() => _swiped = 0);
+                    },
+              child: SizedBox(height: double.infinity, child: panel),
             ),
           ),
         ),
@@ -3387,14 +3622,17 @@ class _LinkRecognizers extends StatefulWidget {
   const _LinkRecognizers({required this.renderer, required this.builder});
 
   final FlutterUIRenderer renderer;
-  final Widget Function(GestureRecognizer Function(String eventId)) builder;
+  final Widget Function(
+    GestureRecognizer Function(String eventId, {bool held}),
+  )
+  builder;
 
   @override
   State<_LinkRecognizers> createState() => _LinkRecognizersState();
 }
 
 class _LinkRecognizersState extends State<_LinkRecognizers> {
-  final Map<String, TapGestureRecognizer> _kept = {};
+  final Map<String, GestureRecognizer> _kept = {};
 
   @override
   void dispose() {
@@ -3407,12 +3645,14 @@ class _LinkRecognizersState extends State<_LinkRecognizers> {
   @override
   Widget build(BuildContext context) {
     final asked = <String>{};
-    final built = widget.builder((eventId) {
+    final built = widget.builder((eventId, {bool held = false}) {
       asked.add(eventId);
+      void send() => widget.renderer.handleEvent(eventId, const {});
       return _kept.putIfAbsent(
         eventId,
-        () => TapGestureRecognizer()
-          ..onTap = () => widget.renderer.handleEvent(eventId, const {}),
+        () => held
+            ? (LongPressGestureRecognizer()..onLongPress = send)
+            : (TapGestureRecognizer()..onTap = send),
       );
     });
     // A run that is no longer in the text takes its recogniser with it.
@@ -3851,6 +4091,7 @@ class NativeUIAppHostState extends State<NativeUIAppHost>
       'devicePixelRatio': media.devicePixelRatio,
       'textScale': media.textScaler.scale(1),
       'dark': media.platformBrightness == Brightness.dark,
+      'use24Hour': media.alwaysUse24HourFormat,
     };
     final signature = viewport.values.join('|');
     if (signature == _sentViewport) return;
@@ -4824,6 +5065,7 @@ class _CommandPainter extends CustomPainter {
           fontSize: FlutterUIRenderer._double(options['size']) ?? 14,
           color: FlutterUIRenderer._color(options['color']) ?? textColor,
           fontWeight: FlutterUIRenderer._fontWeight(options['weight']),
+          letterSpacing: FlutterUIRenderer._double(options['letterSpacing']),
           fontFamily: family.$1,
           fontFamilyFallback: family.$2,
         ),
@@ -4837,13 +5079,28 @@ class _CommandPainter extends CustomPainter {
         _ => TextAlign.left,
       },
     );
-    if (maxWidth != null && maxWidth > 0) {
-      painter.layout(minWidth: maxWidth, maxWidth: maxWidth);
+    var box = maxWidth;
+    var x = _n(c, 2);
+    if (box != null && box > 0 && options['wrap'] == false) {
+      // Already broken into lines: not broken again, a box narrower than
+      // the glyphs widened about its alignment instead.
+      painter.layout();
+      final extra = painter.maxIntrinsicWidth - box;
+      if (extra > 0) {
+        x -= switch (align) {
+          'center' => extra / 2,
+          'right' => extra,
+          _ => 0,
+        };
+        box = painter.maxIntrinsicWidth;
+      }
+    }
+    if (box != null && box > 0) {
+      painter.layout(minWidth: box, maxWidth: box);
     } else {
       painter.layout();
     }
-    final x = _n(c, 2);
-    final left = maxWidth != null && maxWidth > 0
+    final left = box != null && box > 0
         ? x
         : switch (align) {
             'center' => x - painter.width / 2,
@@ -5243,7 +5500,6 @@ const _travel = Duration(milliseconds: 300);
 /// where the page starts, arriving, or where its picture ends, leaving.
 class _RouteMotion {
   const _RouteMotion({
-    required this.arriving,
     required this.opacity,
     required this.offset,
     required this.scale,
@@ -5251,11 +5507,10 @@ class _RouteMotion {
     required this.curve,
   });
 
-  factory _RouteMotion.of(Map<dynamic, dynamic> m, {required bool arriving}) {
+  factory _RouteMotion.of(Map<dynamic, dynamic> m) {
     double n(String key, double fallback) =>
         (m[key] as num?)?.toDouble() ?? fallback;
     return _RouteMotion(
-      arriving: arriving,
       opacity: n('opacity', 1).clamp(0.0, 1.0),
       offset: Offset(n('dx', 0), n('dy', 0)),
       scale: n('scale', 1),
@@ -5265,7 +5520,6 @@ class _RouteMotion {
     );
   }
 
-  final bool arriving;
   final double opacity;
   final Offset offset;
   final double scale;
@@ -5293,6 +5547,7 @@ class _PageSwitch extends StatefulWidget {
     required this.page,
     required this.kind,
     this.motion,
+    this.pictureMotion,
     required this.time,
     required this.rtl,
     required this.heroes,
@@ -5301,7 +5556,9 @@ class _PageSwitch extends StatefulWidget {
   });
   final int page;
   final Object? kind;
+  /// The arriving page's move, and the leaving page's picture's.
   final _RouteMotion? motion;
+  final _RouteMotion? pictureMotion;
   final Duration time;
   final bool rtl;
 
@@ -5390,7 +5647,16 @@ class _PageSwitchState extends State<_PageSwitch>
             box.context,
             box.widget.shuttle ?? box.widget.child,
           );
-          flights.add(_Flight(tag, start, end, dressed, arc: box.widget.arc));
+          flights.add(
+            _Flight(
+              tag,
+              start,
+              end,
+              dressed,
+              arc: box.widget.arc,
+              laidOut: box.widget.shuttle != null,
+            ),
+          );
         }
       }
       setState(() => _flights = flights);
@@ -5419,23 +5685,27 @@ class _PageSwitchState extends State<_PageSwitch>
   Widget build(BuildContext context) {
     final leaving = _leaving;
     final motion = leaving == null ? null : widget.motion;
-    final route = motion == null
-        ? null
-        : CurvedAnimation(parent: _run, curve: motion.curve);
-    // A route's own move: the arriving page over the leaving one, which lies
-    // still; or the leaving one, moving, over the arriving one.
-    final under = motion != null && motion.arriving;
+    final picture = leaving == null ? null : widget.pictureMotion;
+    final routed = motion != null || picture != null;
+    Animation<double> along(_RouteMotion motion) =>
+        CurvedAnimation(parent: _run, curve: motion.curve);
+    // A route's own move: the arriving page over the leaving one, unless it
+    // is a pop - each moving as its route's transition says, or lying still.
+    final under = routed && widget.kind != 'pop';
+    final going = picture == null ? null : along(picture);
     final Widget? left = leaving == null
         ? null
         : IgnorePointer(
             key: ValueKey<int>(_leavingPage),
-            child: motion != null
-                ? (under
-                      ? _PageOf(page: _leavingPage, child: leaving)
+            child: routed
+                ? (picture == null
+                      ? (widget.kind == 'pop'
+                            ? const SizedBox.shrink()
+                            : _PageOf(page: _leavingPage, child: leaving))
                       : AnimatedBuilder(
-                          animation: route!,
+                          animation: going!,
                           builder: (context, child) =>
-                              motion.at(route.value, child!),
+                              picture.at(going.value, child!),
                           child: _PageOf(page: _leavingPage, child: leaving),
                         ))
                 : SlideTransition(
@@ -5448,6 +5718,7 @@ class _PageSwitchState extends State<_PageSwitch>
                     ),
                   ),
           );
+    final arriving = motion == null ? null : along(motion);
     return Stack(
       fit: StackFit.passthrough,
       children: [
@@ -5466,14 +5737,14 @@ class _PageSwitchState extends State<_PageSwitch>
         // route's own move, which the page's global key carries it through.
         SlideTransition(
           key: ValueKey<int>(widget.page),
-          position: leaving != null && motion == null && widget.kind == 'push'
+          position: leaving != null && !routed && widget.kind == 'push'
               ? _slide(away: false)
               : _still,
-          child: under
+          child: arriving != null
               ? AnimatedBuilder(
-                  animation: route!,
+                  animation: arriving,
                   builder: (context, child) =>
-                      motion.at(1 - route.value, child!),
+                      motion!.at(1 - arriving.value, child!),
                   child: _PageOf(
                     page: widget.page,
                     child: KeyedSubtree(key: _pageKey, child: widget.child),
@@ -5485,8 +5756,9 @@ class _PageSwitchState extends State<_PageSwitch>
                 ),
         ),
         if (left != null && !under) left,
-        // A hero in the air: the arriving page's, drawn at its own size and
-        // stretched over wherever it has got to, above both pages.
+        // A hero in the air, above both pages: its shuttle laid out at
+        // whatever size it has got to, or the arriving page's hero drawn at
+        // its own size and stretched over it.
         for (final flight in _flights)
           AnimatedBuilder(
             key: ValueKey<String>('hero ${flight.tag}'),
@@ -5497,13 +5769,15 @@ class _PageSwitchState extends State<_PageSwitch>
             ),
             child: IgnorePointer(
               child: ExcludeSemantics(
-                child: FittedBox(
-                  fit: BoxFit.fill,
-                  child: SizedBox.fromSize(
-                    size: flight.to.size,
-                    child: flight.child,
-                  ),
-                ),
+                child: flight.laidOut
+                    ? flight.child
+                    : FittedBox(
+                        fit: BoxFit.fill,
+                        child: SizedBox.fromSize(
+                          size: flight.to.size,
+                          child: flight.child,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -5512,15 +5786,83 @@ class _PageSwitchState extends State<_PageSwitch>
   }
 }
 
+/// Strips along a scaffold's edges that a drag in from opens a drawer by:
+/// 20 pixels in from where the system's own edge gesture ends, as Flutter's
+/// `DrawerController` has them. They are translucent, so a tap there still
+/// reaches what is beneath.
+class _DrawerEdges extends StatelessWidget {
+  const _DrawerEdges({
+    required this.start,
+    required this.end,
+    required this.onOpen,
+    required this.child,
+  });
+  final String? start;
+  final String? end;
+  final void Function(String eventId) onOpen;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final insets = MediaQuery.systemGestureInsetsOf(context);
+    final (left, right) = rtl ? (end, start) : (start, end);
+    Widget strip(String eventId, {required bool fromLeft}) {
+      var moved = 0.0;
+      var sent = false;
+      return Positioned(
+        top: 0,
+        bottom: 0,
+        left: fromLeft ? 0 : null,
+        right: fromLeft ? null : 0,
+        width: 20 + (fromLeft ? insets.left : insets.right),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: (_) {
+            moved = 0;
+            sent = false;
+          },
+          onHorizontalDragUpdate: (details) {
+            moved += fromLeft ? details.delta.dx : -details.delta.dx;
+            if (!sent && moved > 0) {
+              sent = true;
+              onOpen(eventId);
+            }
+          },
+        ),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        child,
+        if (left != null) strip(left, fromLeft: true),
+        if (right != null) strip(right, fromLeft: false),
+      ],
+    );
+  }
+}
+
 /// A hero on its way: from where the old page's stood to where the new
 /// page's stands, and what the new page's draws.
 class _Flight {
-  _Flight(this.tag, this.from, this.to, this.child, {bool arc = false})
-    : _arc = arc ? MaterialRectArcTween(begin: from, end: to) : null;
+  _Flight(
+    this.tag,
+    this.from,
+    this.to,
+    this.child, {
+    bool arc = false,
+    this.laidOut = false,
+  }) : _arc = arc ? MaterialRectArcTween(begin: from, end: to) : null;
   final String tag;
   final Rect from;
   final Rect to;
   final Widget child;
+
+  /// Whether [child] - a shuttle - is laid out at each size it passes
+  /// through, rather than drawn once and stretched.
+  final bool laidOut;
   final MaterialRectArcTween? _arc;
 
   /// Where it is [t] of the way: along Flutter's own arc, or straight.
@@ -5568,14 +5910,17 @@ class _HeroBox extends StatefulWidget {
     required this.child,
     this.arc = false,
     this.shuttle,
+    this.placeholder,
   });
   final String tag;
   final _Heroes heroes;
   final Widget child;
 
-  /// Whether it flies along a Material arc, and what flies in its place.
+  /// Whether it flies along a Material arc, what flies in its place, and
+  /// what stands in its room meanwhile.
   final bool arc;
   final Widget? shuttle;
+  final Widget? placeholder;
 
   @override
   State<_HeroBox> createState() => _HeroBoxState();
@@ -5623,10 +5968,22 @@ class _HeroBoxState extends State<_HeroBox> {
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.heroes,
-    builder: (context, child) => Opacity(
-      opacity: widget.heroes.hidden.contains(widget.tag) ? 0 : 1,
-      child: child,
-    ),
+    builder: (context, child) {
+      final away = widget.heroes.hidden.contains(widget.tag);
+      final placeholder = widget.placeholder;
+      // Always the same shape, so the box keeps its widgets whether or not
+      // a tree says what stands in for it.
+      return Stack(
+        fit: StackFit.passthrough,
+        // A shadow the box casts is not cut off at its edge.
+        clipBehavior: Clip.none,
+        children: [
+          Opacity(opacity: away ? 0 : 1, child: child),
+          if (away && placeholder != null)
+            Positioned.fill(child: IgnorePointer(child: placeholder)),
+        ],
+      );
+    },
     child: widget.child,
   );
 }

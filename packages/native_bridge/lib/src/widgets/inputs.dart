@@ -306,9 +306,13 @@ class UnderlineInputBorder extends InputBorder {
 /// Those travel, and so does the field's look: whether it is [filled] and
 /// with what ([fillColor]), its outline ([border], or [enabledBorder] when
 /// that is given - the kind, and the side's colour and width where the app
-/// chose them), and the room inside it ([contentPadding]). The borders for
-/// the other states - focused, in error, disabled - and the text styles of
-/// the label, the hint and the helper are the renderer's own.
+/// chose them), the colour and width of the outline when the field is
+/// focused ([focusedBorder]), in error ([errorBorder]) and disabled
+/// ([disabledBorder]) - the kind is the resting one's - the room inside it
+/// ([contentPadding]), and the colour, size and weight of the label, the
+/// hint and the helper ([labelStyle], [hintStyle], [helperStyle]). A
+/// focused field in error is drawn with [errorBorder]; the floated label's
+/// own style is the renderer's.
 class InputDecoration {
   const InputDecoration({
     this.icon,
@@ -590,8 +594,30 @@ class TextField extends Widget {
     final side = border?.borderSide;
     // A side nobody chose is Flutter's placeholder - black, one wide - which
     // a theme replaces there and a renderer replaces here.
-    final chosen = side != null && side != const BorderSide() && side != BorderSide.none;
+    bool picked(BorderSide? side) =>
+        side != null && side != const BorderSide() && side != BorderSide.none;
+    final chosen = picked(side);
     final padding = decoration?.contentPadding?._resolved._ltrb;
+    // What a state's outline changes: its colour and width, where chosen.
+    Map<String, dynamic> state(String name, InputBorder? border) {
+      final side = border?.borderSide;
+      if (!picked(side)) return const {};
+      return {
+        '${name}BorderColor': side!.color._hex,
+        '${name}BorderWidth': side.width,
+      };
+    }
+
+    Map<String, dynamic>? text(TextStyle? style) {
+      if (style == null) return null;
+      final said = {
+        'color': ?style.color?._hex,
+        'fontSize': ?style.fontSize,
+        'fontWeight': ?style.fontWeight?.value,
+      };
+      return said.isEmpty ? null : said;
+    }
+
     return {
       'textColor': ?style?.color?._hex,
       'fontSize': ?style?.fontSize,
@@ -609,11 +635,17 @@ class TextField extends Widget {
           UnderlineInputBorder() => 'underline',
           _ => 'none',
         },
-      if (chosen) 'borderColor': side.color._hex,
-      if (chosen) 'borderWidth': side.width,
+      if (chosen) 'borderColor': side!.color._hex,
+      if (chosen) 'borderWidth': side!.width,
       if (border is OutlineInputBorder)
         'borderRadius': border.borderRadius.topLeft.x,
+      ...state('focused', decoration?.focusedBorder),
+      ...state('error', decoration?.errorBorder),
+      ...state('disabled', decoration?.disabledBorder),
       'contentPadding': ?padding,
+      'hintStyle': ?text(decoration?.hintStyle),
+      'labelStyle': ?text(decoration?.labelStyle),
+      'helperStyle': ?text(decoration?.helperStyle),
     };
   }
 

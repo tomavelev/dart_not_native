@@ -2066,12 +2066,15 @@ private fun canvasText(
     val color = parseColorOrNull(style?.get("color")) ?: defaultColor
     val align = style?.get("align") as? String
     val maxWidth = (style?.get("maxWidth") as? Number)?.toFloat()
+    val spacing = (style?.get("letterSpacing") as? Number)?.toFloat() ?: 0f
 
     // A scoreboard draws many strings in a handful of styles; one paint each.
-    val paint = cache.getOrPut(listOf(size, weight, family, color)) {
+    val paint = cache.getOrPut(listOf(size, weight, family, color, spacing)) {
         TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = size
             this.color = color
+            // Room after each letter, in ems, as Android counts it.
+            if (spacing != 0f && size > 0f) letterSpacing = spacing / size
             typeface = weighted(typefaceFor(family), weight, italic = false)
             // The canvas is scaled up by the density, so glyphs are measured
             // small and drawn large; without these the advances are rounded to
@@ -2087,7 +2090,24 @@ private fun canvasText(
             "right" -> Layout.Alignment.ALIGN_OPPOSITE
             else -> Layout.Alignment.ALIGN_NORMAL
         }
-        val width = ceil(maxWidth).toInt()
+        // A text already broken into lines (`wrap: false`) is not broken
+        // again: a box narrower than the glyphs is widened about its
+        // alignment instead.
+        var box = maxWidth
+        var left = x
+        if (style?.get("wrap") == false) {
+            val natural = text.split('\n').maxOf { paint.measureText(it) }
+            if (natural > maxWidth) {
+                val extra = natural - maxWidth
+                left -= when (align) {
+                    "center" -> extra / 2f
+                    "right" -> extra
+                    else -> 0f
+                }
+                box = natural
+            }
+        }
+        val width = ceil(box).toInt()
         val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
                 .setAlignment(alignment)
@@ -2099,7 +2119,7 @@ private fun canvasText(
         }
         return CanvasOp {
             val save = it.save()
-            it.translate(x, y)
+            it.translate(left, y)
             layout.draw(it)
             it.restoreToCount(save)
         }
@@ -2746,8 +2766,81 @@ internal class ScaffoldLayout(context: Context) : LinearLayout(context) {
     /** Holds the body (scrolling or not) with the floating button over it. */
     val bodyArea = FrameLayout(context)
 
+    /**
+     * What a drag in from the start or the end edge opens: the drawer at
+     * that edge. Which side is the start is read as the touch goes down.
+     */
+    var openStart: (() -> Unit)? = null
+    var openEnd: (() -> Unit)? = null
+
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private val edge = 20 * resources.displayMetrics.density
+
+    /** The drag being watched: which way is in, and where it went down. */
+    private var opening: (() -> Unit)? = null
+    private var inward = 1f
+    private var downX = 0f
+    private var downY = 0f
+
     init {
         orientation = VERTICAL
+    }
+
+    /**
+     * How far the system's own edge gesture reaches in from each side - the
+     * back swipe of gesture navigation - which the edge a drawer is dragged
+     * from starts beyond, as in Flutter.
+     */
+    private fun systemEdges(): Pair<Int, Int> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return 0 to 0
+        val insets = rootWindowInsets ?: return 0 to 0
+        @Suppress("DEPRECATION")
+        val gestures = insets.systemGestureInsets
+        return gestures.left to gestures.right
+    }
+
+    /** Follows a touch, answering whether it has just opened a drawer. */
+    private fun followEdge(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                opening = null
+                val (left, right) = systemEdges()
+                val rtl = layoutDirection == View.LAYOUT_DIRECTION_RTL
+                if (ev.x <= left + edge) {
+                    opening = if (rtl) openEnd else openStart
+                    inward = 1f
+                } else if (ev.x >= width - right - edge) {
+                    opening = if (rtl) openStart else openEnd
+                    inward = -1f
+                }
+                downX = ev.x
+                downY = ev.y
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val open = opening ?: return false
+                val across = (ev.x - downX) * inward
+                val down = kotlin.math.abs(ev.y - downY)
+                if (down > slop && down > across) {
+                    opening = null
+                } else if (across > slop) {
+                    opening = null
+                    open()
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> opening = null
+        }
+        return false
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean =
+        followEdge(ev) || super.onInterceptTouchEvent(ev)
+
+    // A touch nothing beneath took still comes here, and is followed the same.
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        followEdge(ev)
+        return opening != null || super.onTouchEvent(ev)
     }
 }
 

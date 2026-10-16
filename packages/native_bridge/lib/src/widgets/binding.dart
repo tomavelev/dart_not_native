@@ -379,6 +379,7 @@ extension _RendererEvents on _Owner {
       platformBrightness: data['dark'] == true
           ? Brightness.dark
           : Brightness.light,
+      alwaysUse24HourFormat: data['use24Hour'] == true,
       padding: insets,
       viewPadding: insets,
       viewInsets: EdgeInsets.only(bottom: n('keyboardInset')),
@@ -967,10 +968,26 @@ class Directionality extends InheritedWidget {
   bool updateShouldNotify(Directionality oldWidget) =>
       oldWidget.textDirection != textDirection;
 
+  /// One whose direction is not the one the renderer lays out in where it
+  /// stands tells it so, on its child's node (`layoutDirection`): the
+  /// platform's own controls below it - a text field, a switch, a row of
+  /// them - then run that way too.
   @override
   WidgetNode _render(_Owner owner) {
     owner._outerDirection ??= textDirection;
-    return super._render(owner);
+    final placed = owner._placedOverride;
+    if (textDirection == owner._placedDirection) return super._render(owner);
+    owner._placedOverride = textDirection;
+    try {
+      final node = super._render(owner);
+      return WidgetNode(
+        type: node.type,
+        props: {...node.props, 'layoutDirection': textDirection.name},
+        children: node.children,
+      );
+    } finally {
+      owner._placedOverride = placed;
+    }
   }
 }
 
@@ -1120,7 +1137,8 @@ class TimeOfDay {
   /// (`src/time_formats.dart`). Under
   /// [MediaQueryData.alwaysUse24HourFormat] a locale that writes a
   /// twelve-hour clock writes `HH:mm` instead, as in Flutter. The digits are
-  /// always 0 to 9: Flutter writes a locale's own where it has them.
+  /// the locale's own where it writes numbers in other digits - `۱۵:۰۵` in
+  /// Persian - as Flutter's are, from `intl` (`timeDigitZeros`).
   ///
   /// A language Flutter has no localization for gets `HH:mm`.
   String format(BuildContext context) {
@@ -1138,13 +1156,24 @@ class TimeOfDay {
         (pattern == 'h:mm a' || pattern == 'a h:mm')) {
       pattern = 'HH:mm';
     }
-    final minutes = minute.toString().padLeft(2, '0');
-    final padded = hour.toString().padLeft(2, '0');
+    final zero = (timeDigitZeros['${language}_$country'] ??
+            timeDigitZeros[language])
+        ?.codeUnitAt(0);
+    // The locale's own digits, where it has them: the nine after its zero.
+    String digits(String number) => zero == null
+        ? number
+        : String.fromCharCodes(
+            number.codeUnits.map((unit) => zero + unit - 0x30),
+          );
+    final minutes = digits(minute.toString().padLeft(2, '0'));
+    final padded = digits(hour.toString().padLeft(2, '0'));
+    final plain = digits('$hour');
+    final ofPeriod = digits('$hourOfPeriod');
     final half = period == DayPeriod.am ? am : pm;
     return switch (pattern) {
-      'h:mm a' => '$hourOfPeriod:$minutes $half',
-      'a h:mm' => '$half $hourOfPeriod:$minutes',
-      'H:mm' => '$hour:$minutes',
+      'h:mm a' => '$ofPeriod:$minutes $half',
+      'a h:mm' => '$half $ofPeriod:$minutes',
+      'H:mm' => '$plain:$minutes',
       'HH.mm' => '$padded.$minutes',
       "HH 'h' mm" => '$padded h $minutes',
       _ => '$padded:$minutes',

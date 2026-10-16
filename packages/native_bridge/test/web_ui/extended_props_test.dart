@@ -305,6 +305,96 @@ void main() {
       });
     });
 
+    test('a node that reads its own way is laid out that way, and goes back '
+        'when it stops saying so', () async {
+      WidgetNode row({String? direction}) => WidgetNode(
+        type: 'Row',
+        props: {'layoutDirection': ?direction},
+        children: [UIBuilder.text('a'), UIBuilder.text('b')],
+      );
+      await renderer.render(
+        UIBuilder.column(children: [row(direction: 'ltr')]),
+      );
+      expect(of('Row').getAttribute('dir'), 'ltr');
+
+      await renderer.render(UIBuilder.column(children: [row()]));
+      expect(of('Row').hasAttribute('dir'), isFalse);
+    });
+
+    test('a run that can be held sends its event after a long press, and '
+        'not on a quick tap', () async {
+      var held = 0;
+      renderer.onEvent('define', (_) => held++);
+      await renderer.render(
+        UIBuilder.text(
+          'Hold word',
+          spans: [
+            {'text': 'Hold '},
+            {'text': 'word', 'longPressEventId': 'define'},
+          ],
+        ),
+      );
+      final run = of('Text').children.item(1)! as web.HTMLElement;
+      // In fractions of a pixel, as a finger is reported: the typed
+      // `clientX` getter throws on one.
+      web.PointerEvent press(String type) => web.PointerEvent(
+        type,
+        {'bubbles': true, 'clientX': 5.5, 'clientY': 5.25}.jsify()!
+            as web.PointerEventInit,
+      );
+
+      run
+        ..dispatchEvent(press('pointerdown'))
+        ..dispatchEvent(press('pointerup'));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(held, 0);
+
+      run.dispatchEvent(press('pointerdown'));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(held, 1);
+    });
+
+    test('a widget run is the widget itself, in the line', () async {
+      await renderer.render(
+        UIBuilder.text(
+          'Tap \uFFFC',
+          spans: [
+            {'text': 'Tap '},
+            {
+              'text': '\uFFFC',
+              'widget': UIBuilder.button(label: 'here', eventId: 'go').toJson(),
+              'eventId': 'go',
+            },
+          ],
+        ),
+      );
+      final holder = of('Text').children.item(1)! as web.HTMLElement;
+      expect(holder.className, 'dnn-text__widget');
+      expect(holder.style.display, 'inline-block');
+      expect(holder.textContent, contains('here'));
+      expect(holder.getAttribute('role'), isNull);
+    });
+
+    test('a widget run keeps what is inside its boxes', () async {
+      await renderer.render(
+        UIBuilder.text(
+          'x \uFFFC',
+          spans: [
+            {'text': 'x '},
+            {
+              'text': '\uFFFC',
+              'widget': UIBuilder.box(
+                padding: [2, 2, 2, 2],
+                child: UIBuilder.text('a chip'),
+              ).toJson(),
+            },
+          ],
+        ),
+      );
+      final holder = of('Text').children.item(1)! as web.HTMLElement;
+      expect(holder.textContent, 'a chip');
+    });
+
     test('spans are child runs, each with only its own style', () async {
       await renderer.render(
         UIBuilder.text(

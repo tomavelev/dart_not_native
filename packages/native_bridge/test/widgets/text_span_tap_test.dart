@@ -138,4 +138,110 @@ void main() {
   test('dispose is there to be called, as Flutter asks', () {
     expect(() => TapGestureRecognizer().dispose(), returnsNormally);
   });
+
+  test('a run with a long-press recogniser carries an event of its own, '
+      'and sends it', () async {
+    var held = 0;
+    final app = AppTester.widget(
+      Text.rich(
+        TextSpan(
+          text: 'Hold ',
+          children: [
+            TextSpan(
+              text: 'this',
+              recognizer: LongPressGestureRecognizer()
+                ..onLongPress = () => held++,
+            ),
+          ],
+        ),
+      ),
+    );
+    final spans = spansOf(app);
+
+    expect(spans[1].containsKey('eventId'), isFalse);
+    await app.emit(spans[1]['longPressEventId'] as String);
+    expect(held, 1);
+  });
+
+  group('a WidgetSpan', () {
+    test('is its widget in the line, standing for one character', () {
+      final app = AppTester.widget(
+        const Text.rich(
+          TextSpan(
+            text: 'Before ',
+            children: [
+              WidgetSpan(child: Icon(Icons.star)),
+              TextSpan(text: ' after'),
+            ],
+          ),
+        ),
+      );
+      final spans = spansOf(app);
+
+      expect(spans.map((span) => span['text']), [
+        'Before ',
+        '\uFFFC',
+        ' after',
+      ]);
+      expect((spans[1]['widget'] as Map)['type'], 'Icon');
+      expect(spans[1].containsKey('eventId'), isFalse);
+    });
+
+    test('says the tap of the first thing in it that takes one, for a '
+        'renderer that draws it as a picture', () async {
+      var pressed = 0;
+      final app = AppTester.widget(
+        Text.rich(
+          TextSpan(
+            children: [
+              const TextSpan(text: 'Tap '),
+              WidgetSpan(
+                child: GestureDetector(
+                  onTap: () => pressed++,
+                  child: const Text('here'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      final run = spansOf(app)[1];
+
+      await app.emit(run['eventId'] as String);
+      expect(pressed, 1);
+    });
+
+    test('is a character in the plain text, as in Flutter', () {
+      expect(
+        const TextSpan(
+          text: 'a',
+          children: [WidgetSpan(child: SizedBox())],
+        ).toPlainText(),
+        'a\uFFFC',
+      );
+    });
+  });
+
+  test('SelectableText.rich is selectable, and its links send their events',
+      () async {
+    var opened = 0;
+    final app = AppTester.widget(
+      SelectableText.rich(
+        TextSpan(
+          text: 'Read the ',
+          children: [
+            TextSpan(
+              text: 'terms',
+              recognizer: TapGestureRecognizer()..onTap = () => opened++,
+            ),
+          ],
+        ),
+      ),
+    );
+    final text = app.ofType('Text').single;
+    expect(text.props['selectable'], isTrue);
+    expect(text.props['content'], 'Read the terms');
+    await app.emit(spansOf(app)[1]['eventId'] as String);
+    expect(opened, 1);
+  });
 }

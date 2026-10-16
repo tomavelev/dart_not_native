@@ -280,6 +280,19 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   /// Told when a move to the child's size has got there.
   var sizeEndEventId: String?
 
+  /// Set while the renderer draws a tree: it moves a box to its size itself
+  /// then (`moveSizes`).
+  static var rendering = false
+
+  /// The size the box last settled at, for one that moves to its size: a
+  /// change outside a render - a picture arriving in it - is moved to here.
+  private var settledSize: CGSize?
+
+  /// Moves the box from a size to the one its child has come to by itself,
+  /// held at the first: given by the renderer, which knows the root to lay
+  /// out as it goes.
+  var followSize: ((DnnBoxView, CGSize, CGSize) -> Void)?
+
   /// Whether the box stays at the top of the scroller it is in once the
   /// content has scrolled past it (`sticky`).
   var sticky = false {
@@ -871,6 +884,19 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     applyShape()
     // A matrix works about a point in the box, which moves with its size.
     if style.matrix != nil { applyTransform() }
+    if animatesSize, sizePins.isEmpty {
+      let size = surface.bounds.size
+      let was = settledSize
+      settledSize = size
+      // Its child changed size between renders: held where it was, and
+      // moved from there.
+      if !DnnBoxView.rendering, window != nil, let was, let follow = followSize,
+        abs(size.width - was.width) > 0.5 || abs(size.height - was.height) > 0.5
+      {
+        pinSize(was)
+        follow(self, was, size)
+      }
+    }
 
     guard let eventId = style.sizeEventId else { return }
     let size = surface.bounds.size
@@ -1944,16 +1970,37 @@ final class DnnCanvasDrawingView: UIView {
     case "right": paragraph.alignment = .right
     default: paragraph.alignment = .left
     }
-    let attributes: [NSAttributedString.Key: Any] = [
+    var attributes: [NSAttributedString.Key: Any] = [
       .font: font,
       .foregroundColor: dnnColor(options["color"]) ?? UIColor.black,
       .paragraphStyle: paragraph,
     ]
+    // Room after each letter, where the paint said.
+    if let spacing = dnnNumber(options["letterSpacing"]) {
+      attributes[.kern] = NSNumber(value: Double(spacing))
+    }
     let text = NSAttributedString(string: string, attributes: attributes)
     if let maxWidth = dnnNumber(options["maxWidth"]), maxWidth > 0, maxWidth.isFinite {
       // Aligned within the width it was given.
+      // A text already broken into lines (`wrap: false`) is not broken
+      // again: a box narrower than the glyphs is widened about its
+      // alignment instead.
+      var left = x
+      var width = maxWidth
+      if options["wrap"] as? Bool == false {
+        let natural = ceil(
+          text.boundingRect(
+            with: CGSize(width: 100_000, height: 100_000),
+            options: [.usesLineFragmentOrigin], context: nil
+          ).width)
+        if natural > maxWidth {
+          let extra = natural - maxWidth
+          left -= align == "center" ? extra / 2 : align == "right" ? extra : 0
+          width = natural
+        }
+      }
       text.draw(
-        with: CGRect(x: x, y: y, width: maxWidth, height: 100_000),
+        with: CGRect(x: left, y: y, width: width, height: 100_000),
         options: [.usesLineFragmentOrigin], context: nil)
       return
     }
@@ -2858,6 +2905,53 @@ final class DnnTextField: UITextField {
   /// The line under a field that is underlined; kept so it is made once.
   private var underline: UIView?
 
+  /// The outline the app gave the field - `none`, `outline` or `underline`,
+  /// and how round - and its colour and width in each state it named
+  /// (`rest`, `focused`, `error`, `disabled`). Nil keeps UIKit's box.
+  var outline: (kind: String, radius: CGFloat)? { didSet { paintOutline() } }
+  var lines: [String: (UIColor, CGFloat)] = [:] { didSet { paintOutline() } }
+
+  /// Whether the field is showing an error, which its outline says too.
+  var inError = false { didSet { if inError != oldValue { paintOutline() } } }
+
+  override var isEnabled: Bool { didSet { paintOutline() } }
+
+  override func becomeFirstResponder() -> Bool {
+    let became = super.becomeFirstResponder()
+    paintOutline()
+    return became
+  }
+
+  override func resignFirstResponder() -> Bool {
+    let resigned = super.resignFirstResponder()
+    paintOutline()
+    return resigned
+  }
+
+  /// Draws the outline in the colour and width of the state the field is in.
+  private func paintOutline() {
+    guard let outline, let rest = lines["rest"] else { return }
+    let state =
+      !isEnabled ? "disabled" : inError ? "error" : isFirstResponder ? "focused" : "rest"
+    let (color, width) = lines[state] ?? rest
+    layer.borderWidth = 0
+    layer.cornerRadius = 0
+    setUnderline(color: nil, width: 0)
+    switch outline.kind {
+    case "none":
+      break
+    case "outline":
+      layer.borderWidth = width
+      layer.borderColor = color.cgColor
+      layer.cornerRadius = outline.radius
+      layer.masksToBounds = true
+    default:
+      // A line under the field - and under one that is only filled, which
+      // is how Material draws a filled field.
+      setUnderline(color: color, width: width)
+    }
+  }
+
   /// Draws, or takes away, a line along the bottom edge.
   func setUnderline(color: UIColor?, width: CGFloat) {
     underline?.removeFromSuperview()
@@ -3122,15 +3216,36 @@ final class DnnPickerPanel: UIView {
 
 // MARK: - Text with runs that can be tapped
 
+/// What a touch on a run of text does: where the run is in the string, the
+/// event its tap sends and the one its long press sends.
+struct DnnRun {
+  let range: NSRange
+  let tap: String?
+  let longPress: String?
+}
+
+/// The run of `runs` a touch at `point` landed on, in text laid out by
+/// `layout` into `container` - only a touch on the run's own glyphs counts.
+func dnnRun(
+  at point: CGPoint, in runs: [DnnRun], layout: NSLayoutManager, container: NSTextContainer
+) -> DnnRun? {
+  guard !runs.isEmpty, layout.numberOfGlyphs > 0 else { return nil }
+  let glyph = layout.glyphIndex(for: point, in: container)
+  // The nearest glyph is found for a touch anywhere; only one on it counts.
+  let box = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+  guard box.insetBy(dx: -4, dy: -4).contains(point) else { return nil }
+  let character = layout.characterIndexForGlyph(at: glyph)
+  return runs.first { NSLocationInRange(character, $0.range) }
+}
+
 /// The label a `Text` node is drawn with.
 ///
-/// It knows which of its runs a tap landed on: a UILabel has no links of its
-/// own, so the text is laid out again the way the label lays it out and the
-/// touch is looked up in that.
+/// It knows which of its runs a touch landed on: a UILabel has no links of
+/// its own, so the text is laid out again the way the label lays it out and
+/// the touch is looked up in that.
 final class DnnLabel: UILabel {
-  /// The runs that can be tapped: where each is in the string, and the event
-  /// its tap sends.
-  var links: [(NSRange, String)] = [] {
+  /// The runs that can be tapped or held.
+  var links: [DnnRun] = [] {
     didSet {
       isUserInteractionEnabled = !links.isEmpty
       if links.isEmpty {
@@ -3143,6 +3258,8 @@ final class DnnLabel: UILabel {
   var onLink: ((String) -> Void)?
 
   private lazy var tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+  private lazy var hold = UILongPressGestureRecognizer(
+    target: self, action: #selector(held(_:)))
 
   /// A label given more height than its lines need writes them from the top,
   /// as Flutter's text does, where UIKit would centre them: a page that is
@@ -3157,7 +3274,10 @@ final class DnnLabel: UILabel {
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    if tap.view == nil { addGestureRecognizer(tap) }
+    if tap.view == nil {
+      addGestureRecognizer(tap)
+      addGestureRecognizer(hold)
+    }
   }
 
   /// A touch that is on no link is not the label's: whatever is behind it -
@@ -3167,11 +3287,18 @@ final class DnnLabel: UILabel {
   }
 
   @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
-    guard let eventId = link(at: recognizer.location(in: self)) else { return }
+    guard let eventId = link(at: recognizer.location(in: self))?.tap else { return }
     onLink?(eventId)
   }
 
-  private func link(at point: CGPoint) -> String? {
+  @objc private func held(_ recognizer: UILongPressGestureRecognizer) {
+    guard recognizer.state == .began,
+      let eventId = link(at: recognizer.location(in: self))?.longPress
+    else { return }
+    onLink?(eventId)
+  }
+
+  private func link(at point: CGPoint) -> DnnRun? {
     guard !links.isEmpty, let text = attributedText, text.length > 0 else { return nil }
     let storage = NSTextStorage(attributedString: text)
     let layout = NSLayoutManager()
@@ -3182,13 +3309,67 @@ final class DnnLabel: UILabel {
     layout.addTextContainer(container)
     storage.addLayoutManager(layout)
     // The lines are written from the top - see `drawText(in:)`.
-    let inText = point
-    let glyph = layout.glyphIndex(for: inText, in: container)
-    // The nearest glyph is found for a touch anywhere; only one on it counts.
-    let box = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
-    guard box.insetBy(dx: -4, dy: -4).contains(inText) else { return nil }
-    let character = layout.characterIndexForGlyph(at: glyph)
-    return links.first { NSLocationInRange(character, $0.0) }?.1
+    return dnnRun(at: point, in: links, layout: layout, container: container)
+  }
+}
+
+/// The text view selectable text is drawn with: one that neither edits nor
+/// scrolls, and whose runs can be tapped and held as a label's are. A tap or
+/// a hold on a run is the run's as well as the selection's.
+final class DnnSelectableTextView: UITextView, UIGestureRecognizerDelegate {
+  var links: [DnnRun] = [] {
+    didSet {
+      if links.isEmpty {
+        accessibilityTraits.remove(.link)
+      } else {
+        accessibilityTraits.insert(.link)
+      }
+    }
+  }
+  var onLink: ((String) -> Void)?
+
+  private lazy var tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+  private lazy var hold = UILongPressGestureRecognizer(
+    target: self, action: #selector(held(_:)))
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if tap.view == nil {
+      tap.delegate = self
+      hold.delegate = self
+      addGestureRecognizer(tap)
+      addGestureRecognizer(hold)
+    }
+  }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+  ) -> Bool { true }
+
+  override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+    if recognizer === tap || recognizer === hold {
+      return link(at: recognizer.location(in: self)) != nil
+    }
+    return super.gestureRecognizerShouldBegin(recognizer)
+  }
+
+  @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
+    guard let eventId = link(at: recognizer.location(in: self))?.tap else { return }
+    onLink?(eventId)
+  }
+
+  @objc private func held(_ recognizer: UILongPressGestureRecognizer) {
+    guard recognizer.state == .began,
+      let eventId = link(at: recognizer.location(in: self))?.longPress
+    else { return }
+    onLink?(eventId)
+  }
+
+  private func link(at point: CGPoint) -> DnnRun? {
+    let inset = textContainerInset
+    let inText = CGPoint(x: point.x - inset.left, y: point.y - inset.top)
+    return dnnRun(at: inText, in: links, layout: layoutManager, container: textContainer)
   }
 }
 
@@ -3665,5 +3846,21 @@ func dnnBlendMode(_ name: String?) -> CGBlendMode {
   case "color": return .color
   case "luminosity": return .luminosity
   default: return .normal
+  }
+}
+
+/// The view an `Image` node draws its picture in. Given only a width
+/// (`statedWidth`), it is as tall as that width makes the picture in its own
+/// proportions - and not tall at all before the picture comes - rather than
+/// as tall as the picture is in points.
+final class DnnImageView: UIImageView {
+  var statedWidth: CGFloat?
+
+  override var intrinsicContentSize: CGSize {
+    guard let width = statedWidth else { return super.intrinsicContentSize }
+    guard let size = image?.size, size.width > 0 else {
+      return CGSize(width: UIView.noIntrinsicMetric, height: 0)
+    }
+    return CGSize(width: width, height: width * size.height / size.width)
   }
 }

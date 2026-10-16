@@ -48,6 +48,26 @@ void main() {
     expect(height(), 120);
   });
 
+  test('a child that grows between renders - a picture arriving - is moved '
+      'to as well', () async {
+    final renderer = WebUIRenderer(root: root);
+    await renderer.render(sized(20));
+    // Let the watcher see the box as it is.
+    await wait(50);
+    expect(height(), 20);
+
+    final child =
+        root.querySelector('#outer')!.firstElementChild! as web.HTMLElement;
+    child.style.height = '120px';
+    await wait(80);
+    final between = height();
+    expect(between, greaterThan(20));
+    expect(between, lessThan(120));
+
+    await wait(350);
+    expect(height(), 120);
+  });
+
   test('a move that gets there says so', () async {
     final renderer = WebUIRenderer(root: root);
     final said = <String>[];
