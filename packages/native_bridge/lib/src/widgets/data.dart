@@ -1353,7 +1353,12 @@ class _InteractiveViewerState extends State<InteractiveViewer> {
     final scale = shown._scaleX;
     final held = scale.clamp(widget.minScale, widget.maxScale).toDouble();
     if (held != scale) shown.scale(held / scale);
-    final moved = Transform(transform: shown, child: widget.child);
+    // About the middle, which is what the shifts above make up for.
+    final moved = Transform(
+      transform: shown,
+      alignment: Alignment.center,
+      child: widget.child,
+    );
     final clipped = widget.clipBehavior == Clip.none
         ? moved as Widget
         : ClipRect(child: moved);

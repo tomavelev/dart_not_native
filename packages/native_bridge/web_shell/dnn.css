@@ -881,6 +881,12 @@ body:has(.dnn-modal) { overflow: hidden; }
 .dnn-box--ripple:active::after { opacity: 0.12; }
 /* The copy of a box that follows the pointer while it is dragged. */
 .dnn-drag-ghost { opacity: 0.85; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3); }
+/* What the app said to carry: as it was drawn, at its own size. */
+.dnn-drag-feedback { width: max-content; }
+/* What a hero said flies in its place: laid out at the hero's size, as
+ * Flutter lays a shuttle out over the flight. */
+.dnn-hero-shuttle { display: flex; }
+.dnn-hero-shuttle > * { flex: 1 1 auto; min-width: 0; }
 
 /* expand. What "fill" means depends on what the element is in: across a
  * column it is the column's width, along a row it is a share of what the row

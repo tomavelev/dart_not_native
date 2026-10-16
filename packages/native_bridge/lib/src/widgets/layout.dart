@@ -453,14 +453,27 @@ bool _takesOfferedWidth(Widget? child) =>
     (child is Center && child.widthFactor == null) ||
     (child is Align && child.widthFactor == null) ||
     (child is AnimatedAlign && child.widthFactor == null) ||
-    (child is Row && child.mainAxisSize == MainAxisSize.max);
+    (child is Row && child.mainAxisSize == MainAxisSize.max) ||
+    _scrollsInAll(child);
 
 /// The same along the height, which only a `Center` takes: a `Column` already
 /// says whether it fills.
 bool _takesOfferedHeight(Widget? child) =>
     (child is Center && child.heightFactor == null) ||
     (child is Align && child.heightFactor == null) ||
-    (child is AnimatedAlign && child.heightFactor == null);
+    (child is AnimatedAlign && child.heightFactor == null) ||
+    _scrollsInAll(child);
+
+/// Whether [child] is a scroll view that is as big as the room it is given,
+/// on both axes, as Flutter's viewport is - one that does not shrink-wrap.
+bool _scrollsInAll(Widget? child) => switch (child) {
+  ListView(:final shrinkWrap) ||
+  GridView(:final shrinkWrap) ||
+  CustomScrollView(:final shrinkWrap) => !shrinkWrap,
+  // A single child's scroll view is as big as the child, up to the room.
+  PageView() || TabBarView() => true,
+  _ => false,
+};
 
 String? _expandOf(bool width, bool height) =>
     width ? (height ? 'both' : 'width') : (height ? 'height' : null);
@@ -502,6 +515,7 @@ WidgetNode _box(
   Decoration? decoration,
   Decoration? foregroundDecoration,
   Matrix4? transform,
+  AlignmentGeometry? transformAlignment,
   bool clip = false,
   double? opacity,
   String? expand,
@@ -599,7 +613,7 @@ WidgetNode _box(
     shadow: shadows == null || shadows.isEmpty ? null : shadows.first._json,
     clip: clip,
     opacity: opacity,
-    transform: transform?._transform,
+    transform: transform?._transformAbout(transformAlignment),
     onTap: onTap,
     onLongPress: onLongPress,
     ripple: ripple,
@@ -742,6 +756,7 @@ class Container extends Widget {
     decoration: decoration,
     foregroundDecoration: foregroundDecoration,
     transform: transform,
+    transformAlignment: transformAlignment,
     clip: clipBehavior != Clip.none,
     fillWhenEmpty: true,
     id: _idOf(key),
@@ -940,9 +955,9 @@ class Opacity extends Widget {
 
 /// Turns, scales or moves its child without changing the room it takes.
 ///
-/// The protocol's transform is a rotation, one scale and an offset, about the
-/// centre: that covers the three named constructors exactly, and of a general
-/// [Matrix4] it carries those same parts.
+/// The named constructors turn and scale about the middle, as Flutter's do;
+/// a [Matrix4] works about [alignment] and [origin] - the top left, where
+/// they say nothing - and may skew, or tilt it in perspective.
 class Transform extends Widget {
   const Transform({
     super.key,
@@ -993,7 +1008,7 @@ class Transform extends Widget {
 
   @override
   WidgetNode _render(_Owner owner) => UIBuilder.box(
-    transform: _map ?? transform?._transform,
+    transform: _map ?? transform?._transformAbout(alignment, origin),
     id: _idOf(key),
     child: child == null ? null : _renderChild(owner, child!),
   );
@@ -1515,6 +1530,63 @@ class Tooltip extends Widget {
   }
 }
 
+/// Which way a [Hero] flies: on a push, to the page arriving; on a pop, back
+/// to the page beneath.
+enum HeroFlightDirection { push, pop }
+
+/// Builds what flies in a [Hero]'s place.
+typedef HeroFlightShuttleBuilder =
+    Widget Function(
+      BuildContext flightContext,
+      Animation<double> animation,
+      HeroFlightDirection flightDirection,
+      BuildContext fromHeroContext,
+      BuildContext toHeroContext,
+    );
+
+/// Builds what stands where a [Hero] was while it is in the air.
+typedef HeroPlaceholderBuilder =
+    Widget Function(BuildContext context, Size heroSize, Widget child);
+
+/// The way a [Hero]'s rectangle travels from [begin] to [end].
+typedef CreateRectTween = Tween<Rect?> Function(Rect? begin, Rect? end);
+
+/// The rectangles between two, in a straight line, in Flutter.
+class RectTween extends Tween<Rect?> {
+  RectTween({super.begin, super.end});
+
+  @override
+  Rect? lerp(double t) {
+    final a = begin, b = end;
+    if (a == null || b == null) return t < 0.5 ? a : b;
+    double between(double x, double y) => x + (y - x) * t;
+    return Rect.fromLTRB(
+      between(a.left, b.left),
+      between(a.top, b.top),
+      between(a.right, b.right),
+      between(a.bottom, b.bottom),
+    );
+  }
+}
+
+/// The rectangles between two along a Material arc - the way a hero flies in
+/// a [MaterialApp] unless it says otherwise: two opposite corners each
+/// travel along an arc of a circle.
+class MaterialRectArcTween extends RectTween {
+  MaterialRectArcTween({super.begin, super.end});
+
+  @override
+  Rect? lerp(double t) {
+    final a = begin, b = end;
+    if (a == null || b == null) return super.lerp(t);
+    final (left, top, right, bottom) = ArcRectPath(
+      (a.left, a.top, a.right, a.bottom),
+      (b.left, b.top, b.right, b.bottom),
+    ).at(t);
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
+}
+
 /// A widget that flies between two pages.
 ///
 /// When a page is pushed or popped and both the page left and the page
@@ -1523,12 +1595,18 @@ class Tooltip extends Widget {
 /// length of the page transition - changing size on the way - and shows
 /// neither of the two meanwhile.
 ///
-/// The flight is the renderer's: it is always the arriving page's hero that
-/// flies, along a straight line, so [createRectTween], [flightShuttleBuilder]
-/// and [placeholderBuilder] are accepted and not called, and a hero does not
-/// follow a back swipe ([transitionOnUserGestures]). The [tag] is told to
-/// the renderer as its `toString()`, so two tags that print alike are one.
-class Hero extends StatelessWidget {
+/// It flies along a Material arc ([MaterialRectArcTween]) inside a
+/// [MaterialApp], as Flutter's does, and in a straight line elsewhere;
+/// [createRectTween] says which, by the tween it makes being one or the
+/// other - any other tween is a straight line. What flies is the arriving
+/// page's hero, or what a [flightShuttleBuilder] builds instead - its own,
+/// or else the one the hero it flies from has, as in Flutter - drawn at
+/// the end of the flight: the animation it is handed stands at its end, and
+/// both hero contexts are the arriving hero's own. [placeholderBuilder] is
+/// accepted and not called, and a hero does not follow a back swipe
+/// ([transitionOnUserGestures]). The [tag] is told to the renderer as its
+/// `toString()`, so two tags that print alike are one.
+class Hero extends StatefulWidget {
   const Hero({
     super.key,
     required this.tag,
@@ -1541,20 +1619,63 @@ class Hero extends StatelessWidget {
 
   /// What pairs this hero with the one on the other page.
   final Object tag;
-  final Object? createRectTween;
-  final Object? flightShuttleBuilder;
-  final Object? placeholderBuilder;
+  final CreateRectTween? createRectTween;
+  final HeroFlightShuttleBuilder? flightShuttleBuilder;
+  final HeroPlaceholderBuilder? placeholderBuilder;
   final bool transitionOnUserGestures;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => _NodeWidget(
-    (owner) => UIBuilder.box(
-      hero: '$tag',
-      id: _idOf(key),
-      child: _renderChild(owner, child),
-    ),
-  );
+  State<Hero> createState() => _HeroState();
+}
+
+class _HeroState extends State<Hero> {
+  /// Whether this hero flies along an arc: as Flutter's does in a
+  /// [MaterialApp], or wherever its tween is a [MaterialRectArcTween].
+  bool _arcs(BuildContext context) {
+    final make = widget.createRectTween;
+    if (make == null) {
+      return context.findAncestorWidgetOfExactType<MaterialApp>() != null;
+    }
+    return make(
+      const Rect.fromLTWH(0, 0, 10, 10),
+      const Rect.fromLTWH(100, 200, 20, 20),
+    ) is MaterialRectArcTween;
+  }
+
+  @override
+  Widget build(BuildContext context) => _NodeWidget((owner) {
+    final tag = '${widget.tag}';
+    final own = widget.flightShuttleBuilder;
+    if (own != null && owner._hidden == 0) owner._heroShuttles[tag] = own;
+    // Its own, or else the one the hero it flies from had.
+    final shuttle = own ?? owner._heroShuttlesBefore[tag];
+    // Only on the tree that turns the page: the one a flight starts from.
+    final turning = owner._pageTransition;
+    final popping = turning?['kind'] == 'pop';
+    final flown = shuttle == null || turning == null
+        ? null
+        : _withoutIds(
+            _renderChild(
+              owner,
+              shuttle(
+                context,
+                popping ? kAlwaysDismissedAnimation : kAlwaysCompleteAnimation,
+                popping ? HeroFlightDirection.pop : HeroFlightDirection.push,
+                context,
+                context,
+              ),
+              'shuttle',
+            ),
+          );
+    return UIBuilder.box(
+      hero: tag,
+      heroArc: _arcs(context),
+      heroShuttle: flown,
+      id: _idOf(widget.key),
+      child: _renderChild(owner, widget.child),
+    );
+  });
 }
 
 /// The pointer a mouse shows over a [MouseRegion].

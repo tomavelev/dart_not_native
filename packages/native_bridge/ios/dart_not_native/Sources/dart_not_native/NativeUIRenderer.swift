@@ -667,6 +667,14 @@ class NativeUIRenderer {
     guard let leaving = picture else { return }
     leaving.frame = container.frame
     leaving.isUserInteractionEnabled = false
+    let page = transition["page"] as? [String: Any]
+    let moved = transition["picture"] as? [String: Any]
+    if page != nil || moved != nil {
+      moveByRoute(
+        container, leaving, above: above, ms: ms, page: page, picture: moved,
+        heroes: starts, sources: hidden.map { $0.0 })
+      return
+    }
     above.insertSubview(leaving, aboveSubview: container)
     let kind = transition["kind"] as? String
     let travel = container.bounds.width * 0.25 * (rtl ? -1 : 1)
@@ -695,6 +703,107 @@ class NativeUIRenderer {
     }
   }
 
+  /// Moves the pages the way a route's own transition says (see Dart's
+  /// `RootProps.pageTransition`): the new `page` from where it starts to its
+  /// place, over `leaving`, the picture of the old one lying still beneath
+  /// it - or `leaving` from its place to where `picture` says, over the new
+  /// page.
+  private func moveByRoute(
+    _ container: UIView, _ leaving: UIView, above: UIView, ms: Double,
+    page: [String: Any]?, picture: [String: Any]?,
+    heroes starts: [String: CGRect], sources: [UIView]
+  ) {
+    guard let motion = page ?? picture else { return }
+    func n(_ key: String, _ fallback: CGFloat) -> CGFloat {
+      (motion[key] as? NSNumber).map { CGFloat($0.doubleValue) } ?? fallback
+    }
+    let size = container.bounds.size
+    let background = container.backgroundColor
+    if page != nil {
+      // Beneath the page, which lets it through while it moves.
+      above.insertSubview(leaving, belowSubview: container)
+      container.backgroundColor = .clear
+    } else {
+      above.insertSubview(leaving, aboveSubview: container)
+    }
+    // Straight through, as a route's animation runs, unless it says.
+    let points = travelPoints(motion["curve"] ?? "linear")
+    let timing =
+      points.map {
+        CAMediaTimingFunction(
+          controlPoints: Float($0.0.x), Float($0.0.y), Float($0.1.x), Float($0.1.y))
+      } ?? CAMediaTimingFunction(name: .linear)
+    // Each part on its own key path: a turn by its angle, so a whole turn
+    // turns, which a move between two matrices would not.
+    let parts: [(String, CGFloat, CGFloat)] = [
+      ("opacity", min(1, max(0, n("opacity", 1))), 1),
+      ("transform.translation.x", n("dx", 0) * size.width, 0),
+      ("transform.translation.y", n("dy", 0) * size.height, 0),
+      ("transform.scale", n("scale", 1), 1),
+      ("transform.rotation.z", n("rotate", 0), 0),
+    ]
+    // The page is not drawn yet: this is called before the render, and the
+    // animation is set going once it has been.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      if !starts.isEmpty {
+        self.flyHeroes(from: starts, sources: sources, in: container, above: above, ms: ms)
+      }
+      guard let layer = page != nil ? self.currentRoot?.layer : leaving.layer else {
+        leaving.removeFromSuperview()
+        container.backgroundColor = background
+        return
+      }
+      CATransaction.begin()
+      CATransaction.setCompletionBlock {
+        leaving.removeFromSuperview()
+        container.backgroundColor = background
+        for (key, _, _) in parts { layer.removeAnimation(forKey: "dnn.route." + key) }
+      }
+      for (key, moved, still) in parts where moved != still {
+        let run = CABasicAnimation(keyPath: key)
+        // The page from where it starts; the picture to where it goes.
+        run.fromValue = page != nil ? moved : still
+        run.toValue = page != nil ? still : moved
+        run.duration = ms / 1000
+        run.timingFunction = timing
+        run.fillMode = .forwards
+        run.isRemovedOnCompletion = false
+        layer.add(run, forKey: "dnn.route." + key)
+      }
+      // Something to wait on, when nothing moves at all.
+      let held = CABasicAnimation(keyPath: "dnn.route.held")
+      held.duration = ms / 1000
+      layer.add(held, forKey: "dnn.route.held")
+      CATransaction.commit()
+    }
+  }
+
+  /// The heroes that fly along a Material arc (`heroArc`).
+  private let heroArcs = NSHashTable<UIView>.weakObjects()
+
+  /// What flies in a hero's place (`heroShuttle`), by view.
+  private let heroShuttles = NSMapTable<UIView, NSDictionary>.weakToStrongObjects()
+
+  /// What flies for `hero`: a picture of its shuttle drawn at `size`, or of
+  /// the hero itself - stretched over the flight either way.
+  private func flightPicture(_ hero: UIView, size: CGSize) -> UIView? {
+    guard let shuttle = heroShuttles.object(forKey: hero) as? [String: Any],
+      let drawn = renderWidget(normalized(shuttle)), size.width > 0, size.height > 0
+    else {
+      return hero.snapshotView(afterScreenUpdates: true)
+    }
+    drawn.frame = CGRect(origin: .zero, size: size)
+    drawn.setNeedsLayout()
+    drawn.layoutIfNeeded()
+    let image = UIGraphicsImageRenderer(size: size).image { context in
+      drawn.layer.render(in: context.cgContext)
+    }
+    let picture = UIImageView(image: image)
+    picture.contentMode = .scaleToFill
+    return picture
+  }
+
   /// The boxes that have a hero's name (`hero`), by view.
   private let heroViews = NSMapTable<UIView, NSString>.weakToStrongObjects()
 
@@ -720,20 +829,40 @@ class NativeUIRenderer {
       let end = view.convert(view.bounds, to: above)
       // The same view in the same place: it never left.
       if sources.contains(where: { $0 === view }), end.equalTo(start) { continue }
-      guard let flight = view.snapshotView(afterScreenUpdates: true) else { continue }
+      guard let flight = flightPicture(view, size: end.size) else { continue }
       flown.insert(name)
       flight.frame = start
       flight.isUserInteractionEnabled = false
       above.addSubview(flight)
       let shown = view.alpha
       view.alpha = 0
-      UIView.animate(
-        withDuration: ms / 1000, delay: 0, options: [.curveEaseInOut],
-        animations: { flight.frame = end },
-        completion: { [weak view] _ in
-          flight.removeFromSuperview()
-          view?.alpha = shown
-        })
+      let land: (Bool) -> Void = { [weak view] _ in
+        flight.removeFromSuperview()
+        view?.alpha = shown
+      }
+      if heroArcs.contains(view) {
+        // Along the arc a point at a time, each placed where the eased run
+        // has got to by then: Flutter's fast-out-slow-in over the whole.
+        let path = DnnArcRectPath(from: start, to: end)
+        let steps = 24
+        UIView.animateKeyframes(
+          withDuration: ms / 1000, delay: 0, options: [.calculationModeLinear],
+          animations: {
+            for step in 1...steps {
+              let time = Double(step) / Double(steps)
+              let eased = dnnBezier(
+                CGPoint(x: 0.4, y: 0), CGPoint(x: 0.2, y: 1), CGFloat(time))
+              UIView.addKeyframe(
+                withRelativeStartTime: Double(step - 1) / Double(steps),
+                relativeDuration: 1 / Double(steps)
+              ) { flight.frame = path.at(eased) }
+            }
+          }, completion: land)
+      } else {
+        UIView.animate(
+          withDuration: ms / 1000, delay: 0, options: [.curveEaseInOut],
+          animations: { flight.frame = end }, completion: land)
+      }
     }
   }
 
@@ -5010,7 +5139,22 @@ class NativeUIRenderer {
     }
     style.clip = node["clip"] as? Bool ?? false
     style.opacity = finite(node["opacity"]) ?? 1
-    if let transform = node["transform"] as? [String: Any] {
+      if let transform = node["transform"] as? [String: Any],
+      let m = transform["matrix"] as? [Any], m.count == 16
+    {
+      // Column by column, as Flutter keeps it - which is Core Animation's
+      // row by row, since it multiplies a point from the other side.
+      let v = m.map { CGFloat(($0 as? NSNumber)?.doubleValue ?? 0) }
+      style.matrix = CATransform3D(
+        m11: v[0], m12: v[1], m13: v[2], m14: v[3],
+        m21: v[4], m22: v[5], m23: v[6], m24: v[7],
+        m31: v[8], m32: v[9], m33: v[10], m34: v[11],
+        m41: v[12], m42: v[13], m43: v[14], m44: v[15])
+      if let o = transform["origin"] as? [Any], o.count == 4 {
+        let p = o.map { CGFloat(($0 as? NSNumber)?.doubleValue ?? 0) }
+        style.pivot = (p[0], p[1], p[2], p[3])
+      }
+    } else if let transform = node["transform"] as? [String: Any] {
       // About the centre, which is where a view's transform already pivots:
       // scaled, then turned, then moved.
       // Never quite nothing: UIKit cannot move to a transform that is, and
@@ -5028,6 +5172,7 @@ class NativeUIRenderer {
     }
 
     style.tapEventId = node["tapEventId"] as? String
+    style.tapDownEventId = node["tapDownEventId"] as? String
     style.doubleTapEventId = node["doubleTapEventId"] as? String
     style.longPressEventId = node["longPressEventId"] as? String
     style.panEventId = node["panEventId"] as? String
@@ -5060,11 +5205,29 @@ class NativeUIRenderer {
     box.sizeCurve = node["curve"] as? String
     box.sizeEndEventId = node["sizeEndEventId"] as? String
     box.sticky = node["sticky"] as? Bool == true
+    if let carried = node["dragFeedback"] as? [String: Any] {
+      box.makeFeedback = { [weak self] in
+        guard let self else { return nil }
+        return self.renderWidget(self.normalized(carried))
+      }
+    } else {
+      box.makeFeedback = nil
+    }
     if sizeMs > 0 { sizingBoxes.add(box) } else { sizingBoxes.remove(box) }
     if let hero = node["hero"] as? String {
       heroViews.setObject(hero as NSString, forKey: box)
     } else {
       heroViews.removeObject(forKey: box)
+    }
+    if node["hero"] != nil, node["heroArc"] as? Bool == true {
+      heroArcs.add(box)
+    } else {
+      heroArcs.remove(box)
+    }
+    if node["hero"] != nil, let shuttle = node["heroShuttle"] as? [String: Any] {
+      heroShuttles.setObject(shuttle as NSDictionary, forKey: box)
+    } else {
+      heroShuttles.removeObject(forKey: box)
     }
   }
 

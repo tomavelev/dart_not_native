@@ -114,6 +114,9 @@ internal data class BoxGradient(
     val endY: Float?,
 )
 
+/** Android's nine numbers for a matrix that does nothing. */
+private val IDENTITY = listOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
+
 /** A box's shadow, in pixels. */
 internal data class BoxShadow(val color: Int, val blur: Float, val dx: Float, val dy: Float)
 
@@ -156,6 +159,14 @@ internal data class BoxStyle(
     val scaleY: Float = scale,
     val dx: Float = 0f,
     val dy: Float = 0f,
+    /**
+     * A whole matrix (`transform.matrix`), as Android's nine numbers in
+     * pixels, drawn about [pivot] - an alignment in the box and a shift from
+     * it, in pixels. In place of the turn, the scales and the shift; it moves
+     * the picture, not where touches land.
+     */
+    val matrix: List<Float>? = null,
+    val pivot: List<Float> = listOf(-1f, -1f, 0f, 0f),
 ) {
     companion object {
         val NO_EDGES = listOf(0, 0, 0, 0)
@@ -309,6 +320,8 @@ internal class NodeAccessibility(private val inner: AccessibilityDelegateCompat?
 /** What a box reports and how it answers a finger. */
 internal data class BoxEvents(
     val tap: String? = null,
+    /** Told as a finger goes down, and `_cancel` when it does not make a tap. */
+    val tapDown: String? = null,
     val doubleTap: String? = null,
     val longPress: String? = null,
     val pan: String? = null,
@@ -324,8 +337,8 @@ internal data class BoxEvents(
     val ignorePointer: Boolean = false,
 ) {
     val handlesTouch: Boolean
-        get() = tap != null || doubleTap != null || longPress != null || pan != null ||
-            dragData != null
+        get() = tap != null || tapDown != null || doubleTap != null || longPress != null ||
+            pan != null || dragData != null
 }
 
 /**
@@ -381,6 +394,13 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
     var sizeEnd: String? = null
 
     /**
+     * Builds what a drag of this box carries (`dragFeedback`), when the tree
+     * names something: built when the drag begins, and never laid out among
+     * the box's children.
+     */
+    var feedback: (() -> View?)? = null
+
+    /**
      * Whether the box stays at the top of the scroller it is in once the
      * content has scrolled past it (`sticky`), and how far it has been moved
      * down to do so.
@@ -389,6 +409,7 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         set(value) {
             if (field == value) return
             field = value
+            if (value) stickies[this] = Unit else stickies.remove(this)
             if (isAttachedToWindow) {
                 if (value) viewTreeObserver.addOnScrollChangedListener(stick)
                 else viewTreeObserver.removeOnScrollChangedListener(stick)
@@ -403,23 +424,41 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         super.onDetachedFromWindow()
     }
 
-    /** Moves the box down by as far as its place has gone above the top. */
-    private fun follow() {
+    /**
+     * The scroller the box is in and where in its content the box's place
+     * is - where it would be, unmoved - or null outside one.
+     */
+    private fun stickyPlace(): Pair<View, Int>? {
         var scroller: ViewParent? = parent
         var top = this.top
         var below: View = this
         while (scroller != null && scroller !is android.widget.ScrollView &&
             scroller !is androidx.core.widget.NestedScrollView
         ) {
-            val holder = scroller as? View ?: return
+            val holder = scroller as? View ?: return null
             top += holder.top
             below = holder
             scroller = scroller.parent
         }
-        val scrollY = (scroller as? View)?.scrollY ?: return
+        val view = scroller as? View ?: return null
         // The scroller's own child sits at its top; the rest add up from it.
-        top -= below.top
-        val down = max(0, scrollY - top).toFloat()
+        return view to top - below.top
+    }
+
+    /**
+     * Moves the box down by as far as its place has gone above the top - or
+     * above the bottom of the sticky boxes before it in the scroller, which
+     * it stacks under, as Flutter's pinned headers do.
+     */
+    private fun follow() {
+        val (scroller, top) = stickyPlace() ?: return
+        var above = 0
+        for (other in stickies.keys.toList()) {
+            if (other === this || !other.isAttachedToWindow) continue
+            val (theirs, at) = other.stickyPlace() ?: continue
+            if (theirs === scroller && at < top) above += other.height
+        }
+        val down = max(0, scroller.scrollY + above - top).toFloat()
         if (down == stuckBy) return
         stuckBy = down
         translationY = style.dy + down
@@ -618,6 +657,11 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
             scaleY = mix(a.scaleY, b.scaleY),
             dx = mix(a.dx, b.dx),
             dy = mix(a.dy, b.dy),
+            // Number by number, from doing nothing where there was none.
+            matrix = b.matrix?.let { to ->
+                val from = a.matrix ?: IDENTITY
+                List(9) { mix(from[it], to[it]) }
+            },
         )
     }
 
@@ -929,6 +973,20 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
     }
 
     override fun draw(canvas: Canvas) {
+        val matrix = style.matrix ?: return drawBox(canvas)
+        // About the point the matrix works about, in the painted box.
+        val pivot = style.pivot
+        val x = box.left + (pivot[0] + 1) / 2 * box.width() + pivot[2]
+        val y = box.top + (pivot[1] + 1) / 2 * box.height() + pivot[3]
+        val save = canvas.save()
+        canvas.translate(x, y)
+        canvas.concat(android.graphics.Matrix().apply { setValues(matrix.toFloatArray()) })
+        canvas.translate(-x, -y)
+        drawBox(canvas)
+        canvas.restoreToCount(save)
+    }
+
+    private fun drawBox(canvas: Canvas) {
         rebuildShape()
         val s = style
         val shadow = s.shadow
@@ -1048,6 +1106,16 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
     }
     private var velocity: VelocityTracker? = null
 
+    /** Whether a finger that went down here may yet make a tap (`tapDown`). */
+    private var pressing = false
+
+    /** The finger that went down will not make a tap after all. */
+    private fun losePress() {
+        if (!pressing) return
+        pressing = false
+        events.tapDown?.let { host.send("${it}_cancel", emptyMap()) }
+    }
+
     private val detector = GestureDetector(
         context,
         object : GestureDetector.SimpleOnGestureListener() {
@@ -1057,21 +1125,29 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
             // single until the second one fails to arrive; one that does not
             // answers at once.
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                if (events.doubleTap == null) point(events.tap, e)
+                if (events.doubleTap == null) {
+                    pressing = false
+                    point(events.tap, e)
+                }
                 return true
             }
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                if (events.doubleTap != null) point(events.tap, e)
+                if (events.doubleTap != null) {
+                    pressing = false
+                    point(events.tap, e)
+                }
                 return true
             }
 
             override fun onDoubleTap(e: MotionEvent): Boolean {
+                losePress()
                 point(events.doubleTap, e)
                 return true
             }
 
             override fun onLongPress(e: MotionEvent) {
+                losePress()
                 point(events.longPress, e)
             }
         },
@@ -1178,6 +1254,10 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                 beginTouch(ev)
                 drawableHotspotChanged(ev.x, ev.y)
                 isPressed = true
+                events.tapDown?.let {
+                    pressing = true
+                    point(it, ev)
+                }
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (events.panScale && ev.pointerCount == 2 && !pinching) beginPinch(ev)
@@ -1192,6 +1272,10 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
             }
             MotionEvent.ACTION_MOVE -> {
                 track(ev)
+                // Gone too far to be a tap.
+                if (pressing && (abs(ev.rawX - downX) > slop || abs(ev.rawY - downY) > slop)) {
+                    losePress()
+                }
                 if (pinching && ev.pointerCount >= 2) {
                     movePinch(ev)
                     return true
@@ -1216,6 +1300,11 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                // Taken by a scroller, or let go without a tap; a box waiting
+                // for a second tap still has its first to come.
+                if (ev.actionMasked == MotionEvent.ACTION_CANCEL || events.doubleTap == null) {
+                    losePress()
+                }
                 if (panning) {
                     val tracker = velocity
                     tracker?.computeCurrentVelocity(1000)
@@ -1434,22 +1523,54 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
 
     // -- Drag and drop -------------------------------------------------------
 
-    /** Picks the box up, carrying its `dragData`, with the box itself as the shadow. */
+    /**
+     * Picks the box up, carrying its `dragData`, with what the tree said to
+     * carry as the shadow - or else the box itself.
+     */
     private fun startDrag() {
         val data = events.dragData ?: return
         val clip = ClipData.newPlainText("dnn", data)
+        val carry = feedback?.invoke()
+        if (carry != null) {
+            // At its own size, as Flutter lays a feedback out: nothing above
+            // it says how big it may be but the screen.
+            val screen = resources.displayMetrics
+            carry.measure(
+                MeasureSpec.makeMeasureSpec(screen.widthPixels, MeasureSpec.AT_MOST),
+                MeasureSpec.makeMeasureSpec(screen.heightPixels, MeasureSpec.AT_MOST),
+            )
+            carry.layout(0, 0, carry.measuredWidth, carry.measuredHeight)
+        }
         // Held where the finger took it: the platform's default hangs the
         // shadow by its middle, which for a row as wide as the screen jumps
-        // it half off the side the moment it is picked up.
-        val shadow = object : DragShadowBuilder(this) {
-            override fun onProvideShadowMetrics(size: Point, touch: Point) {
-                super.onProvideShadowMetrics(size, touch)
-                touch.set(
-                    dragFromX.roundToInt().coerceIn(0, size.x),
-                    dragFromY.roundToInt().coerceIn(0, size.y),
-                )
+        // it half off the side the moment it is picked up. A feedback is held
+        // by the same point of the box's painted corner.
+        val shadow = if (carry == null) {
+            object : DragShadowBuilder(this) {
+                override fun onProvideShadowMetrics(size: Point, touch: Point) {
+                    super.onProvideShadowMetrics(size, touch)
+                    touch.set(
+                        dragFromX.roundToInt().coerceIn(0, size.x),
+                        dragFromY.roundToInt().coerceIn(0, size.y),
+                    )
+                    DragTrail.held(touch)
+                }
+            }
+        } else {
+            object : DragShadowBuilder(this) {
+                override fun onProvideShadowMetrics(size: Point, touch: Point) {
+                    size.set(carry.width.coerceAtLeast(1), carry.height.coerceAtLeast(1))
+                    touch.set(
+                        (dragFromX - box.left).roundToInt().coerceIn(0, size.x),
+                        (dragFromY - box.top).roundToInt().coerceIn(0, size.y),
+                    )
+                    DragTrail.held(touch)
+                }
+
+                override fun onDrawShadow(canvas: Canvas) = carry.draw(canvas)
             }
         }
+        DragTrail.begin(this, dragFromX, dragFromY, host.density)
         // The string rides along as local state too: a drop in the same window
         // reads it from there without going through the clipboard machinery.
         val started = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -1468,7 +1589,7 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         // The end of a drag reaches every view that answered its start: the
         // box that was carried says so here, after any drop it made.
         if (event.action == DragEvent.ACTION_DRAG_ENDED) {
-            carried?.let { host.send("${it}_end", emptyMap()) }
+            carried?.let { host.send("${it}_end", DragTrail.ended()) }
             carried = null
         }
         val eventId = events.drop
@@ -1503,7 +1624,7 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
                 // A drop is not followed by an exit, and the app's "something
                 // is over me" would otherwise stay lit.
                 host.send("${eventId}_hover", mapOf("over" to false))
-                host.send(eventId, mapOf("data" to data))
+                host.send(eventId, mapOf("data" to data) + DragTrail.corner())
                 true
             }
             else -> true
@@ -1514,6 +1635,9 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
         /** No limit on an axis - a size no screen reaches. */
         const val UNBOUNDED = Int.MAX_VALUE / 4
 
+        /** The boxes that are sticky, to stack each under those before it. */
+        private val stickies = java.util.WeakHashMap<BoxLayout, Unit>()
+
         /**
          * The `dragEventId` of the box whose drag is in the air. Kept here
          * rather than on the box: the app may draw something else where the
@@ -1522,6 +1646,92 @@ internal open class BoxLayout(context: Context, private val host: ViewHost) :
          * says so, once.
          */
         private var carried: String? = null
+    }
+}
+
+/**
+ * Where the drag in the air is, and how fast it is going: what a drop and
+ * the end of a drag report.
+ *
+ * A drag's moves go to the views it is over, not the one it began on, so
+ * they are read where every one of them passes - the root
+ * ([SlotHostLayout.dispatchDragEvent]) - in its pixels. What is reported is
+ * the corner of the shadow, not the finger: the finger less the point the
+ * shadow is held by.
+ */
+internal object DragTrail {
+    private var x = 0f
+    private var y = 0f
+    private var vx = 0f
+    private var vy = 0f
+    private var at = 0L
+    private var heldX = 0
+    private var heldY = 0
+    private var density = 1f
+
+    /** A drag begins at [fromX], [fromY] in [view]: put into the root's terms. */
+    fun begin(view: View, fromX: Float, fromY: Float, density: Float) {
+        this.density = density
+        val root = IntArray(2)
+        val mine = IntArray(2)
+        view.getLocationInWindow(mine)
+        var up: View = view
+        while (up !is SlotHostLayout) up = up.parent as? View ?: break
+        up.getLocationInWindow(root)
+        x = mine[0] - root[0] + fromX
+        y = mine[1] - root[1] + fromY
+        vx = 0f
+        vy = 0f
+        letGo = null
+        at = SystemClock.uptimeMillis()
+    }
+
+    fun held(touch: Point) {
+        heldX = touch.x
+        heldY = touch.y
+    }
+
+    /** The speed it had when it was let go, once it has been. */
+    private var letGo: Pair<Float, Float>? = null
+
+    /**
+     * The finger lifted: the speed is what it was then. The end of a drag is
+     * told some time after, once the platform has settled the shadow.
+     */
+    fun release() {
+        if (letGo != null) return
+        // A finger that stood still before it lifted was not moving.
+        val still = SystemClock.uptimeMillis() - at > 100
+        letGo = if (still) 0f to 0f else vx to vy
+    }
+
+    fun moved(toX: Float, toY: Float) {
+        // The same place again - the drop, after the last move - is no move.
+        if (toX == x && toY == y) return
+        val now = SystemClock.uptimeMillis()
+        val elapsed = (now - at).toFloat()
+        if (elapsed > 0) {
+            // Smoothed as a pan's is: the last two moves alone say little.
+            vx = 0.6f * ((toX - x) / elapsed * 1000f) + 0.4f * vx
+            vy = 0.6f * ((toY - y) / elapsed * 1000f) + 0.4f * vy
+        }
+        x = toX
+        y = toY
+        at = now
+    }
+
+    fun corner(): Map<String, Any?> = mapOf(
+        "x" to ((x - heldX) / density).toDouble(),
+        "y" to ((y - heldY) / density).toDouble(),
+    )
+
+    fun ended(): Map<String, Any?> {
+        release()
+        val (speedX, speedY) = letGo ?: (0f to 0f)
+        return corner() + mapOf(
+            "vx" to (speedX / density).toDouble(),
+            "vy" to (speedY / density).toDouble(),
+        )
     }
 }
 
@@ -2444,6 +2654,17 @@ internal class SlotHostLayout(context: Context) : FrameLayout(context) {
             return false
         }
         return super.dispatchTouchEvent(ev)
+    }
+
+    override fun dispatchDragEvent(event: DragEvent): Boolean {
+        // Every move of a drag over the app passes through here first.
+        if (event.action == DragEvent.ACTION_DRAG_LOCATION ||
+            event.action == DragEvent.ACTION_DROP
+        ) {
+            DragTrail.moved(event.x, event.y)
+        }
+        if (event.action == DragEvent.ACTION_DROP) DragTrail.release()
+        return super.dispatchDragEvent(event)
     }
 }
 

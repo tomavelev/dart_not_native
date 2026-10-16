@@ -2865,10 +2865,11 @@ class StadiumBorder extends OutlinedBorder {
 /// and calls that compose in the order they are made - a scale after a
 /// translate scales about where the translate went, as it does in Flutter.
 ///
-/// A box's transform is a shift, a turn and a scale along each axis, about
-/// the box's middle, so that is what travels: read out of the matrix's flat
-/// part. A skew, a perspective and anything off the screen's plane have
-/// nowhere to go.
+/// What travels to the renderer is a shift, a turn and a scale along each
+/// axis, about the box's middle, where that is all the matrix does - those
+/// a box can move between - and otherwise the matrix itself, about the point
+/// it works about: a skew, a perspective, a turn out of the screen's plane,
+/// or a turn or scale about a corner.
 class Matrix4 {
   Matrix4.identity() : _m = List<double>.filled(16, 0) {
     _m[0] = _m[5] = _m[10] = _m[15] = 1;
@@ -2989,8 +2990,49 @@ class Matrix4 {
   /// The scale across, read off the flat part.
   double get _scaleX => math.sqrt(_m[0] * _m[0] + _m[1] * _m[1]);
 
-  /// The node's `transform` prop: the shift, the turn and the two scales,
-  /// only what differs from doing nothing, and null when nothing does.
+  /// The node's `transform` prop for this matrix working about [alignment]
+  /// and [origin] - the top left where neither says, as in Flutter: the
+  /// shift, the turn and the two scales where they say it all and the pivot
+  /// does not matter, and the matrix with its pivot where they do not.
+  Map<String, dynamic>? _transformAbout(
+    AlignmentGeometry? alignment, [
+    Offset? origin,
+  ]) {
+    if (isIdentity()) return null;
+    double tidy(double v) => (v * 1e9).roundToDouble() / 1e9;
+    final a = _m[0], b = _m[1], c = _m[4], d = _m[5];
+    // Nothing off the screen's plane, no perspective, and the two axes still
+    // square to each other: a turn and two scales.
+    final flat =
+        [
+          _m[2],
+          _m[3],
+          _m[6],
+          _m[7],
+          _m[8],
+          _m[9],
+          _m[11],
+        ].every((v) => tidy(v) == 0) &&
+        tidy(_m[15]) == 1;
+    final square = tidy(a * c + b * d) == 0;
+    final shiftOnly =
+        tidy(a) == 1 && tidy(b) == 0 && tidy(c) == 0 && tidy(d) == 1;
+    final xy = alignment?._resolved._xy ?? const [-1.0, -1.0];
+    final middle =
+        xy[0] == 0 && xy[1] == 0 && (origin == null || origin == Offset.zero);
+    if (!flat || !square || (!shiftOnly && !middle)) {
+      return {
+        // Column by column, as Flutter keeps it and CSS's matrix3d takes it.
+        'matrix': [for (final v in _m) tidy(v)],
+        // Where it works about: an alignment in the box, and a shift from it.
+        'origin': [xy[0], xy[1], origin?.dx ?? 0, origin?.dy ?? 0],
+      };
+    }
+    return _transform;
+  }
+
+  /// The shift, the turn and the two scales, about the box's middle: only
+  /// what differs from doing nothing, and null when nothing does.
   Map<String, dynamic>? get _transform {
     if (isIdentity()) return null;
     final a = _m[0], b = _m[1], c = _m[4], d = _m[5];

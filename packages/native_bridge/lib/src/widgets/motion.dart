@@ -163,7 +163,50 @@ abstract class Animation<T> extends Listenable {
   AnimationStatus get status;
   bool get isCompleted => status == AnimationStatus.completed;
   bool get isDismissed => status == AnimationStatus.dismissed;
+
+  /// [child]'s values along this animation, as [Animatable.animate] gives
+  /// them: what a route's transition is usually written with.
+  Animation<U> drive<U>(Animatable<U> child) =>
+      child.animate(this as Animation<double>);
 }
+
+/// [parent] run backwards: one minus its value, in Flutter.
+class ReverseAnimation extends Animation<double> {
+  const ReverseAnimation(this.parent);
+  final Animation<double> parent;
+  @override
+  double get value => 1 - parent.value;
+  @override
+  AnimationStatus get status => switch (parent.status) {
+    AnimationStatus.forward => AnimationStatus.reverse,
+    AnimationStatus.reverse => AnimationStatus.forward,
+    AnimationStatus.completed => AnimationStatus.dismissed,
+    AnimationStatus.dismissed => AnimationStatus.completed,
+  };
+  @override
+  void addListener(VoidCallback listener) => parent.addListener(listener);
+  @override
+  void removeListener(VoidCallback listener) => parent.removeListener(listener);
+}
+
+/// The curve [animation] runs along, where it is one that says: a
+/// [CurvedAnimation], or a tween chained to a [CurveTween], anywhere along
+/// it.
+Curve? _curveIn(Animation<Object?> animation) => switch (animation) {
+  CurvedAnimation(:final curve) => curve,
+  ReverseAnimation(:final parent) => _curveIn(parent),
+  _AnimatedEvaluation(:final parent, :final animatable) =>
+    _curveOfAnimatable(animatable) ?? _curveIn(parent),
+  _ => null,
+};
+
+Curve? _curveOfAnimatable(Animatable<Object?> animatable) =>
+    switch (animatable) {
+      CurveTween(:final curve) => curve,
+      _ChainedEvaluation(:final parent, :final evaluatable) =>
+        _curveOfAnimatable(evaluatable) ?? _curveOfAnimatable(parent),
+      _ => null,
+    };
 
 /// How long a transition widget takes to move to the value its animation
 /// has now: set round what an [AnimatedSwitcher]'s `transitionBuilder`
@@ -647,6 +690,7 @@ class AnimatedContainer extends Widget {
       decoration: decoration,
       foregroundDecoration: foregroundDecoration,
       transform: transform,
+      transformAlignment: transformAlignment,
       clip: clipBehavior != Clip.none,
       fillWhenEmpty: true,
       animateMs: duration.inMilliseconds,

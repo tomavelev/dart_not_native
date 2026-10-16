@@ -440,7 +440,7 @@ abstract class SliverPersistentHeaderDelegate {
 /// A header at its full height. [pinned], it is held above the scroll view
 /// when it is the first sliver, or follows only other pinned ones with
 /// nothing that scrolls between; further down, it scrolls up to the top of
-/// the view and stays there - over the one pinned before it, where Flutter
+/// the view and stays there - under the ones pinned before it, as Flutter
 /// stacks them - until the list scrolls back. A [floating] one scrolls away.
 class SliverPersistentHeader extends _Sliver {
   const SliverPersistentHeader({
@@ -522,7 +522,8 @@ class FlexibleSpaceBar extends StatelessWidget {
 /// above the scroll view and what is left of the tall part - the
 /// [flexibleSpace], less a toolbar's height - scrolls away beneath them: the
 /// bar ends up as a collapsed one would, without the title moving up into
-/// it. Not first, or not pinned, it scrolls away with the content;
+/// it. Pinned further down, it scrolls up to the top and stays there, under
+/// any pinned before it; not pinned, it scrolls away with the content.
 /// [floating], [snap] and [stretch] are accepted and not carried.
 class SliverAppBar extends _Sliver {
   const SliverAppBar({

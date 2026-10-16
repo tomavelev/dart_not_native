@@ -123,11 +123,16 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.abs
+import kotlin.math.asin
+import kotlin.math.cos
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sign
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Android Native UI Renderer.
@@ -322,6 +327,12 @@ class NativeUIRenderer(
             return
         }
         root.draw(android.graphics.Canvas(picture))
+        val page = transition["page"] as? Map<*, *>
+        val moved = transition["picture"] as? Map<*, *>
+        if (page != null || moved != null) {
+            moveByRoute(root, picture, ms, page, moved)
+            return
+        }
         val leaving = android.graphics.drawable.BitmapDrawable(root.resources, picture)
         leaving.setBounds(0, 0, width, height)
         root.overlay.add(leaving)
@@ -352,8 +363,125 @@ class NativeUIRenderer(
         run.start()
     }
 
+    /**
+     * Moves the pages the way a route's own transition says (see Dart's
+     * `RootProps.pageTransition`): the new [page] from where it starts to its
+     * place, over [shot] of the old one lying still beneath it as the root's
+     * background - or [shot] from its place to where [moved] says, over the
+     * new page.
+     */
+    private fun moveByRoute(
+        root: ViewGroup,
+        shot: android.graphics.Bitmap,
+        ms: Long,
+        page: Map<*, *>?,
+        moved: Map<*, *>?,
+    ) {
+        val motion = page ?: moved ?: return
+        fun n(key: String, fallback: Float) = (motion[key] as? Number)?.toFloat() ?: fallback
+        val opacity = n("opacity", 1f).coerceIn(0f, 1f)
+        val dx = n("dx", 0f)
+        val dy = n("dy", 0f)
+        val scale = n("scale", 1f)
+        val rotate = Math.toDegrees(n("rotate", 0f).toDouble()).toFloat()
+        val width = root.width.toFloat()
+        val height = root.height.toFloat()
+        val picture = MovingPicture(shot)
+        picture.setBounds(0, 0, root.width, root.height)
+        val background = root.background
+        if (page != null) root.background = picture else root.overlay.add(picture)
+        // How far along the move is: from where the page starts to its place,
+        // or from the picture's place to where it goes.
+        fun place(t: Float) {
+            fun lerp(from: Float, to: Float) = from + (to - from) * t
+            if (page != null) {
+                val view = currentRoot ?: return
+                view.alpha = lerp(opacity, 1f)
+                view.translationX = lerp(dx * width, 0f)
+                view.translationY = lerp(dy * height, 0f)
+                view.scaleX = lerp(scale, 1f)
+                view.scaleY = lerp(scale, 1f)
+                view.rotation = lerp(rotate, 0f)
+            } else {
+                picture.alpha = (255 * lerp(1f, opacity)).toInt()
+                picture.dx = lerp(0f, dx * width)
+                picture.dy = lerp(0f, dy * height)
+                picture.scale = lerp(1f, scale)
+                picture.rotate = lerp(0f, rotate)
+                picture.invalidateSelf()
+            }
+        }
+        val run = android.animation.ValueAnimator.ofFloat(0f, 1f)
+        run.duration = ms
+        // Straight through, as a route's animation runs, unless it says.
+        run.interpolator = interpolator(mapOf("curve" to (motion["curve"] ?: "linear")))
+        run.addUpdateListener { step ->
+            place(step.animatedValue as Float)
+            root.invalidate()
+        }
+        run.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                if (page != null) root.background = background else root.overlay.remove(picture)
+                place(1f)
+                currentRoot?.let {
+                    it.alpha = 1f
+                    it.translationX = 0f
+                    it.translationY = 0f
+                    it.scaleX = 1f
+                    it.scaleY = 1f
+                    it.rotation = 0f
+                }
+                shot.recycle()
+            }
+        })
+        // The page is not drawn yet: placed at its start just before it is,
+        // so it is never seen where it ends.
+        root.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (root.viewTreeObserver.isAlive) {
+                    root.viewTreeObserver.removeOnPreDrawListener(this)
+                }
+                place(0f)
+                run.start()
+                return true
+            }
+        })
+    }
+
     /** The boxes that have a hero's name (`hero`), by view. */
     private val heroViews = java.util.WeakHashMap<View, String>()
+
+    /** The heroes that fly along a Material arc (`heroArc`). */
+    private val heroArcs = java.util.WeakHashMap<View, Boolean>()
+
+    /** What flies in a hero's place (`heroShuttle`), by view. */
+    private val heroShuttles = java.util.WeakHashMap<View, Map<*, *>>()
+
+    /**
+     * A picture of what flies for [hero]: its shuttle drawn at [width] by
+     * [height], or the hero itself.
+     */
+    private fun flightPicture(hero: View, width: Int, height: Int): android.graphics.Bitmap? {
+        val shuttle = heroShuttles[hero]?.let { renderWidget(normalized(it)) }
+        val drawn = shuttle ?: hero
+        val w = if (shuttle != null) width else hero.width
+        val h = if (shuttle != null) height else hero.height
+        if (w <= 0 || h <= 0) return null
+        if (shuttle != null) {
+            shuttle.measure(
+                View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
+            )
+            shuttle.layout(0, 0, w, h)
+        }
+        val picture = try {
+            android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        } catch (e: OutOfMemoryError) {
+            return null
+        }
+        drawn.draw(android.graphics.Canvas(picture))
+        return picture
+    }
 
     /** Every hero's name in [node] and below it. */
     private fun heroNames(node: Map<*, *>, into: MutableSet<String>): Set<String> {
@@ -417,12 +545,13 @@ class NativeUIRenderer(
                 // A pushed page has already been set to one side to slide in
                 // from; where its heroes stand is where they will come to rest.
                 val slid = (currentRoot?.translationX ?: 0f).toInt()
+                val dropped = (currentRoot?.translationY ?: 0f).toInt()
                 val flown = HashSet<String>()
                 for ((view, name) in heroViews.entries.toList()) {
                     val start = starts[name] ?: continue
                     if (view == null || name in flown) continue
                     val end = placeIn(root, view) ?: continue
-                    end.offset(-slid, 0)
+                    end.offset(-slid, -dropped)
                     // The same view in the same place: it never left.
                     if (view in from.keys && end == start) continue
                     flown.add(name)
@@ -440,14 +569,7 @@ class NativeUIRenderer(
         end: android.graphics.Rect,
         ms: Long,
     ) {
-        val picture = try {
-            android.graphics.Bitmap.createBitmap(
-                hero.width, hero.height, android.graphics.Bitmap.Config.ARGB_8888
-            )
-        } catch (e: OutOfMemoryError) {
-            return
-        }
-        hero.draw(android.graphics.Canvas(picture))
+        val picture = flightPicture(hero, end.width(), end.height()) ?: return
         val flight = android.graphics.drawable.BitmapDrawable(root.resources, picture)
         flight.bounds = start
         root.overlay.add(flight)
@@ -457,14 +579,24 @@ class NativeUIRenderer(
         run.duration = ms
         run.interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)
         fun between(a: Int, b: Int, t: Float) = (a + (b - a) * t).toInt()
+        val arc = if (heroArcs[hero] == true) ArcRectPath(
+            android.graphics.RectF(start), android.graphics.RectF(end),
+        ) else null
         run.addUpdateListener { step ->
             val t = step.animatedValue as Float
-            flight.setBounds(
-                between(start.left, end.left, t),
-                between(start.top, end.top, t),
-                between(start.right, end.right, t),
-                between(start.bottom, end.bottom, t),
-            )
+            if (arc != null) {
+                val at = arc.at(t)
+                flight.setBounds(
+                    at.left.toInt(), at.top.toInt(), at.right.toInt(), at.bottom.toInt(),
+                )
+            } else {
+                flight.setBounds(
+                    between(start.left, end.left, t),
+                    between(start.top, end.top, t),
+                    between(start.right, end.right, t),
+                    between(start.bottom, end.bottom, t),
+                )
+            }
             root.invalidate()
         }
         run.addListener(object : android.animation.AnimatorListenerAdapter() {
@@ -5293,6 +5425,9 @@ class NativeUIRenderer(
     private fun configureBox(box: BoxLayout, node: Map<*, *>, animate: Boolean) {
         val hero = node["hero"] as? String
         if (hero != null) heroViews[box] = hero else heroViews.remove(box)
+        if (hero != null && node["heroArc"] == true) heroArcs[box] = true else heroArcs.remove(box)
+        val shuttle = node["heroShuttle"] as? Map<*, *>
+        if (hero != null && shuttle != null) heroShuttles[box] = shuttle else heroShuttles.remove(box)
         val style = boxStyle(node)
         val before = box.style
         val existing = box.layoutParams
@@ -5330,6 +5465,9 @@ class NativeUIRenderer(
         box.sizeCurve = if (box.sizeMs > 0) interpolator(node) else null
         box.sizeEnd = node["sizeEndEventId"] as? String
         box.sticky = node["sticky"] == true
+        box.feedback = (node["dragFeedback"] as? Map<*, *>)?.let { carried ->
+            { renderWidget(normalized(carried)) }
+        }
         box.setStyle(
             style, duration, if (duration > 0) interpolator(node) else null,
             onDone = endAnswer(box, node),
@@ -5418,6 +5556,22 @@ class NativeUIRenderer(
                 ?: (transform?.get("scale") as? Number)?.toFloat() ?: 1f,
             dx = pxf(transform?.get("dx")) ?: 0f,
             dy = pxf(transform?.get("dy")) ?: 0f,
+            matrix = (transform?.get("matrix") as? List<*>)?.takeIf { it.size == 16 }?.let { m ->
+                fun at(i: Int) = (m[i] as? Number)?.toFloat() ?: 0f
+                val density = viewHost.density
+                // Column by column, as Flutter keeps it, into Android's rows -
+                // dropping what is out of the screen's plane; a shift is in
+                // pixels, and a perspective per pixel.
+                listOf(
+                    at(0), at(4), at(12) * density,
+                    at(1), at(5), at(13) * density,
+                    at(3) / density, at(7) / density, at(15),
+                )
+            },
+            pivot = (transform?.get("origin") as? List<*>)?.takeIf { it.size == 4 }?.let { o ->
+                fun at(i: Int) = (o[i] as? Number)?.toFloat() ?: 0f
+                listOf(at(0), at(1), (pxf(o[2]) ?: 0f), (pxf(o[3]) ?: 0f))
+            } ?: listOf(-1f, -1f, 0f, 0f),
         )
     }
 
@@ -5445,6 +5599,7 @@ class NativeUIRenderer(
 
     private fun boxEvents(node: Map<*, *>) = BoxEvents(
         tap = node["tapEventId"] as? String,
+        tapDown = node["tapDownEventId"] as? String,
         doubleTap = node["doubleTapEventId"] as? String,
         longPress = node["longPressEventId"] as? String,
         pan = node["panEventId"] as? String,
@@ -7189,6 +7344,159 @@ private class FlowLayout(context: Context) : ViewGroup(context) {
                 x += w + hSpacing + extra
             }
             y += line.height + vSpacing
+        }
+    }
+}
+
+/**
+ * A picture of the screen, drawn moved, scaled about its middle and turned:
+ * the page a route's own transition takes away.
+ */
+private class MovingPicture(private val shot: android.graphics.Bitmap) :
+    android.graphics.drawable.Drawable() {
+    var dx = 0f
+    var dy = 0f
+    var scale = 1f
+    var rotate = 0f
+    private var shown = 255
+    private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+
+    override fun draw(canvas: android.graphics.Canvas) {
+        val box = bounds
+        val save = canvas.save()
+        canvas.translate(dx, dy)
+        canvas.rotate(rotate, box.exactCenterX(), box.exactCenterY())
+        canvas.scale(scale, scale, box.exactCenterX(), box.exactCenterY())
+        paint.alpha = shown
+        canvas.drawBitmap(shot, null, box, paint)
+        canvas.restoreToCount(save)
+    }
+
+    override fun setAlpha(alpha: Int) {
+        shown = alpha
+    }
+
+    override fun getAlpha(): Int = shown
+
+    override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
+        paint.colorFilter = colorFilter
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
+
+/**
+ * A point travelling along an arc of a circle: Flutter's
+ * `MaterialPointArcTween`, as `lib/src/hero_arc.dart` has it.
+ */
+private class ArcPoint(
+    private val beginX: Float,
+    private val beginY: Float,
+    private val endX: Float,
+    private val endY: Float,
+) {
+    private var radius = 0.0
+    private var centreX = 0.0
+    private var centreY = 0.0
+    private var beginAngle: Double? = null
+    private var endAngle = 0.0
+
+    init {
+        val dx = (endX - beginX).toDouble()
+        val dy = (endY - beginY).toDouble()
+        val acrossX = abs(dx)
+        val acrossY = abs(dy)
+        // Nearly along an axis: a straight line.
+        if (acrossX > 2 && acrossY > 2) {
+            val distance = sqrt(dx * dx + dy * dy)
+            fun sweep(r: Double) = 2 * asin(distance / (2 * r))
+            if (acrossX < acrossY) {
+                radius = distance * distance / acrossX / 2
+                centreX = endX + radius * sign((beginX - endX).toDouble())
+                centreY = endY.toDouble()
+                if (beginX < endX) {
+                    beginAngle = sweep(radius) * sign((beginY - endY).toDouble())
+                    endAngle = 0.0
+                } else {
+                    beginAngle = Math.PI + sweep(radius) * sign((endY - beginY).toDouble())
+                    endAngle = Math.PI
+                }
+            } else {
+                radius = distance * distance / acrossY / 2
+                centreX = beginX.toDouble()
+                centreY = beginY + sign((endY - beginY).toDouble()) * radius
+                if (beginY < endY) {
+                    beginAngle = -Math.PI / 2
+                    endAngle = -Math.PI / 2 + sweep(radius) * sign((endX - beginX).toDouble())
+                } else {
+                    beginAngle = Math.PI / 2
+                    endAngle = Math.PI / 2 + sweep(radius) * sign((beginX - endX).toDouble())
+                }
+            }
+        }
+    }
+
+    fun at(t: Float): Pair<Float, Float> {
+        if (t <= 0f) return beginX to beginY
+        if (t >= 1f) return endX to endY
+        val begin = beginAngle
+            ?: return (beginX + (endX - beginX) * t) to (beginY + (endY - beginY) * t)
+        val angle = begin + (endAngle - begin) * t
+        return (centreX + cos(angle) * radius).toFloat() to (centreY + sin(angle) * radius).toFloat()
+    }
+}
+
+/**
+ * A rectangle travelling along a Material arc: Flutter's
+ * `MaterialRectArcTween` - the two corners on the diagonal that points most
+ * nearly the way it goes, each on an [ArcPoint].
+ */
+private class ArcRectPath(private val begin: android.graphics.RectF, private val end: android.graphics.RectF) {
+    private val first: ArcPoint
+    private val second: ArcPoint
+
+    init {
+        val towardsX = end.centerX() - begin.centerX()
+        val towardsY = end.centerY() - begin.centerY()
+        var best = DIAGONALS[0]
+        var support = Float.NEGATIVE_INFINITY
+        for (diagonal in DIAGONALS) {
+            val (fromX, fromY) = corner(begin, diagonal.first)
+            val (toX, toY) = corner(begin, diagonal.second)
+            val length = sqrt(((toX - fromX) * (toX - fromX) + (toY - fromY) * (toY - fromY)).toDouble()).toFloat()
+            val along = if (length == 0f) 0f
+            else (towardsX * (toX - fromX) + towardsY * (toY - fromY)) / length
+            if (along > support) {
+                support = along
+                best = diagonal
+            }
+        }
+        val (abx, aby) = corner(begin, best.first)
+        val (aex, aey) = corner(end, best.first)
+        val (bbx, bby) = corner(begin, best.second)
+        val (bex, bey) = corner(end, best.second)
+        first = ArcPoint(abx, aby, aex, aey)
+        second = ArcPoint(bbx, bby, bex, bey)
+    }
+
+    fun at(t: Float): android.graphics.RectF {
+        if (t <= 0f) return begin
+        if (t >= 1f) return end
+        val (ax, ay) = first.at(t)
+        val (bx, by) = second.at(t)
+        return android.graphics.RectF(min(ax, bx), min(ay, by), max(ax, bx), max(ay, by))
+    }
+
+    private companion object {
+        // Corners: 0 top left, 1 top right, 2 bottom left, 3 bottom right.
+        val DIAGONALS = listOf(0 to 3, 3 to 0, 1 to 2, 2 to 1)
+
+        fun corner(rect: android.graphics.RectF, corner: Int): Pair<Float, Float> = when (corner) {
+            0 -> rect.left to rect.top
+            1 -> rect.right to rect.top
+            2 -> rect.left to rect.bottom
+            else -> rect.right to rect.bottom
         }
     }
 }

@@ -465,7 +465,13 @@ void main() {
         'iOS (Swift) flies a hero',
         swift,
         'private func flyHeroes(',
-        ['heroViews', 'snapshotView(afterScreenUpdates: true)'],
+        ['heroViews', 'flightPicture(view, size: end.size)'],
+      ),
+      (
+        'iOS (Swift) flies a picture of the hero, or of its shuttle',
+        swift,
+        'private func flightPicture(',
+        ['heroShuttles', 'snapshotView(afterScreenUpdates: true)'],
       ),
       // An image's tint, blended as `blend` says.
       (
@@ -620,7 +626,7 @@ void main() {
         'Android (Kotlin) keeps a sticky box at the top',
         views,
         'private fun follow(',
-        ['scrollY - top'],
+        ['scrollY + above - top'],
       ),
       (
         'iOS (Swift) keeps a sticky box at the top',

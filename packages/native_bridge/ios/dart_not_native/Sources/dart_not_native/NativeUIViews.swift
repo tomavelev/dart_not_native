@@ -1,5 +1,6 @@
 import CoreImage
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 // The views behind the free-form nodes - Box, Stack, Positioned, Scroll,
 // Canvas, Dropdown, the pickers, the bottom navigation, FlutterSlot - and the
@@ -187,8 +188,14 @@ struct DnnBoxStyle {
   var clip = false
   var opacity: CGFloat = 1
   var transform = CGAffineTransform.identity
+  /// A whole matrix (`transform.matrix`), in place of `transform`, worked
+  /// about `pivot`: an alignment in the box and a shift from it.
+  var matrix: CATransform3D?
+  var pivot: (CGFloat, CGFloat, CGFloat, CGFloat) = (-1, -1, 0, 0)
 
   var tapEventId: String?
+  /// Told as a finger goes down, and `_cancel` when it does not make a tap.
+  var tapDownEventId: String?
   var doubleTapEventId: String?
   var longPressEventId: String?
   var panEventId: String?
@@ -276,8 +283,13 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   /// Whether the box stays at the top of the scroller it is in once the
   /// content has scrolled past it (`sticky`).
   var sticky = false {
-    didSet { if oldValue != sticky { watchScroller() } }
+    didSet {
+      if sticky { DnnBoxView.stickies.add(self) } else { DnnBoxView.stickies.remove(self) }
+      if oldValue != sticky { watchScroller() }
+    }
   }
+  /// The boxes that are sticky, to stack each under those before it.
+  private static let stickies = NSHashTable<DnnBoxView>.weakObjects()
   private var stickObservation: NSKeyValueObservation?
   private var stuckBy: CGFloat = 0
 
@@ -302,18 +314,33 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     follow(scroll)
   }
 
+  /// The scroller round the box, and where in it the box's place is -
+  /// where it would be, unmoved.
+  private func place() -> (UIScrollView, CGFloat)? {
+    var up = superview
+    while let view = up, !(view is UIScrollView) { up = view.superview }
+    guard let scroll = up as? UIScrollView else { return nil }
+    return (scroll, convert(CGPoint.zero, to: scroll).y - stuckBy)
+  }
+
   /// Moves the box down by as far as its place has gone above the top of
-  /// what [scroll] shows.
+  /// what [scroll] shows - or above the bottom of the sticky boxes before it
+  /// in the scroller, which it stacks under, as Flutter's pinned headers do.
   private func follow(_ scroll: UIScrollView) {
-    let place = convert(CGPoint.zero, to: scroll).y - stuckBy
-    let top = scroll.contentOffset.y + scroll.adjustedContentInset.top
+    guard let (_, place) = place() else { return }
+    var above: CGFloat = 0
+    for other in DnnBoxView.stickies.allObjects where other !== self && other.window != nil {
+      guard let (theirs, at) = other.place(), theirs === scroll, at < place else { continue }
+      above += other.bounds.height
+    }
+    let top = scroll.contentOffset.y + scroll.adjustedContentInset.top + above
     stick(max(0, top - place))
   }
 
   private func stick(_ down: CGFloat) {
     guard abs(down - stuckBy) >= 0.5 || (down == 0 && stuckBy != 0) else { return }
     stuckBy = down
-    transform = style.transform.concatenating(.init(translationX: 0, y: down))
+    applyTransform()
     // Over the rows that scroll beneath it: they come after it.
     layer.zPosition = down > 0 ? 1 : 0
   }
@@ -365,11 +392,15 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   private var highlight: UIView?
 
   private var tapRecognizer: UITapGestureRecognizer?
+  private var pressWatcher: DnnPressWatcher?
   private var doubleTapRecognizer: UITapGestureRecognizer?
   private var longPressRecognizer: UILongPressGestureRecognizer?
   private var panRecognizer: UIPanGestureRecognizer?
   private var dragger: UIDragInteraction?
   private var dropper: UIDropInteraction?
+  /// Builds what a drag of this box carries (`dragFeedback`), when the tree
+  /// names something: built when the drag begins, never laid out in the box.
+  var makeFeedback: (() -> UIView?)?
   private var lastPan = CGPoint.zero
 
   /// The pinch a pan that hears one (`panScale`) is watching for, whether it
@@ -490,6 +521,27 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
 
   // MARK: Applying a style
 
+  /// The style's transform - its parts, or its whole matrix about its
+  /// pivot - and the move down a sticky box has made.
+  private func applyTransform() {
+    let down = CGAffineTransform(translationX: 0, y: stuckBy)
+    guard let matrix = style.matrix else {
+      transform = stuckBy == 0 ? style.transform : style.transform.concatenating(down)
+      return
+    }
+    // From the view's middle, which is where a layer's transform works, to
+    // the point in the painted box the matrix works about.
+    let box = surface.frame
+    let (ax, ay, ox, oy) = style.pivot
+    let dx = box.minX + (ax + 1) / 2 * box.width + ox - bounds.midX
+    let dy = box.minY + (ay + 1) / 2 * box.height + oy - bounds.midY
+    var whole = CATransform3DConcat(
+      CATransform3DConcat(CATransform3DMakeTranslation(-dx, -dy, 0), matrix),
+      CATransform3DMakeTranslation(dx, dy, 0))
+    if stuckBy != 0 { whole = CATransform3DConcat(whole, CATransform3DMakeAffineTransform(down)) }
+    layer.transform = whole
+  }
+
   /// Restyles the box in place. Inside a `UIView.animate` block the size,
   /// colour, opacity and transform move there instead of landing at once.
   func apply(_ next: DnnBoxStyle) {
@@ -511,8 +563,7 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     surface.backgroundColor = next.color
     applyGradient()
     alpha = min(max(next.opacity, 0), 1)
-    transform = stuckBy == 0
-      ? next.transform : next.transform.concatenating(.init(translationX: 0, y: stuckBy))
+    applyTransform()
     isUserInteractionEnabled = !next.ignorePointer
     // What the box says of itself to a screen reader - whether it is an
     // element, its name, its traits - is worked out when it is asked for (see
@@ -818,6 +869,8 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   override func layoutSubviews() {
     super.layoutSubviews()
     applyShape()
+    // A matrix works about a point in the box, which moves with its size.
+    if style.matrix != nil { applyTransform() }
 
     guard let eventId = style.sizeEventId else { return }
     let size = surface.bounds.size
@@ -906,6 +959,27 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
       tapRecognizer = nil
     }
 
+    if style.tapDownEventId != nil {
+      if pressWatcher == nil {
+        let watcher = DnnPressWatcher()
+        watcher.onDown = { [weak self] point in
+          guard let self, let eventId = self.style.tapDownEventId else { return }
+          self.onEvent?(eventId, self.pointData(point))
+        }
+        watcher.onLost = { [weak self] in
+          guard let self, let eventId = self.style.tapDownEventId else { return }
+          self.onEvent?(eventId + "_cancel", [:])
+        }
+        surface.addGestureRecognizer(watcher)
+        pressWatcher = watcher
+      }
+      // A tap that waits for a second one is still to come when the finger lifts.
+      pressWatcher?.tapWait = style.doubleTapEventId != nil ? 0.4 : 0
+    } else if let watcher = pressWatcher {
+      surface.removeGestureRecognizer(watcher)
+      pressWatcher = nil
+    }
+
     if style.longPressEventId != nil {
       if longPressRecognizer == nil {
         let recognizer = UILongPressGestureRecognizer(
@@ -949,17 +1023,21 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   }
 
   @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
+    pressWatcher?.tapped()
     guard let eventId = style.tapEventId else { return }
     onEvent?(eventId, pointData(recognizer.location(in: surface)))
   }
 
   @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
+    pressWatcher?.lose()
     guard let eventId = style.doubleTapEventId else { return }
     onEvent?(eventId, pointData(recognizer.location(in: surface)))
   }
 
   @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
-    guard recognizer.state == .began, let eventId = style.longPressEventId else { return }
+    guard recognizer.state == .began else { return }
+    pressWatcher?.lose()
+    guard let eventId = style.longPressEventId else { return }
     onEvent?(eventId, pointData(recognizer.location(in: surface)))
   }
 
@@ -1213,7 +1291,35 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     let item = UIDragItem(itemProvider: NSItemProvider(object: data as NSString))
     // What a drop inside this app reads, without the provider's round trip.
     item.localObject = data
+    DnnDragTrail.begin(
+      at: session.location(in: window ?? surface),
+      grab: session.location(in: surface))
     return [item]
+  }
+
+  /// What is lifted: what the tree said to carry, its corner where the box's
+  /// is - so the finger holds it by the point it took the box by, as
+  /// Flutter's default anchor does - or else the box itself.
+  func dragInteraction(
+    _ interaction: UIDragInteraction, previewForLifting item: UIDragItem,
+    session: UIDragSession
+  ) -> UITargetedDragPreview? {
+    guard let feedback = makeFeedback?() else { return nil }
+    let size = feedback.systemLayoutSizeFitting(
+      UIScreen.main.bounds.size,
+      withHorizontalFittingPriority: .fittingSizeLevel,
+      verticalFittingPriority: .fittingSizeLevel)
+    feedback.frame = CGRect(origin: .zero, size: size)
+    feedback.layoutIfNeeded()
+    let parameters = UIDragPreviewParameters()
+    parameters.backgroundColor = .clear
+    let target = UIDragPreviewTarget(
+      container: surface, center: CGPoint(x: size.width / 2, y: size.height / 2))
+    return UITargetedDragPreview(view: feedback, parameters: parameters, target: target)
+  }
+
+  func dragInteraction(_ interaction: UIDragInteraction, sessionDidMove session: UIDragSession) {
+    DnnDragTrail.moved(to: session.location(in: window ?? surface))
   }
 
   /// The box whose drag is in the air, and what its end sends. Held here for
@@ -1225,8 +1331,16 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   func dragInteraction(_ interaction: UIDragInteraction, sessionWillBegin session: UIDragSession)
   {
     guard let eventId = style.dragEventId, let onEvent else { return }
-    DnnBoxView.carried = (self, { onEvent(eventId + "_end", [:]) })
+    DnnBoxView.carried = (self, { onEvent(eventId + "_end", DnnDragTrail.ended()) })
     onEvent(eventId + "_start", [:])
+  }
+
+  /// The finger has lifted; what becomes of the drag is still to come.
+  func dragInteraction(
+    _ interaction: UIDragInteraction, session: UIDragSession,
+    willEndWith operation: UIDropOperation
+  ) {
+    DnnDragTrail.release()
   }
 
   /// However it ended - on a target or on nothing - and after any drop.
@@ -1276,14 +1390,144 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
     setHovering(false)
     guard let eventId = style.dropEventId else { return }
+    let at = window.map { session.location(in: $0) } ?? .zero
     if let local = session.localDragSession?.items.first?.localObject as? String {
-      onEvent?(eventId, ["data": local])
+      DnnDragTrail.moved(to: at)
+      onEvent?(eventId, DnnDragTrail.corner().merging(["data": local]) { $1 })
       return
     }
+    // From outside the app: no grab to take off.
+    let corner: [String: Any] = ["x": Double(at.x), "y": Double(at.y)]
     _ = session.loadObjects(ofClass: NSString.self) { [weak self] items in
       let text = (items.first as? NSString).map { $0 as String } ?? ""
-      self?.onEvent?(eventId, ["data": text])
+      self?.onEvent?(eventId, corner.merging(["data": text]) { $1 })
     }
+  }
+}
+
+/// Hears a finger go down at once (`tapDownEventId`), and whether it went on
+/// to make a tap - recognising nothing itself, so it takes nothing from the
+/// recognisers beside it or the scroller around it.
+final class DnnPressWatcher: UIGestureRecognizer {
+  var onDown: ((CGPoint) -> Void)?
+  var onLost: (() -> Void)?
+  /// How long after the finger lifts the tap may still come: a tap that
+  /// waits for a second one comes late.
+  var tapWait: TimeInterval = 0
+  private var start = CGPoint.zero
+  private var pressing = false
+  private var ended = false
+
+  init() {
+    super.init(target: nil, action: nil)
+    cancelsTouchesInView = false
+    delaysTouchesBegan = false
+    delaysTouchesEnded = false
+  }
+
+  /// The tap came: the press is over, and was one.
+  func tapped() { pressing = false }
+
+  /// The press will not be a tap: moved off, taken, held.
+  func lose() {
+    guard pressing else { return }
+    pressing = false
+    onLost?()
+  }
+
+  override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+  override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+    false
+  }
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard !pressing, let touch = touches.first, let view else { return }
+    pressing = true
+    ended = false
+    start = touch.location(in: view)
+    onDown?(start)
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard pressing, let touch = touches.first, let view else { return }
+    let at = touch.location(in: view)
+    // Gone too far to be a tap: Flutter's slop.
+    if hypot(at.x - start.x, at.y - start.y) > 18 { lose() }
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    ended = true
+    // The tap's own handler runs about now; whatever has not heard one by
+    // the time it could have did not make one.
+    DispatchQueue.main.asyncAfter(deadline: .now() + tapWait) { [weak self] in
+      self?.lose()
+    }
+    state = .failed
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    lose()
+    state = .failed
+  }
+
+  override func reset() {
+    super.reset()
+    // Ended by something other than the finger lifting: taken.
+    if !ended { lose() }
+  }
+}
+
+/// Where the drag in the air is, in the window, and how fast it is going:
+/// what a drop and the end of a drag report. What is reported is the corner
+/// of what is carried - the finger less the point it took the box by.
+enum DnnDragTrail {
+  private static var at = CGPoint.zero
+  private static var grab = CGPoint.zero
+  private static var velocity = CGPoint.zero
+  private static var time = CACurrentMediaTime()
+
+  /// The speed it had when the finger lifted, once it has.
+  private static var letGo: CGPoint?
+
+  static func begin(at point: CGPoint, grab offset: CGPoint) {
+    at = point
+    grab = offset
+    velocity = .zero
+    letGo = nil
+    time = CACurrentMediaTime()
+  }
+
+  /// The finger lifted: the speed is what it was then. The end of the drag
+  /// is told after the platform has animated the drop.
+  static func release() {
+    guard letGo == nil else { return }
+    // A finger that stood still before it lifted was not moving.
+    letGo = CACurrentMediaTime() - time > 0.1 ? .zero : velocity
+  }
+
+  static func moved(to point: CGPoint) {
+    // The same place again - the drop, after the last move - is no move.
+    if point == at { return }
+    let now = CACurrentMediaTime()
+    let elapsed = now - time
+    if elapsed > 0 {
+      // Smoothed as a pan's is: the last two moves alone say little.
+      velocity = CGPoint(
+        x: 0.6 * (point.x - at.x) / elapsed + 0.4 * velocity.x,
+        y: 0.6 * (point.y - at.y) / elapsed + 0.4 * velocity.y)
+    }
+    at = point
+    time = now
+  }
+
+  static func corner() -> [String: Any] {
+    ["x": Double(at.x - grab.x), "y": Double(at.y - grab.y)]
+  }
+
+  static func ended() -> [String: Any] {
+    release()
+    let speed = letGo ?? .zero
+    return corner().merging(["vx": Double(speed.x), "vy": Double(speed.y)]) { $1 }
   }
 }
 
@@ -3266,6 +3510,113 @@ final class DnnScrollTravel: NSObject {
 }
 
 /// y at x = [t] on the cubic Bézier through (0,0), [one], [two] and (1,1).
+/// A point travelling along an arc of a circle: Flutter's
+/// `MaterialPointArcTween`, as `lib/src/hero_arc.dart` has it.
+struct DnnArcPoint {
+  let begin: CGPoint
+  let end: CGPoint
+  private var radius: CGFloat = 0
+  private var centre = CGPoint.zero
+  private var beginAngle: CGFloat?
+  private var endAngle: CGFloat = 0
+
+  init(from begin: CGPoint, to end: CGPoint) {
+    self.begin = begin
+    self.end = end
+    let dx = end.x - begin.x
+    let dy = end.y - begin.y
+    // Nearly along an axis: a straight line.
+    guard abs(dx) > 2, abs(dy) > 2 else { return }
+    let distance = hypot(dx, dy)
+    func sweep(_ r: CGFloat) -> CGFloat { 2 * asin(distance / (2 * r)) }
+    func sign(_ v: CGFloat) -> CGFloat { v > 0 ? 1 : (v < 0 ? -1 : 0) }
+    if abs(dx) < abs(dy) {
+      radius = distance * distance / abs(dx) / 2
+      centre = CGPoint(x: end.x + radius * sign(begin.x - end.x), y: end.y)
+      if begin.x < end.x {
+        beginAngle = sweep(radius) * sign(begin.y - end.y)
+        endAngle = 0
+      } else {
+        beginAngle = .pi + sweep(radius) * sign(end.y - begin.y)
+        endAngle = .pi
+      }
+    } else {
+      radius = distance * distance / abs(dy) / 2
+      centre = CGPoint(x: begin.x, y: begin.y + sign(end.y - begin.y) * radius)
+      if begin.y < end.y {
+        beginAngle = -.pi / 2
+        endAngle = -.pi / 2 + sweep(radius) * sign(end.x - begin.x)
+      } else {
+        beginAngle = .pi / 2
+        endAngle = .pi / 2 + sweep(radius) * sign(begin.x - end.x)
+      }
+    }
+  }
+
+  func at(_ t: CGFloat) -> CGPoint {
+    if t <= 0 { return begin }
+    if t >= 1 { return end }
+    guard let from = beginAngle else {
+      return CGPoint(x: begin.x + (end.x - begin.x) * t, y: begin.y + (end.y - begin.y) * t)
+    }
+    let angle = from + (endAngle - from) * t
+    return CGPoint(x: centre.x + cos(angle) * radius, y: centre.y + sin(angle) * radius)
+  }
+}
+
+/// A rectangle travelling along a Material arc: Flutter's
+/// `MaterialRectArcTween` - the two corners on the diagonal that points most
+/// nearly the way it goes, each on a `DnnArcPoint`.
+struct DnnArcRectPath {
+  let begin: CGRect
+  let end: CGRect
+  private let first: DnnArcPoint
+  private let second: DnnArcPoint
+
+  // Corners: 0 top left, 1 top right, 2 bottom left, 3 bottom right.
+  private static let diagonals = [(0, 3), (3, 0), (1, 2), (2, 1)]
+
+  private static func corner(_ rect: CGRect, _ corner: Int) -> CGPoint {
+    switch corner {
+    case 0: return CGPoint(x: rect.minX, y: rect.minY)
+    case 1: return CGPoint(x: rect.maxX, y: rect.minY)
+    case 2: return CGPoint(x: rect.minX, y: rect.maxY)
+    default: return CGPoint(x: rect.maxX, y: rect.maxY)
+    }
+  }
+
+  init(from begin: CGRect, to end: CGRect) {
+    self.begin = begin
+    self.end = end
+    let towards = CGPoint(x: end.midX - begin.midX, y: end.midY - begin.midY)
+    var best = DnnArcRectPath.diagonals[0]
+    var support = -CGFloat.infinity
+    for diagonal in DnnArcRectPath.diagonals {
+      let from = DnnArcRectPath.corner(begin, diagonal.0)
+      let to = DnnArcRectPath.corner(begin, diagonal.1)
+      let length = hypot(to.x - from.x, to.y - from.y)
+      let along = length == 0 ? 0 : (towards.x * (to.x - from.x) + towards.y * (to.y - from.y)) / length
+      if along > support {
+        support = along
+        best = diagonal
+      }
+    }
+    first = DnnArcPoint(
+      from: DnnArcRectPath.corner(begin, best.0), to: DnnArcRectPath.corner(end, best.0))
+    second = DnnArcPoint(
+      from: DnnArcRectPath.corner(begin, best.1), to: DnnArcRectPath.corner(end, best.1))
+  }
+
+  func at(_ t: CGFloat) -> CGRect {
+    if t <= 0 { return begin }
+    if t >= 1 { return end }
+    let a = first.at(t)
+    let b = second.at(t)
+    return CGRect(
+      x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+  }
+}
+
 func dnnBezier(_ one: CGPoint, _ two: CGPoint, _ t: CGFloat) -> CGFloat {
   func at(_ p1: CGFloat, _ p2: CGFloat, _ m: CGFloat) -> CGFloat {
     3 * p1 * (1 - m) * (1 - m) * m + 3 * p2 * (1 - m) * m * m + m * m * m

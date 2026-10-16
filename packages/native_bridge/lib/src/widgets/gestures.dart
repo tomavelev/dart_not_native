@@ -165,8 +165,9 @@ typedef GestureDragEndCallback = void Function(DragEndDetails details);
 
 /// Hears taps and drags on its child: Flutter's `GestureDetector`.
 ///
-/// A tap is reported once it has happened, so [onTapDown], [onTapUp] and
-/// [onTap] fire together, in that order, with the point of the tap. The three
+/// [onTapDown] is called as the pointer goes down, and [onTapUp] then [onTap]
+/// as it comes up - or [onTapCancel], when it turns out not to be a tap: it
+/// moved off, a scroller or a long press took it. The three
 /// kinds of drag - a pan, a horizontal drag, a vertical drag - are all the one
 /// drag the platform reports; each handler given is called, with the movement
 /// along its axis as `primaryDelta`. [onScaleStart], [onScaleUpdate] and
@@ -204,8 +205,6 @@ class GestureDetector extends Widget {
   final GestureTapDownCallback? onTapDown;
   final GestureTapUpCallback? onTapUp;
   final GestureTapCallback? onTap;
-
-  /// Accepted and never called: a tap that did not happen is not reported.
   final VoidCallback? onTapCancel;
   final GestureTapCallback? onDoubleTap;
   final GestureLongPressCallback? onLongPress;
@@ -224,7 +223,11 @@ class GestureDetector extends Widget {
   final HitTestBehavior? behavior;
   final bool excludeFromSemantics;
 
-  bool get _taps => onTap != null || onTapDown != null || onTapUp != null;
+  bool get _taps =>
+      onTap != null ||
+      onTapDown != null ||
+      onTapUp != null ||
+      onTapCancel != null;
 
   bool get _scales =>
       onScaleStart != null || onScaleUpdate != null || onScaleEnd != null;
@@ -375,16 +378,24 @@ class GestureDetector extends Widget {
       return node ?? UIBuilder.sizedBox();
     }
     return UIBuilder.box(
-      onTap: _taps
+      onTap: onTap != null || onTapUp != null
           ? (x, y) {
+              final at = Offset(x, y);
+              onTapUp?.call(
+                TapUpDetails(globalPosition: at, localPosition: at),
+              );
+              onTap?.call();
+            }
+          : null,
+      onTapDown: onTapDown == null && onTapCancel == null
+          ? null
+          : (x, y) {
               final at = Offset(x, y);
               onTapDown?.call(
                 TapDownDetails(globalPosition: at, localPosition: at),
               );
-              onTapUp?.call(TapUpDetails(globalPosition: at, localPosition: at));
-              onTap?.call();
-            }
-          : null,
+            },
+      onTapCancel: onTapCancel,
       onDoubleTap: doubleTap == null ? null : (_, _) => doubleTap(),
       onLongPress: longPress == null ? null : (_, _) => longPress(),
       onPan: scales ? _scale : (_drags ? _pan : null),
@@ -416,8 +427,8 @@ class _Dragged {
   final VoidCallback? onCompleted;
 }
 
-/// How a drag ended: whether a target took it. The velocity and the offset
-/// are always zero.
+/// How a drag ended: whether a target took it, how fast the pointer was
+/// going, and where the top left of [Draggable.feedback] was, on the screen.
 class DraggableDetails {
   const DraggableDetails({
     this.wasAccepted = false,
@@ -431,16 +442,16 @@ class DraggableDetails {
 
 /// Something that can be picked up and dropped on a [DragTarget].
 ///
-/// The platform does the dragging: it lifts a picture of [child] and carries
-/// a token, which the target turns back into [data]. So [feedback] is
-/// accepted and not drawn - the lifted picture is the child itself.
+/// The platform does the dragging: it carries [feedback] under the pointer -
+/// held where the finger took the child, as Flutter's default anchor holds
+/// it - and a token, which the target turns back into [data].
 ///
 /// [onDragStarted] is called when it is picked up and [onDragEnd] when it is
 /// let go, with whether a target took it; [onDragCompleted] when one did and
 /// [onDraggableCanceled] when none did. While it is in the air
-/// [childWhenDragging] is drawn where it was. The velocity and the offset
-/// those callbacks are given are always zero: where a drag ended is not
-/// reported, only that it did.
+/// [childWhenDragging] is drawn where it was. The offset those callbacks are
+/// given is where the top left of [feedback] was when it was let go, and the
+/// velocity how fast the pointer was going.
 class Draggable<T extends Object> extends Widget {
   const Draggable({
     super.key,
@@ -479,9 +490,10 @@ class Draggable<T extends Object> extends Widget {
     final away = childWhenDragging;
     return UIBuilder.box(
       dragData: token,
+      dragFeedback: _withoutIds(_renderChild(owner, feedback, 'feedback')),
       // Heard whether or not the app listens: a target under the drag says
       // what is over it from the drags in the air.
-      onDrag: (phase) => _dragged(owner, token, phase),
+      onDrag: (phase, data) => _dragged(owner, token, phase, data),
       id: _idOf(key),
       // The box is the one the platform lifted a picture of; what it holds
       // in the meantime is the app's to say.
@@ -491,20 +503,46 @@ class Draggable<T extends Object> extends Widget {
     );
   }
 
-  void _dragged(_Owner owner, String token, String phase) {
+  void _dragged(
+    _Owner owner,
+    String token,
+    String phase,
+    Map<String, dynamic> data,
+  ) {
     if (phase == 'start') {
       if (!owner._dragging.add(token)) return;
       owner._dropped.remove(token);
       onDragStarted?.call();
     } else {
       if (!owner._dragging.remove(token)) return;
+      double n(String key) => (data[key] as num?)?.toDouble() ?? 0;
+      final offset = Offset(n('x'), n('y'));
+      final velocity = Velocity(pixelsPerSecond: Offset(n('vx'), n('vy')));
       final accepted = owner._dropped.remove(token);
-      if (!accepted) onDraggableCanceled?.call(Velocity.zero, Offset.zero);
-      onDragEnd?.call(DraggableDetails(wasAccepted: accepted));
+      if (!accepted) onDraggableCanceled?.call(velocity, offset);
+      onDragEnd?.call(
+        DraggableDetails(
+          wasAccepted: accepted,
+          velocity: velocity,
+          offset: offset,
+        ),
+      );
     }
     if (childWhenDragging != null) owner._requestRebuild();
   }
 }
+
+/// [node] with no ids in it: the same widget drawn a second time - a
+/// feedback that is the child again - would otherwise answer to the child's
+/// name.
+WidgetNode _withoutIds(WidgetNode node) => WidgetNode(
+  type: node.type,
+  props: {
+    for (final entry in node.props.entries)
+      if (entry.key != 'id') entry.key: entry.value,
+  },
+  children: node.children?.map(_withoutIds).toList(),
+);
 
 /// A [Draggable] picked up after a long press. Every platform that
 /// distinguishes the two already waits for one, so this is the same thing.
@@ -533,7 +571,8 @@ class DragTargetDetails<T> {
   const DragTargetDetails({required this.data, required this.offset});
   final T data;
 
-  /// Always zero: the renderers report the drop, not its position.
+  /// Where the top left of the dragged [Draggable.feedback] was when it was
+  /// dropped, on the screen.
   final Offset offset;
 }
 
@@ -578,14 +617,14 @@ class DragTarget<T extends Object> extends StatefulWidget {
 class _DragTargetState<T extends Object> extends State<DragTarget<T>> {
   bool _hovering = false;
 
-  void _drop(String token) {
+  void _drop(String token, double x, double y) {
     final dragged = _owner?._dragData[token];
     if (mounted && _hovering) setState(() => _hovering = false);
     final data = dragged?.data;
     // Something else was dropped here: another type's draggable, or a drag
     // from outside the app.
     if (dragged == null || data is! T) return;
-    final details = DragTargetDetails<T>(data: data, offset: Offset.zero);
+    final details = DragTargetDetails<T>(data: data, offset: Offset(x, y));
     if (!(widget.onWillAcceptWithDetails?.call(details) ?? true)) return;
     _owner?._dropped.add(token);
     widget.onAcceptWithDetails?.call(details);
@@ -640,6 +679,24 @@ enum DismissDirection {
   none,
 }
 
+/// How far a [Dismissible] has been swiped: [progress] is the distance over
+/// the row's own extent, and [reached] whether it is past the threshold -
+/// with [previousReached] what that was at the last update.
+class DismissUpdateDetails {
+  const DismissUpdateDetails({
+    this.direction = DismissDirection.horizontal,
+    this.reached = false,
+    this.previousReached = false,
+    this.progress = 0.0,
+  });
+  final DismissDirection direction;
+  final bool reached;
+  final bool previousReached;
+  final double progress;
+}
+
+typedef DismissUpdateCallback = void Function(DismissUpdateDetails details);
+
 /// A row that is swiped away.
 ///
 /// The row follows the finger, with [background] showing behind it - or
@@ -650,9 +707,11 @@ enum DismissDirection {
 /// called. Let go short of the threshold, it slides back. As in Flutter the
 /// app must then take the row out of its list. A null [resizeDuration]
 /// leaves the room open and calls [onDismissed] as soon as the row is gone.
+/// [onUpdate] hears each movement of the finger, and where the row is going
+/// when it is let go - away, or back.
 ///
-/// Short of Flutter: [onUpdate] is not called. Each movement of the finger
-/// is a build, so on a long screen the row is a little behind the finger.
+/// Each movement of the finger is a build, so on a long screen the row is a
+/// little behind the finger.
 class Dismissible extends StatefulWidget {
   const Dismissible({
     required Key super.key,
@@ -680,7 +739,7 @@ class Dismissible extends StatefulWidget {
   /// Asked before dismissing; false or null puts the row back.
   final Future<bool?> Function(DismissDirection direction)? confirmDismiss;
   final VoidCallback? onResize;
-  final void Function(Object details)? onUpdate;
+  final DismissUpdateCallback? onUpdate;
   final void Function(DismissDirection direction)? onDismissed;
   final DismissDirection direction;
 
@@ -718,6 +777,29 @@ class _DismissibleState extends State<Dismissible> {
   bool _closing = false;
 
   static const double _fling = 700;
+
+  /// Whether the row was past its threshold at the last update.
+  bool _reached = false;
+
+  /// Tells [Dismissible.onUpdate] the row is [offset] along, the way [way].
+  void _report(_Owner owner, double offset, DismissDirection? way) {
+    final listener = widget.onUpdate;
+    if (listener == null) return;
+    final extent = _extent(owner);
+    final progress = extent > 0 ? (offset.abs() / extent).clamp(0.0, 1.0) : 0.0;
+    final reached =
+        way != null && progress > (widget.dismissThresholds[way] ?? 0.4);
+    final before = _reached;
+    _reached = reached;
+    listener(
+      DismissUpdateDetails(
+        direction: way ?? widget.direction,
+        reached: reached,
+        previousReached: before,
+        progress: progress,
+      ),
+    );
+  }
 
   bool get _vertical =>
       widget.direction == DismissDirection.vertical ||
@@ -761,7 +843,9 @@ class _DismissibleState extends State<Dismissible> {
       case 'update':
         final moved = _offset + (_vertical ? n('dy') : n('dx'));
         // Not past where it sits, the way it may not be swiped.
-        setState(() => _offset = _way(moved.sign, rtl) == null ? 0 : moved);
+        final way = _way(moved.sign, rtl);
+        setState(() => _offset = way == null ? 0 : moved);
+        _report(owner, _offset, way);
       case 'end':
         final way = _way(_offset.sign, rtl);
         final extent = _extent(owner);
@@ -772,23 +856,27 @@ class _DismissibleState extends State<Dismissible> {
         // A fling the way the row has gone; one back is a change of mind.
         final flung = speed.abs() > _fling && speed.sign == _offset.sign;
         if (way != null && (far || flung)) {
-          unawaited(_leave(way, extent));
+          unawaited(_leave(owner, way, extent));
         } else {
           setState(() {
             _dragging = false;
             _offset = 0;
           });
+          _report(owner, 0, way);
         }
     }
   }
 
-  Future<void> _leave(DismissDirection way, double extent) async {
+  Future<void> _leave(_Owner owner, DismissDirection way, double extent) async {
     final sign = _offset.sign;
     // Held where the finger left it while the app is asked.
     setState(() => _dragging = false);
     final confirm = widget.confirmDismiss;
     if (confirm != null && await confirm(way) != true) {
-      if (mounted) setState(() => _offset = 0);
+      if (mounted) {
+        setState(() => _offset = 0);
+        _report(owner, 0, way);
+      }
       return;
     }
     if (!mounted) return;
@@ -796,6 +884,7 @@ class _DismissibleState extends State<Dismissible> {
       _dismissed = way;
       _offset = sign * extent;
     });
+    _report(owner, _offset, way);
     // Told once the row has slid away - and its room has closed - as
     // Flutter tells it.
     await Future<void>.delayed(widget.movementDuration);

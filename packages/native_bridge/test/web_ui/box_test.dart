@@ -649,7 +649,14 @@ void main() {
 
       expect(events.map((e) => e.$1), ['drop_hover', 'drop_hover', 'drop']);
       expect(events[1].$2, {'over': false});
-      expect(events.last.$2, {'data': 'card-7'});
+      // With where the copy's corner was: held where the pointer took it,
+      // which was 10 right of the middle when the drag began.
+      final source = byId('source').getBoundingClientRect();
+      expect(events.last.$2, {
+        'data': 'card-7',
+        'x': tx - (sx + 10 - source.left),
+        'y': ty - (sy + 10 - source.top),
+      });
       expect(web.document.querySelector('.dnn-drag-ghost'), isNull);
     });
 
@@ -672,7 +679,7 @@ void main() {
         fractionalPointer('pointerup', tx + 0.5, ty + 0.5, kind: 'mouse'),
       );
 
-      expect(events.single.$2, {'data': 'card-7'});
+      expect(events.single.$2['data'], 'card-7');
     });
 
     group('a box that asks to hear its own drag', () {
@@ -744,7 +751,8 @@ void main() {
       web.document.dispatchEvent(pointer('pointermove', tx, ty, kind: 'touch'));
       web.document.dispatchEvent(pointer('pointerup', tx, ty, kind: 'touch'));
 
-      expect(log().last, 'drop {data: card-7}');
+      expect(events.last.$1, 'drop');
+      expect(events.last.$2['data'], 'card-7');
     });
 
     test('leaving a target says so, and a drop on nothing drops nothing',

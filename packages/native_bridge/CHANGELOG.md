@@ -145,6 +145,102 @@ Flutter, it now agrees, and these are the places existing code has to change:
   grey block; under Materialize a disabled tonal button keeps a fill.
   A text button is written in the app's primary under both.
 
+### A drag carries its feedback, and says where it ended
+
+`Draggable.feedback` was accepted and not drawn: what followed the finger was
+a copy of the child. It is now what the app said (`dragFeedback`), held by
+the point the child was taken by, as Flutter's default anchor holds it - an
+element under the pointer in the browser, the drag shadow on Android, the
+lifted preview on iOS, Flutter's own in the host. `onDragEnd`,
+`onDraggableCanceled` and a target's `DragTargetDetails` were given zeros;
+they now have where the picture's top left was and how fast the pointer was
+going. Seen on an Android emulator and in Chrome. On iOS it builds, but the
+simulator cannot be made to hold and drag from here.
+
+### A tap is heard as it happens
+
+`onTapDown`, `onTapUp` and `onTap` fired together, after the tap. `onTapDown`
+is now called as the finger lands (`tapDownEventId`), and `onTapCancel` -
+never called before - when the press turns out not to be a tap: it moved past
+Flutter's slop, a scroller or a long press took it, or it was let go off the
+box. Seen on an iOS simulator, an Android emulator and in Chrome.
+
+### `Dismissible.onUpdate`
+
+Called with Flutter's `DismissUpdateDetails` - the direction, how far as a
+part of the row, whether the threshold is passed and whether it was at the
+last update - as the finger moves the row, and when it is let go, towards
+where it is going. Seen on an Android emulator.
+
+### A route's own transition
+
+`PageRouteBuilder.transitionsBuilder` was accepted and never called: every
+page moved the renderer's way. A route's transition - a `transitionsBuilder`,
+or the `buildTransitions` of a route of the app's own, which `buildPage` (now
+public) lets it write - is now asked what it does to the page at the start of
+its animation: how faded, moved, scaled and turned the transition widgets it
+returns leave it. The new page moves from there to its place over the page
+beneath, and on the way back the picture of it moves back there over the page
+it uncovers (`page` and `picture` on `RootProps.pageTransition`), along the
+curve the transition names. A builder that returns the page as it is - and a
+`PageRouteBuilder` without one, as in Flutter - does not move it.
+`Animation.drive` and `ReverseAnimation` are here. Seen on an iOS simulator,
+an Android emulator, in Chrome and in the Flutter host: a fade, a slide up,
+and a scale with a whole turn.
+
+### Heroes arc, and fly their shuttle
+
+In a `MaterialApp` a hero flies along Flutter's Material arc
+(`MaterialRectArcTween`), as Flutter's does, and in a straight line elsewhere;
+`createRectTween` says which by the tween it makes. `RectTween` and
+`MaterialRectArcTween` are new, with Flutter's numbers. `flightShuttleBuilder`
+is called on the tree that turns the page, and what it builds flies in the
+hero's place - its own, or else the one the hero it flies from has. Seen on
+an iOS simulator, an Android emulator, in Chrome and in the Flutter host.
+Short of Flutter: the shuttle is drawn once, at the end of the flight, and
+stretched on the way, and the animation it is handed stands at its end.
+
+### Pinned headers stack
+
+Two pinned headers further down a `CustomScrollView` stack, each under those
+before it, as Flutter's do; the later one used to cover the earlier. Seen on
+an iOS simulator, an Android emulator and in Chrome - the Flutter host's
+`PinnedHeaderSliver` always stacked.
+
+### A whole `Matrix4`
+
+A matrix that skews, tilts in perspective or turns out of the screen's plane
+- or turns or scales about a point other than the middle - now travels whole
+(`transform.matrix`, with the point it works about in `origin`): CSS
+`matrix3d`, Flutter's own `Transform`, the canvas's matrix on Android, a
+`CATransform3D` on iOS. Seen on all four, the same as Flutter's. On Android
+it moves the picture, not where touches land.
+
+This changes what existing code draws: a `Transform` with a `Matrix4` works
+about its `alignment` and `origin` - the top left, where they say nothing, as
+in Flutter - so `Transform(transform: Matrix4.rotationZ(a))` turns about its
+corner where it used to turn about its middle. `Container.transformAlignment`
+is carried.
+
+### The browser says how far an image has come
+
+With a `loadingBuilder`, the web renderer fetches the picture itself a piece
+at a time, says how many bytes have come and how many there are, and shows
+what came. A server that does not let the page read the picture (no CORS)
+leaves it to the `<img>`, which says nothing on the way. Seen in Chrome.
+
+### Smaller things, this time
+
+- A `Container` around a `ListView`, `GridView`, `CustomScrollView`,
+  `PageView` or `TabBarView` fills the room it is offered, as the scroll view
+  does in Flutter. In the browser such a list grew to its full length and
+  did not scroll.
+- In the browser a list on a page that slid back into place - a tab returned
+  to - started from the top: an element moved among its siblings is now put
+  back scrolled where it was.
+- A page moving over another in the browser is given the page's colour, so
+  the one beneath does not show through where the page paints nothing.
+
 ### Curves are Flutter's
 
 Only five paces reached a renderer, so `Curves.fastOutSlowIn` was an
@@ -206,8 +302,8 @@ scrolled past it, it stays at the top of the view, over the rows going under
 it, until the list comes back down - CSS `position: sticky` in the browser, a
 `PinnedHeaderSliver` in the Flutter host, the box moved down as the scroller
 moves on iOS and Android. Seen on an iOS simulator, an Android emulator and
-in Chrome. Two such headers do not stack, as Flutter's do: the later one
-covers the earlier.
+in Chrome. Two such headers stack under each other, as Flutter's do (see
+"Pinned headers stack").
 
 ### Layers and blends on a canvas
 
@@ -222,9 +318,9 @@ and in Chrome; by pixel in Chrome and the Flutter host.
 `loadingBuilder` was handed nothing loaded and no total, always. Android, iOS
 and the Flutter host now say how many bytes have come - and how many there
 are, when the server said - a few times a second, and the builder is called
-with each. The browser fetches an `<img>` itself and does not say. Seen on an
-iOS simulator and an Android emulator with a server sending a picture in
-twenty pieces.
+with each - and the browser too, since (see "The browser says how far an
+image has come"). Seen on an iOS simulator and an Android emulator with a
+server sending a picture in twenty pieces.
 
 ### `Matrix4` is a matrix
 
@@ -235,7 +331,7 @@ and calls compose in the order made - a translate after a scale is scaled, as
 in Flutter. What a box is given is read out of it: the shift, the turn and a
 scale along each axis, which the renderers now carry (`scaleY`), so
 `Transform.scale(scaleX: 2, scaleY: 0.5)` stretches where it used to average.
-A skew and a perspective still have nowhere to go.
+A skew and a perspective travel whole (see "A whole `Matrix4`").
 
 ### Smaller things
 

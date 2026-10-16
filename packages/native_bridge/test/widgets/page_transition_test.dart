@@ -84,11 +84,12 @@ void main() {
       ),
     );
     await pumpEventQueue();
-    expect(transition(), {'kind': 'push', 'ms': 120});
+    // With no transitionsBuilder the page does not move, as in Flutter.
+    expect(transition(), {'kind': 'push', 'ms': 120, 'page': {}});
 
     Navigator.of(page).pop();
     await pumpEventQueue();
-    expect(transition(), {'kind': 'pop', 'ms': 80});
+    expect(transition(), {'kind': 'pop', 'ms': 80, 'picture': {}});
   });
 
   test('no time, no transition', () async {

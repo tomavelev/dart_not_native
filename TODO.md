@@ -2069,12 +2069,19 @@ notice.
    as a picture, fades away; a pushed page slides in from the end of the
    screen and a popped one slides off towards it. Pages pushed on a
    `Navigator` and named routes; seen on an iOS simulator, an Android
-   emulator and in Chrome. Still open: the transition is the renderer's
-   one - `PageRouteBuilder.transitionsBuilder` is accepted and never called
-   (its durations are honoured), `router.dart` has no `pageBuilder`, and a
-   `Hero` is its child and nothing more. A page the in-repo `GoRouter`
-   swaps transitions since 2026-10-12 (`announcePageTransition`, for any
-   `RouterConfig` that calls it).
+   emulator and in Chrome. A page the in-repo `GoRouter` swaps transitions
+   since 2026-10-12 (`announcePageTransition`, for any `RouterConfig` that
+   calls it). Since 2026-10-15 a route's own transition moves its page -
+   `PageRouteBuilder.transitionsBuilder` or an overridden
+   `buildTransitions`, read at the start of its animation for the fade,
+   slide, scale and turn its transition widgets make (`page`, `picture`) -
+   and a `Hero` flies along Flutter's Material arc in a `MaterialApp`, with
+   its `flightShuttleBuilder`'s shuttle; seen on all four renderers. Still
+   open: `router.dart` has no `pageBuilder`; a transition's
+   `secondaryAnimation` (the page beneath moving as it is covered) is not
+   read; widgets other than the transition widgets a builder wraps the page
+   in are not read; a hero's shuttle is drawn once and stretched, and
+   `placeholderBuilder` is not called.
 3. ~~**`onEnd` is never called** on any implicit animation.~~ Called since
    2026-10-10, and since 2026-10-14 when the renderer says the move has
    finished (§6.3 item 1) - by the app's own clock only where a renderer
@@ -2122,13 +2129,14 @@ notice.
    is the boxes it would lay out: nothing is lazy, nothing collapses and a
    floating bar scrolls away; a bar or header pinned at the very top is held
    above the scroller since 2026-10-13, and one pinned further down sticks at
-   the top once scrolled past since 2026-10-14 - over an earlier one, where
-   Flutter stacks them). Seen on an iOS simulator, an Android emulator and in
+   the top once scrolled past since 2026-10-14 - under the ones before it,
+   as Flutter stacks them, since 2026-10-15). Seen on an iOS simulator, an Android emulator and in
    Chrome; rows reordered by hand on Android and in Chrome. (`Hero`, `MouseRegion` and
    `PopupMenuButton` were on this list until 2026-10-04; `MouseRegion` is
    there in name, the third opens a dialog, and a `Hero` flies since
-   2026-10-13 - the arriving page's, stretched in a straight line from the
-   old one's place to its own, on all four renderers; seen on an iOS
+   2026-10-13 - the arriving page's, stretched from the old one's place to
+   its own, on all four renderers, and since 2026-10-15 along Flutter's
+   Material arc in a `MaterialApp` and with its shuttle; seen on an iOS
    simulator, an Android emulator, in Chrome and in the Flutter host. `PopScope` was on it until
    2026-10-10 and is Flutter's now, for a page of a `Navigator`, of
    `GoRouter` or of the named routes alike. `WillPopScope` followed the
@@ -2155,12 +2163,12 @@ notice.
    read from the right and the vertical directions are all honoured. It is
    built in the widget layer from a pan along one axis and a moving box, so
    every movement of the finger is a build. Swiped on an iOS simulator, an
-   Android emulator and in Chrome with touch. Short of Flutter: the gap the
-   row leaves does not close by itself (`resizeDuration`, `onResize`) and
-   `onUpdate` is not called. Still open here: a `Draggable`'s `feedback`
-   is not drawn (§6.3 item 7 has what is), and `GestureDetector`'s
-   `onTapDown`/`onTapUp`/`onTap` fire together after the tap
-   (`gestures.dart`).
+   Android emulator and in Chrome with touch. Since 2026-10-14 the room the
+   row took closes over `resizeDuration`, with `onResize` (by its tests),
+   and since 2026-10-15 `onUpdate` hears each movement - seen on an Android
+   emulator. Since 2026-10-15 too a `Draggable`'s `feedback` is drawn and
+   `GestureDetector`'s `onTapDown` comes as the finger lands, `onTapCancel`
+   when the press is not a tap (§6.3 item 7).
 9. ~~**`TabBarView` does not swipe**~~ It does since 2026-10-11: a swipe
    across the page moves to the tab beside it - far enough or flung, the
    other way when the screen reads from the right, and not at all under
@@ -2171,8 +2179,11 @@ notice.
    is one too. Swiped on an iOS simulator, an Android emulator and in Chrome
    with touch, over a windowed list. Since 2026-10-14 the page follows the
    finger and a tab change slides (it is a `PageView` kept in step with the
-   controller). Still open: on the web a windowed list in a tab starts from
-   the top when the tab comes back (§6.3 item 9).
+   controller). The slide had brought back the web's old fault - a list in
+   a tab that came back started from the top, as the page sliding into
+   place was moved among its siblings and the browser scrolls a moved
+   element to its top - fixed on 2026-10-15; seen in Chrome, and on an iOS
+   simulator and an Android emulator, which kept their place.
 10. ~~**Snackbars are not queued.**~~ Queued since 2026-10-10, as Flutter's
     are. Their fill, their message's and action's colours and how round
     they are travel since 2026-10-11, on all four renderers. Still open:
@@ -2199,8 +2210,9 @@ notice.
     while a picture loads, `errorBuilder` is called only after a failure and
     `frameBuilder` hears the first frame - seen on an iOS simulator, an
     Android emulator and in Chrome. Since 2026-10-14 the progress is the
-    bytes that have come, on Android, iOS and the Flutter host (the browser
-    does not say); while loading the builder's `child` is an empty box. `color` tints the picture since
+    bytes that have come, on Android, iOS and the Flutter host, and since
+    2026-10-15 in the browser, which fetches the picture itself where the
+    server lets it read it; while loading the builder's `child` is an empty box. `color` tints the picture since
     2026-10-11, and since 2026-10-14 in whatever `colorBlendMode` says; on
     the web the picture's clear parts stay clear whatever the mode
     (`text.dart`).
@@ -2253,8 +2265,11 @@ event, and then the same work in four renderers.
    rows a list reports as visible are counted from its first row, not from
    the top of the padding. Seen on an iOS simulator, an Android emulator and
    in Chrome with touch: pulled, refreshed, and scrolled to the last row.
-   Not done: `scrollOffset` on a padded list is not checked against
-   Flutter's, where an offset includes the padding.
+   An offset includes the padding, as Flutter's does: `jumpTo(100)` on a
+   list padded by 40 leaves the third row where the first stood - checked
+   on an iOS simulator, an Android emulator and in Chrome on 2026-10-15.
+   That check found a `Container` around a list did not fill the room on
+   offer in the browser, so the list never scrolled; it does now.
 4. ~~**Text spans cannot be tapped.**~~ They can since 2026-10-10:
    `TextSpan(recognizer: TapGestureRecognizer()..onTap = ...)` is a run with
    an `eventId`, and all four renderers send it - a link to the mouse, the
@@ -2294,8 +2309,10 @@ event, and then the same work in four renderers.
    are called, and `childWhenDragging` is drawn where the piece was. Dragged
    on an Android emulator and in Chrome; on iOS it builds and the device
    lane is green, but no drag was made by hand - the simulator tools here
-   cannot hold and drag. Still open: where a drag ended and how fast are
-   not reported, and `feedback` is not drawn.
+   cannot hold and drag. Since 2026-10-15 `feedback` is what is carried,
+   and the end and a drop say where the feedback's top left was and how fast
+   the pointer went - seen on an Android emulator and in Chrome, not on iOS
+   for the same reason.
 8. ~~**A text field's look does not travel.**~~ It does since 2026-10-10:
    the colour, size and weight of `TextField.style`, and `InputDecoration`'s
    fill, its border (none, underline or box, with a colour, width and radius)
@@ -2444,10 +2461,10 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2580 tests
-  (1548 in the package, 388 for the example apps and goldens, 601 in the browser,
+  contracts, the plugin system and the design system are covered by 2637 tests
+  (1588 in the package, 388 for the example apps and goldens, 618 in the browser,
   43 in the bloc package,
-  counted 2026-10-14), plus 20 integration tests that run on a real Android and
+  counted 2026-10-15), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native
   renderers drawing the whole node vocabulary and every example app. (Four of
   the eighteen - the free-form tree and the two pickers, added 2026-10-09, and

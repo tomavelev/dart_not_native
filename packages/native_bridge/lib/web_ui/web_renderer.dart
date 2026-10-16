@@ -25,6 +25,7 @@ import '../src/app_theme.dart';
 import '../src/contrast.dart';
 import '../src/event_binding.dart';
 import '../src/frame_probe.dart';
+import '../src/hero_arc.dart';
 import '../src/icon_data.dart';
 import '../src/icons.dart';
 import '../src/render_error.dart';
@@ -341,6 +342,12 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   void _movePages(web.HTMLElement leaving, Map<dynamic, dynamic> transition) {
     final ms = (_num(transition['ms']) ?? 300).toDouble();
     final kind = transition['kind'];
+    final page = transition['page'];
+    final picture = transition['picture'];
+    if (page is Map || picture is Map) {
+      _moveByRoute(leaving, ms, page is Map ? page : null, picture as Map?);
+      return;
+    }
     // Towards the end of the screen: the right, where it reads left to right.
     final end = _rtl ? '-25%' : '25%';
     final timing = {'duration': ms, 'easing': 'ease-out'}.jsify()!;
@@ -367,6 +374,88 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       );
     }
   }
+
+  /// Moves the pages the way a route's own transition says (see
+  /// [RootProps.pageTransition]): the new [page] from where it starts to its
+  /// place over [leaving], which lies still beneath it - or [leaving] from
+  /// its place to where [picture] says, over the new page.
+  void _moveByRoute(
+    web.HTMLElement leaving,
+    double ms,
+    Map<dynamic, dynamic>? page,
+    Map<dynamic, dynamic>? picture,
+  ) {
+    final motion = page ?? picture!;
+    final timing = {
+      'duration': ms,
+      // A route's animation runs straight through unless its transition
+      // names a curve.
+      'easing': _timing({'curve': motion['curve'] ?? 'linear'}),
+    }.jsify()!;
+    final moved = {
+      'opacity': _num(motion['opacity']) ?? 1,
+      'transform': _routeTransform(motion),
+    };
+    const still = {'opacity': 1, 'transform': 'none'};
+    void remove() => leaving.remove();
+    // A page lets the body's colour through where it paints nothing, as a
+    // Flutter page does not: what moves is given it, so the page beneath does
+    // not show through the one above.
+    final paper = web.document.body == null
+        ? ''
+        : web.window.getComputedStyle(web.document.body!).backgroundColor;
+    if (picture != null) {
+      leaving.style.backgroundColor = paper;
+      leaving.animate([still, moved].jsify() as JSObject, timing)
+        ..onfinish = ((web.Event _) => remove()).toJS
+        ..oncancel = ((web.Event _) => remove()).toJS;
+      return;
+    }
+    // The picture beneath, the page above it for as long as the move takes.
+    final root = rootElement as web.HTMLElement;
+    leaving.style.zIndex = '2147482000';
+    final position = root.style.position;
+    final layer = root.style.zIndex;
+    if (web.window.getComputedStyle(root).position == 'static') {
+      root.style.position = 'relative';
+    }
+    root.style.zIndex = '2147482001';
+    void restore() {
+      remove();
+      root.style
+        ..position = position
+        ..zIndex = layer;
+    }
+
+    final arriving = rootElement.firstElementChild;
+    if (arriving is! web.HTMLElement || ms <= 0) {
+      restore();
+      return;
+    }
+    final painted = arriving.style.backgroundColor;
+    arriving.style.backgroundColor = paper;
+    void done() {
+      restore();
+      arriving.style.backgroundColor = painted;
+    }
+
+    arriving.animate([moved, still].jsify() as JSObject, timing)
+      ..onfinish = ((web.Event _) => done()).toJS
+      ..oncancel = ((web.Event _) => done()).toJS;
+  }
+
+  /// A route's motion as a CSS transform: moved by parts of its own size,
+  /// then scaled and turned about its middle.
+  static String _routeTransform(Map<dynamic, dynamic> motion) {
+    final dx = (_num(motion['dx']) ?? 0) * 100;
+    final dy = (_num(motion['dy']) ?? 0) * 100;
+    final scale = _num(motion['scale']) ?? 1;
+    final rotate = _num(motion['rotate']) ?? 0;
+    return 'translate($dx%, $dy%) scale($scale) rotate(${rotate}rad)';
+  }
+
+  /// How many points of an arc a hero's flight is drawn through.
+  static const int _arcSteps = 24;
 
   /// The boxes on screen that have a hero's name, and where each stands.
   Map<String, web.DOMRect> _heroRects() {
@@ -408,10 +497,23 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
           was.style.visibility = 'hidden';
         }
       }
-      final flight = hero.cloneNode(true) as web.HTMLElement
-        ..removeAttribute('id')
-        ..removeAttribute('data-hero')
-        ..setAttribute('aria-hidden', 'true');
+      final props = _nodes[hero]?.props ?? const <String, dynamic>{};
+      final shuttle = props['heroShuttle'];
+      // What the hero said flies in its place, stretched over it; or else a
+      // copy of the hero.
+      final flight = shuttle is Map
+          ? ((web.document.createElement('div') as web.HTMLElement)
+              ..className = 'dnn-hero-shuttle'
+              ..setAttribute('aria-hidden', 'true')
+              ..appendChild(
+                _create(
+                  WidgetNode.fromJson(Map<String, dynamic>.from(shuttle)),
+                ),
+              ))
+          : (hero.cloneNode(true) as web.HTMLElement
+              ..removeAttribute('id')
+              ..removeAttribute('data-hero')
+              ..setAttribute('aria-hidden', 'true'));
       final inside = flight.querySelectorAll('[id]');
       for (var j = 0; j < inside.length; j++) {
         (inside.item(j) as web.Element).removeAttribute('id');
@@ -437,17 +539,39 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       hero.style.visibility = 'hidden';
       // The hero as it will stand, stretched over where the old one stood
       // and let go: what is in it grows or shrinks with it.
+      // Where the flight is, as a stretch of the hero where it will stand.
+      String over(ArcRect at) {
+        final (left, top, right, bottom) = at;
+        return 'translate(${left - end.left}px, ${top - end.top}px) '
+            'scale(${(right - left) / end.width}, '
+            '${(bottom - top) / end.height})';
+      }
+
+      final ArcRect begin = (
+        start.left.toDouble(),
+        start.top.toDouble(),
+        start.right.toDouble(),
+        start.bottom.toDouble(),
+      );
+      final ArcRect finish = (
+        end.left.toDouble(),
+        end.top.toDouble(),
+        end.right.toDouble(),
+        end.bottom.toDouble(),
+      );
+      // Along an arc, a point at a time; the easing runs over the whole.
+      final path = props['heroArc'] == true ? ArcRectPath(begin, finish) : null;
+      final frames = path == null
+          ? [
+              {'transform': over(begin)},
+              {'transform': 'none'},
+            ]
+          : [
+              for (var i = 0; i <= _arcSteps; i++)
+                {'transform': over(path.at(i / _arcSteps))},
+            ];
       final run = flight.animate(
-        [
-          {
-            'transform':
-                'translate(${start.left - end.left}px, '
-                '${start.top - end.top}px) '
-                'scale(${start.width / end.width}, '
-                '${start.height / end.height})',
-          },
-          {'transform': 'none'},
-        ].jsify() as JSObject,
+        frames.jsify() as JSObject,
         {'duration': ms, 'easing': 'cubic-bezier(0.4, 0, 0.2, 1)'}.jsify()!,
       );
       void land() {
@@ -541,6 +665,33 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   // Reconciliation
   // ---------------------------------------------------------------------------
 
+  /// Runs [move], which takes [element] out of the document and puts it
+  /// back, with every scroller in it where it was: a browser starts an
+  /// element that is put back scrolled to the top - a list on a page that
+  /// slid back into place among the pages beside it.
+  void _keepingScroll(web.Element element, void Function() move) {
+    final scrolled = <(web.Element, double, double)>[];
+    void note(web.Element e) {
+      if (e.scrollTop != 0 || e.scrollLeft != 0) {
+        scrolled.add((e, e.scrollTop.toDouble(), e.scrollLeft.toDouble()));
+      }
+    }
+
+    note(element);
+    final inside = element.querySelectorAll(
+      '.dnn-scroll, .dnn-lazylist, [data-scroll-version]',
+    );
+    for (var i = 0; i < inside.length; i++) {
+      note(inside.item(i)! as web.Element);
+    }
+    move();
+    for (final (e, top, left) in scrolled) {
+      e
+        ..scrollTop = top
+        ..scrollLeft = left;
+    }
+  }
+
   /// Updates [host]'s children from [previous] to [nodes].
   ///
   /// The comparison is against the tree that produced the current DOM, so a
@@ -571,7 +722,10 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         if (found != null) {
           // The row exists further down: move its element up to here.
           final moved = host.children.item(found)!;
-          host.insertBefore(moved, host.children.item(i));
+          _keepingScroll(
+            moved,
+            () => host.insertBefore(moved, host.children.item(i)),
+          );
           standing.insert(i, standing.removeAt(found));
           existing = moved;
           before = standing[i];
@@ -961,10 +1115,36 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     _restoreFocusIfModalsClosed();
     _applyFocusAsk();
     _applyScrollAsks();
+    _stackStickies();
     if (!_viewportDelivered) _reportViewport();
     _clearSnackbarOfBottomBar();
     _pruneSnackbarTimers();
     _releaseGoneCameras();
+  }
+
+  /// Puts each sticky box below the sticky boxes before it in its scroller,
+  /// so pinned headers stack as Flutter's do rather than cover each other.
+  void _stackStickies() {
+    final stickies = rootElement.querySelectorAll('[data-sticky]');
+    if (stickies.length == 0) return;
+    final below = <web.Element?, double>{};
+    for (var i = 0; i < stickies.length; i++) {
+      final box = stickies.item(i) as web.HTMLElement;
+      final scroller = _scrollerOf(box);
+      final above = below[scroller] ?? 0;
+      final top = '${above}px';
+      if (box.style.top != top) box.style.top = top;
+      below[scroller] = above + box.offsetHeight;
+    }
+  }
+
+  /// The element [box] scrolls in: the nearest one above it that scrolls.
+  web.Element? _scrollerOf(web.Element box) {
+    for (var up = box.parentElement; up != null; up = up.parentElement) {
+      final overflow = web.window.getComputedStyle(up).overflowY;
+      if (overflow == 'auto' || overflow == 'scroll') return up;
+    }
+    return null;
   }
 
   /// Says how tall the scaffold's bottom bar is where a snackbar can read it.
@@ -1614,13 +1794,19 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       scheduleMicrotask(() => _fire(eventId, {'state': state}));
     }
 
+    // The bytes as they come, to an image that asked; otherwise the browser
+    // fetches it as an <img> does.
+    void load() => eventId != null && p['progress'] == true
+        ? _loadCounting(image, _str(p['src']), eventId)
+        : image.src = _str(p['src']);
+
     if (!hasFallback) {
       image
         ..addEventListener('load', ((web.Event _) => tell(true)).toJS)
-        ..addEventListener('error', ((web.Event _) => tell(false)).toJS)
-        ..src = _str(p['src'])
-        // Doubles as the accessible name and as what shows if the load fails.
-        ..alt = _str(p['alt']);
+        ..addEventListener('error', ((web.Event _) => tell(false)).toJS);
+      load();
+      // Doubles as the accessible name and as what shows if the load fails.
+      image.alt = _str(p['alt']);
       if (width != null) _style(image, 'width', '${width}px');
       if (height != null) _style(image, 'height', '${height}px');
       _style(image, 'object-fit', _objectFit(_str(p['fit'], 'cover')));
@@ -1658,8 +1844,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
           show(false);
           tell(false);
         }).toJS,
-      )
-      ..src = _str(p['src']);
+      );
+    load();
     // One the browser already holds is complete as soon as it is named, so
     // the fallback is never drawn in front of it.
     final held = image.complete && image.naturalWidth > 0;
@@ -1669,6 +1855,76 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ..appendChild(fallback)
       ..appendChild(image);
     return frame;
+  }
+
+  /// Fetches [src] for [image] a piece at a time, telling [eventId]
+  /// `{state: 'loading', loaded, expected}` as the bytes come - a few times
+  /// a second at most - and then shows what came.
+  ///
+  /// A picture from a server that does not let the page read it (no CORS)
+  /// cannot be counted: it is left to the <img> to fetch, with nothing said
+  /// on the way.
+  Future<void> _loadCounting(
+    web.HTMLImageElement image,
+    String src,
+    String eventId,
+  ) async {
+    final web.Response response;
+    try {
+      response = await web.window.fetch(src.toJS).toDart;
+    } catch (_) {
+      image.src = src;
+      return;
+    }
+    final body = response.body;
+    if (!response.ok || body == null) {
+      image.src = src;
+      return;
+    }
+    final expected = int.tryParse(response.headers.get('content-length') ?? '');
+    final reader = body.getReader() as web.ReadableStreamDefaultReader;
+    final parts = <JSAny>[];
+    var loaded = 0;
+    var toldAt = 0.0;
+    void tell() {
+      _fire(eventId, {
+        'state': 'loading',
+        'loaded': loaded,
+        'expected': ?expected,
+      });
+    }
+
+    try {
+      while (true) {
+        final chunk = await reader.read().toDart;
+        if (chunk.done) break;
+        final bytes = chunk.value as JSUint8Array?;
+        if (bytes == null) continue;
+        parts.add(bytes);
+        // Read off the array, rather than copied into Dart to be counted.
+        loaded += bytes.getProperty<JSNumber>('byteLength'.toJS).toDartInt;
+        final now = web.window.performance.now();
+        if (now - toldAt >= 200) {
+          toldAt = now;
+          tell();
+        }
+      }
+    } catch (_) {
+      image.src = src;
+      return;
+    }
+    tell();
+    final blob = web.Blob(
+      parts.toJS,
+      web.BlobPropertyBag(type: response.headers.get('content-type') ?? ''),
+    );
+    final url = web.URL.createObjectURL(blob);
+    // Let go of once it is drawn, or has failed to be.
+    void release(web.Event _) => web.URL.revokeObjectURL(url);
+    image
+      ..addEventListener('load', release.toJS)
+      ..addEventListener('error', release.toJS)
+      ..src = url;
   }
 
   /// Draws [image] tinted with the node's `color`, when it has one: as its
@@ -3477,10 +3733,24 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final opacity = _num(p['opacity']);
     put('opacity', opacity == null ? null : '$opacity');
     final transform = p['transform'];
+    final matrix = transform is Map ? transform['matrix'] : null;
+    final origin = transform is Map ? transform['origin'] : null;
+    // A whole matrix works about the point it says; the parts, about the
+    // middle, which is the browser's own.
+    put(
+      'transform-origin',
+      matrix is List && origin is List && origin.length == 4
+          ? 'calc(${(_num(origin[0]) ?? 0) * 50 + 50}% + ${_num(origin[2]) ?? 0}px) '
+                'calc(${(_num(origin[1]) ?? 0) * 50 + 50}% + ${_num(origin[3]) ?? 0}px)'
+          : null,
+    );
     put(
       'transform',
       transform is! Map
           ? null
+          // Column by column, which is the order matrix3d takes.
+          : matrix is List && matrix.length == 16
+          ? 'matrix3d(${matrix.map((v) => _num(v) ?? 0).join(', ')})'
           // Read right to left: scaled and turned about the centre, then
           // moved, so the movement is in the parent's pixels whatever the
           // turn.
@@ -4353,10 +4623,86 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         }).toJS,
       );
     }
+    if (!state.presses && p['tapDownEventId'] is String) {
+      state.presses = true;
+      box.addEventListener(
+        'pointerdown',
+        ((web.PointerEvent event) => _onPressDown(box, state, event)).toJS,
+      );
+      box.addEventListener(
+        'pointermove',
+        ((web.PointerEvent event) {
+          if (state.press != event.pointerId) return;
+          final travelled = math.sqrt(
+            math.pow(event.placeX - state.pressX, 2) +
+                math.pow(event.placeY - state.pressY, 2),
+          );
+          // Gone too far to be a tap: the click it may still make is not one.
+          if (travelled > _tapSlop) _losePress(state, swallow: true);
+        }).toJS,
+      );
+      box.addEventListener(
+        'pointerup',
+        ((web.PointerEvent event) {
+          if (state.press != event.pointerId) return;
+          // Let go off the box, there will be no click to end it.
+          final over = web.document.elementFromPoint(
+            event.placeX,
+            event.placeY,
+          );
+          if (over == null || !box.contains(over)) {
+            _losePress(state);
+          } else if (state.props['tapEventId'] is! String) {
+            // Nothing waits for a click: the press is simply over.
+            state.press = null;
+          }
+        }).toJS,
+      );
+      box.addEventListener(
+        'pointercancel',
+        ((web.PointerEvent event) {
+          if (state.press == event.pointerId) _losePress(state);
+        }).toJS,
+      );
+    }
     if (!state.observed && p['sizeEventId'] is String) {
       state.observed = true;
       _resizes.observe(box);
     }
+  }
+
+  /// How far a pointer may wander and still make a tap: Flutter's slop.
+  static const double _tapSlop = 18;
+
+  /// A pointer went down on a box that hears it at once (`tapDownEventId`).
+  void _onPressDown(web.Element box, _NodeState state, web.PointerEvent event) {
+    if (event.button != 0) return;
+    if (!_owns(
+      box,
+      event.target,
+      'button, a[href], input, select, textarea, label, [data-tap]',
+    )) {
+      return;
+    }
+    final eventId = state.props['tapDownEventId'];
+    if (eventId is! String) return;
+    state
+      ..press = event.pointerId
+      ..pressX = event.placeX
+      ..pressY = event.placeY
+      ..pressLost = false;
+    handleEvent(eventId, _local(box, event.placeX, event.placeY));
+  }
+
+  /// The pointer that went down will not make a tap: the box is told, and
+  /// with [swallow] the click it may still make is not taken for one.
+  void _losePress(_NodeState state, {bool swallow = false}) {
+    if (state.press == null) return;
+    state
+      ..press = null
+      ..pressLost = swallow;
+    final eventId = state.props['tapDownEventId'];
+    if (eventId is String) handleEvent('${eventId}_cancel', const {});
   }
 
   /// A point in [box]'s own pixels, from one in the window's.
@@ -4394,11 +4740,18 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     )) {
       return;
     }
-    // The click that ends a pan, a long press or a drag is not a tap.
-    if (state.swallowClick) {
-      state.swallowClick = false;
+    // The click that ends a pan, a long press or a drag is not a tap, nor
+    // one after the pointer went too far.
+    if (state.pressLost) {
+      state.pressLost = false;
       return;
     }
+    if (state.swallowClick) {
+      state.swallowClick = false;
+      _losePress(state);
+      return;
+    }
+    state.press = null;
     // `detail` counts the pointer's clicks, so zero is a click nothing
     // pointed at: element.click(), which is how assistive technology presses.
     final point = event.detail == 0
@@ -4487,6 +4840,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   void _onHold(web.Element box, _NodeState state) {
     if (state.pointer == null || state.moved) return;
     state.held = true;
+    // Held long enough to be something else: not a tap.
+    _losePress(state, swallow: true);
     final p = state.props;
     if (p['dragData'] is String && state.touch) {
       _beginDrag(box, state, state.pointer!, state.lastX, state.lastY);
@@ -4612,6 +4967,9 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       );
       if (travelled <= _touchSlop) return;
       state.moved = true;
+      if (p['panEventId'] is String || p['dragData'] is String) {
+        _losePress(state, swallow: true);
+      }
       state.holdTimer?.cancel();
       if (state.held) return;
       if (p['dragData'] is String && !state.touch) {
@@ -4745,16 +5103,30 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final data = state.props['dragData'];
     if (data is! String || _drag != null) return;
     final rect = box.getBoundingClientRect();
-    final ghost = box.cloneNode(true) as web.HTMLElement
-      ..removeAttribute('id')
-      ..classList.add('dnn-drag-ghost');
+    // What the app said to carry, drawn now and only for the drag; or else a
+    // copy of the box, at the box's size.
+    final feedback = state.props['dragFeedback'];
+    final web.HTMLElement ghost;
+    if (feedback is Map) {
+      ghost =
+          (_el('div', 'dnn-drag-feedback')..appendChild(
+                _create(
+                  WidgetNode.fromJson(Map<String, dynamic>.from(feedback)),
+                ),
+              ))
+              as web.HTMLElement;
+    } else {
+      ghost = (box.cloneNode(true) as web.HTMLElement)
+        ..removeAttribute('id')
+        ..classList.add('dnn-drag-ghost');
+    }
     // The copy lives outside the app's root, where the reconciler will not
     // sweep it up - and so outside the theme, which it is handed here.
     final theme = (rootElement as web.HTMLElement).style.cssText;
     ghost.style.cssText =
         '$theme;${ghost.style.cssText};'
         'position:fixed;left:0;top:0;margin:0;'
-        'width:${rect.width}px;height:${rect.height}px;'
+        '${feedback is Map ? '' : 'width:${rect.width}px;height:${rect.height}px;'}'
         // Inline, not left to the stylesheet: a copy that caught the pointer
         // would hide every drop target under it.
         'pointer-events:none;z-index:1000;';
@@ -4782,12 +5154,15 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ..addEventListener('pointerup', drag.onUp)
       ..addEventListener('pointercancel', drag.onCancel);
     _moveDrag(x, y);
+    drag.lastTime = web.window.performance.now();
     final dragId = state.props['dragEventId'];
     if (dragId is String) handleEvent('${dragId}_start', const {});
   }
 
   void _onDragMove(web.PointerEvent event) {
-    if (_drag?.pointer != event.pointerId) return;
+    final drag = _drag;
+    if (drag?.pointer != event.pointerId) return;
+    drag!.track(event.placeX, event.placeY, event.timeStamp.toDouble());
     _moveDrag(event.placeX, event.placeY);
   }
 
@@ -4795,6 +5170,9 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   void _moveDrag(double x, double y) {
     final drag = _drag;
     if (drag == null) return;
+    drag
+      ..x = x
+      ..y = y;
     _style(
       drag.ghost,
       'transform',
@@ -4829,16 +5207,28 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     drag.state
       ..pointer = null
       ..swallowClick = drop;
+    // Where the picture's corner was, which is what a drop is placed by.
+    final at = {'x': drag.x - drag.grabX, 'y': drag.y - drag.grabY};
     final target = drag.over;
     if (target != null) {
       _hover(target, false);
       final eventId = _nodes[target]?.props['dropEventId'];
-      if (drop && eventId is String) handleEvent(eventId, {'data': drag.data});
+      if (drop && eventId is String) {
+        handleEvent(eventId, {'data': drag.data, ...at});
+      }
     }
+    // A pointer that stood still before it was let go was not moving.
+    final still = event.timeStamp.toDouble() - drag.lastTime > 100;
     // After the drop, so that the app knows what became of the drag by the
     // time it hears that it is over.
     final dragId = drag.state.props['dragEventId'];
-    if (dragId is String) handleEvent('${dragId}_end', const {});
+    if (dragId is String) {
+      handleEvent('${dragId}_end', {
+        ...at,
+        'vx': still ? 0.0 : drag.vx,
+        'vy': still ? 0.0 : drag.vy,
+      });
+    }
   }
 
   /// Watches every element that has to know its own size: a box that reports
@@ -5646,7 +6036,16 @@ class _NodeState {
   /// Which kinds of listener the element already has.
   bool clicks = false;
   bool pointers = false;
+  bool presses = false;
   bool observed = false;
+
+  /// The pointer that went down on a box hearing `tapDownEventId`, until it
+  /// makes a tap or does not; where it went down; and whether it went too
+  /// far, so the click it ends with is not a tap.
+  int? press;
+  double pressX = 0;
+  double pressY = 0;
+  bool pressLost = false;
   bool pulls = false;
   bool shut = false;
 
@@ -5734,6 +6133,23 @@ class _Drag {
   final double grabY;
 
   web.Element? over;
+
+  /// Where the pointer is, and how fast it was going, in pixels per second.
+  double x = 0;
+  double y = 0;
+  double vx = 0;
+  double vy = 0;
+  double lastTime = 0;
+
+  void track(double toX, double toY, double now) {
+    final elapsed = now - lastTime;
+    if (lastTime > 0 && elapsed > 0) {
+      // Smoothed as a pan's is: the last two moves alone say little.
+      vx = 0.6 * ((toX - x) / elapsed * 1000) + 0.4 * vx;
+      vy = 0.6 * ((toY - y) / elapsed * 1000) + 0.4 * vy;
+    }
+    lastTime = now;
+  }
 
   /// The document listeners, kept so the same functions can be removed.
   late final JSFunction onMove;

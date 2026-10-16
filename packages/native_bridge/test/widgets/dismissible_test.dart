@@ -24,6 +24,7 @@ void main() {
     TextDirection reading = TextDirection.ltr,
     Duration? resize,
     VoidCallback? onResize,
+    DismissUpdateCallback? onUpdate,
   }) => AppTester.widget(
     Directionality(
       textDirection: reading,
@@ -36,6 +37,7 @@ void main() {
         movementDuration: Duration.zero,
         resizeDuration: resize,
         onResize: onResize,
+        onUpdate: onUpdate,
         confirmDismiss: confirm == null
             ? null
             : (way) async {
@@ -246,5 +248,46 @@ void main() {
     await drag(app, -300);
 
     expect(dismissed, [DismissDirection.startToEnd]);
+  });
+
+  group('onUpdate', () {
+    String said(DismissUpdateDetails d) =>
+        '${d.direction.name} ${d.progress.toStringAsFixed(3)} '
+        'reached=${d.reached} before=${d.previousReached}';
+
+    test(
+      'hears the finger, the threshold crossed, and the row leaving',
+      () async {
+        final heard = <String>[];
+        final app = row(onUpdate: (d) => heard.add(said(d)));
+        await drag(app, 300);
+
+        expect(heard, [
+          'startToEnd 0.375 reached=false before=false',
+          'startToEnd 0.750 reached=true before=false',
+          'startToEnd 1.000 reached=true before=true',
+        ]);
+      },
+    );
+
+    test('hears it go back when let go short', () async {
+      final heard = <String>[];
+      final app = row(onUpdate: (d) => heard.add(said(d)));
+      await drag(app, -100);
+
+      expect(heard, [
+        'endToStart 0.125 reached=false before=false',
+        'endToStart 0.250 reached=false before=false',
+        'endToStart 0.000 reached=false before=false',
+      ]);
+    });
+
+    test('hears it go back when the app says no', () async {
+      final heard = <String>[];
+      final app = row(confirm: false, onUpdate: (d) => heard.add(said(d)));
+      await drag(app, 300);
+
+      expect(heard.last, 'startToEnd 0.000 reached=false before=true');
+    });
   });
 }

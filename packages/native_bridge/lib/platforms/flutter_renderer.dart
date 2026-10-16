@@ -132,6 +132,13 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       _page++;
       _pageHeroes = _heroTags(tree, {});
       _pageKind = transition['kind'];
+      final page = transition['page'];
+      final picture = transition['picture'];
+      _pageMotion = page is Map
+          ? _RouteMotion.of(page, arriving: true)
+          : picture is Map
+          ? _RouteMotion.of(picture, arriving: false)
+          : null;
       _pageTime = Duration(
         milliseconds: (transition['ms'] as num?)?.toInt() ?? 300,
       );
@@ -222,6 +229,10 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   Object? _pageKind;
   Duration _pageTime = const Duration(milliseconds: 300);
 
+  /// How a route with a transition of its own moves, for the page turned
+  /// last; null for the renderer's own move.
+  _RouteMotion? _pageMotion;
+
   @override
   void onEvent(String eventId, Function(Map<String, dynamic>) handler) {
     _handlers[eventId] = handler;
@@ -274,6 +285,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       child: _PageSwitch(
         page: page,
         kind: kind,
+        motion: _pageMotion,
         time: _pageTime,
         rtl: rtl,
         heroes: _heroes,
@@ -1972,6 +1984,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final touched =
         p['ripple'] == true ||
         p['tapEventId'] is String ||
+        p['tapDownEventId'] is String ||
         p['doubleTapEventId'] is String ||
         p['longPressEventId'] is String ||
         p['panEventId'] is String;
@@ -2014,7 +2027,11 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         onAcceptWithDetails: (details) {
           // A drop is also the drag leaving, and Flutter says only the first.
           hover(false);
-          handleEvent(dropEventId, {'data': details.data});
+          handleEvent(dropEventId, {
+            'data': details.data,
+            'x': details.offset.dx,
+            'y': details.offset.dy,
+          });
         },
         builder: (_, _, _) => target,
       );
@@ -2022,11 +2039,20 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final dragData = _optString(p['dragData']);
     if (dragData != null) {
       final dragId = _optString(p['dragEventId']);
+      final feedback = p['dragFeedback'];
       box = _NodeDraggable(
         data: dragData,
+        feedback: feedback is Map
+            ? Builder(
+                builder: (context) => buildNode(
+                  WidgetNode.fromJson(Map<String, dynamic>.from(feedback)),
+                  context,
+                ),
+              )
+            : null,
         onDrag: dragId == null
             ? null
-            : (phase) => handleEvent('$dragId$phase', const {}),
+            : (phase, data) => handleEvent('$dragId$phase', data),
         child: box,
       );
     }
@@ -2042,7 +2068,39 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
               child: box,
             );
     }
-    final transform = _BoxTransform.from(p['transform']);
+    final whole = p['transform'] is Map
+        ? (p['transform'] as Map)['matrix']
+        : null;
+    final transform = whole is List ? null : _BoxTransform.from(p['transform']);
+    if (whole is List && whole.length == 16) {
+      // The matrix itself, about the point it says.
+      final origin = (p['transform'] as Map)['origin'];
+      double at(int i) =>
+          origin is List && origin.length == 4 ? _double(origin[i]) ?? 0 : 0;
+      final alignment = origin is List
+          ? Alignment(at(0), at(1))
+          : Alignment.topLeft;
+      final matrix = Matrix4.fromList([for (final v in whole) _double(v) ?? 0]);
+      box = duration == null
+          ? Transform(
+              transform: matrix,
+              alignment: alignment,
+              origin: Offset(at(2), at(3)),
+              child: box,
+            )
+          : TweenAnimationBuilder<Matrix4>(
+              tween: Matrix4Tween(end: matrix),
+              duration: duration,
+              curve: curve,
+              builder: (_, value, child) => Transform(
+                transform: value,
+                alignment: alignment,
+                origin: Offset(at(2), at(3)),
+                child: child,
+              ),
+              child: box,
+            );
+    }
     if (transform != null) {
       box = duration == null
           ? Transform(
@@ -2073,7 +2131,23 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final tooltip = _optString(p['tooltip']);
     if (tooltip != null) box = Tooltip(message: tooltip, child: box);
     final hero = _optString(p['hero']);
-    if (hero != null) box = _HeroBox(tag: hero, heroes: _heroes, child: box);
+    if (hero != null) {
+      final shuttle = p['heroShuttle'];
+      box = _HeroBox(
+        tag: hero,
+        heroes: _heroes,
+        arc: p['heroArc'] == true,
+        shuttle: shuttle is Map
+            ? Builder(
+                builder: (context) => buildNode(
+                  WidgetNode.fromJson(Map<String, dynamic>.from(shuttle)),
+                  context,
+                ),
+              )
+            : null,
+        child: box,
+      );
+    }
 
     final margin = _edges(p['margin']);
     if (margin != null) {
@@ -4203,6 +4277,10 @@ class _NodeBoxState extends State<_NodeBox> {
   @override
   Widget build(BuildContext context) {
     final tap = _id('tapEventId');
+    final tapDown = _id('tapDownEventId');
+    void pressed(TapDownDetails details) =>
+        _point(tapDown, details.globalPosition);
+    void lost() => widget.renderer.handleEvent('${tapDown}_cancel', const {});
     final doubleTap = _id('doubleTapEventId');
     final longPress = _id('longPressEventId');
     final pan = _id('panEventId');
@@ -4217,7 +4295,11 @@ class _NodeBoxState extends State<_NodeBox> {
         type: MaterialType.transparency,
         child: InkWell(
           customBorder: widget.inkShape,
-          onTapDown: (details) => _down = details.globalPosition,
+          onTapDown: (details) {
+            _down = details.globalPosition;
+            pressed(details);
+          },
+          onTapCancel: tapDown == null ? null : lost,
           onTapUp: (details) => _down = details.globalPosition,
           onTap: () => _point(tap, _down),
           onDoubleTap: doubleTap == null
@@ -4253,6 +4335,8 @@ class _NodeBoxState extends State<_NodeBox> {
         onTapUp: tapsHere && tap != null
             ? (details) => _point(tap, details.globalPosition)
             : null,
+        onTapDown: tapsHere && tapDown != null ? pressed : null,
+        onTapCancel: tapsHere && tapDown != null ? lost : null,
         onScaleStart: (details) => _panned('_start', details.focalPoint),
         onScaleUpdate: _scaled,
         onScaleEnd: (details) => _panned(
@@ -4269,6 +4353,8 @@ class _NodeBoxState extends State<_NodeBox> {
       onTapUp: tapsHere && tap != null
           ? (details) => _point(tap, details.globalPosition)
           : null,
+      onTapDown: tapsHere && tapDown != null ? pressed : null,
+      onTapCancel: tapsHere && tapDown != null ? lost : null,
       onDoubleTapDown: tapsHere && doubleTap != null
           ? (details) => _down = details.globalPosition
           : null,
@@ -4302,13 +4388,22 @@ class _NodeBoxState extends State<_NodeBox> {
 /// scroll the list the box is in; at once where it is a mouse, which has a
 /// wheel for that.
 class _NodeDraggable extends StatefulWidget {
-  const _NodeDraggable({required this.data, required this.child, this.onDrag});
+  const _NodeDraggable({
+    required this.data,
+    required this.child,
+    this.feedback,
+    this.onDrag,
+  });
 
   final String data;
   final Widget child;
 
-  /// Told '_start' when the box is picked up and '_end' when it is let go.
-  final void Function(String phase)? onDrag;
+  /// What the app said to carry; a faded copy of [child] when it said none.
+  final Widget? feedback;
+
+  /// Told '_start' when the box is picked up and '_end' when it is let go,
+  /// with where the picture's corner was and how fast it was going.
+  final void Function(String phase, Map<String, dynamic> data)? onDrag;
 
   @override
   State<_NodeDraggable> createState() => _NodeDraggableState();
@@ -4325,35 +4420,45 @@ class _NodeDraggableState extends State<_NodeDraggable> {
           defaultTargetPlatform == TargetPlatform.iOS ||
           defaultTargetPlatform == TargetPlatform.fuchsia);
 
+  void _ended(DraggableDetails details) => widget.onDrag?.call('_end', {
+    'x': details.offset.dx,
+    'y': details.offset.dy,
+    'vx': details.velocity.pixelsPerSecond.dx,
+    'vy': details.velocity.pixelsPerSecond.dy,
+  });
+
   @override
   Widget build(BuildContext context) {
-    final feedback = Builder(
-      builder: (_) => Opacity(
-        opacity: 0.85,
-        child: SizedBox.fromSize(
-          size: _size,
-          child: Material(
-            type: MaterialType.transparency,
-            child: widget.child,
-          ),
-        ),
-      ),
-    );
+    final given = widget.feedback;
+    final feedback = given != null
+        ? Material(type: MaterialType.transparency, child: given)
+        : Builder(
+            builder: (_) => Opacity(
+              opacity: 0.85,
+              child: SizedBox.fromSize(
+                size: _size,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: widget.child,
+                ),
+              ),
+            ),
+          );
     return Listener(
       onPointerDown: (_) => _size = context.size,
       child: _touch
           ? LongPressDraggable<String>(
               data: widget.data,
               feedback: feedback,
-              onDragStarted: () => widget.onDrag?.call('_start'),
-              onDragEnd: (_) => widget.onDrag?.call('_end'),
+              onDragStarted: () => widget.onDrag?.call('_start', const {}),
+              onDragEnd: _ended,
               child: widget.child,
             )
           : Draggable<String>(
               data: widget.data,
               feedback: feedback,
-              onDragStarted: () => widget.onDrag?.call('_start'),
-              onDragEnd: (_) => widget.onDrag?.call('_end'),
+              onDragStarted: () => widget.onDrag?.call('_start', const {}),
+              onDragEnd: _ended,
               child: widget.child,
             ),
     );
@@ -5134,10 +5239,60 @@ const _travel = Duration(milliseconds: 300);
 ///
 /// Not an `AnimatedSwitcher`, which gives a child that leaves the time it was
 /// given when it arrived: a page leaves in the time its own transition says.
+/// A route's own move ([RootProps.pageTransition]'s `page` or `picture`):
+/// where the page starts, arriving, or where its picture ends, leaving.
+class _RouteMotion {
+  const _RouteMotion({
+    required this.arriving,
+    required this.opacity,
+    required this.offset,
+    required this.scale,
+    required this.rotate,
+    required this.curve,
+  });
+
+  factory _RouteMotion.of(Map<dynamic, dynamic> m, {required bool arriving}) {
+    double n(String key, double fallback) =>
+        (m[key] as num?)?.toDouble() ?? fallback;
+    return _RouteMotion(
+      arriving: arriving,
+      opacity: n('opacity', 1).clamp(0.0, 1.0),
+      offset: Offset(n('dx', 0), n('dy', 0)),
+      scale: n('scale', 1),
+      rotate: n('rotate', 0),
+      // Straight through, as a route's animation runs, unless it says.
+      curve: FlutterUIRenderer._curve({'curve': m['curve'] ?? 'linear'}),
+    );
+  }
+
+  final bool arriving;
+  final double opacity;
+  final Offset offset;
+  final double scale;
+  final double rotate;
+  final Curve curve;
+
+  /// [child] [t] of the way from its place to the motion's.
+  Widget at(double t, Widget child) {
+    double lerp(double from, double to) => from + (to - from) * t;
+    return Opacity(
+      opacity: lerp(1, opacity),
+      child: FractionalTranslation(
+        translation: offset * t,
+        child: Transform.rotate(
+          angle: rotate * t,
+          child: Transform.scale(scale: lerp(1, scale), child: child),
+        ),
+      ),
+    );
+  }
+}
+
 class _PageSwitch extends StatefulWidget {
   const _PageSwitch({
     required this.page,
     required this.kind,
+    this.motion,
     required this.time,
     required this.rtl,
     required this.heroes,
@@ -5146,6 +5301,7 @@ class _PageSwitch extends StatefulWidget {
   });
   final int page;
   final Object? kind;
+  final _RouteMotion? motion;
   final Duration time;
   final bool rtl;
 
@@ -5232,9 +5388,9 @@ class _PageSwitchState extends State<_PageSwitch>
           // its own - the text style, the icon colour - so it takes them.
           final dressed = InheritedTheme.captureAll(
             box.context,
-            box.widget.child,
+            box.widget.shuttle ?? box.widget.child,
           );
-          flights.add(_Flight(tag, start, end, dressed));
+          flights.add(_Flight(tag, start, end, dressed, arc: box.widget.arc));
         }
       }
       setState(() => _flights = flights);
@@ -5262,6 +5418,36 @@ class _PageSwitchState extends State<_PageSwitch>
   @override
   Widget build(BuildContext context) {
     final leaving = _leaving;
+    final motion = leaving == null ? null : widget.motion;
+    final route = motion == null
+        ? null
+        : CurvedAnimation(parent: _run, curve: motion.curve);
+    // A route's own move: the arriving page over the leaving one, which lies
+    // still; or the leaving one, moving, over the arriving one.
+    final under = motion != null && motion.arriving;
+    final Widget? left = leaving == null
+        ? null
+        : IgnorePointer(
+            key: ValueKey<int>(_leavingPage),
+            child: motion != null
+                ? (under
+                      ? _PageOf(page: _leavingPage, child: leaving)
+                      : AnimatedBuilder(
+                          animation: route!,
+                          builder: (context, child) =>
+                              motion.at(route.value, child!),
+                          child: _PageOf(page: _leavingPage, child: leaving),
+                        ))
+                : SlideTransition(
+                    position: widget.kind == 'pop'
+                        ? _slide(away: true)
+                        : _still,
+                    child: FadeTransition(
+                      opacity: ReverseAnimation(_eased),
+                      child: _PageOf(page: _leavingPage, child: leaving),
+                    ),
+                  ),
+          );
     return Stack(
       fit: StackFit.passthrough,
       children: [
@@ -5274,29 +5460,31 @@ class _PageSwitchState extends State<_PageSwitch>
               color: Theme.of(context).scaffoldBackgroundColor,
             ),
           ),
+        if (under) left!,
         // The same wrapping whether it is moving or not, so the page's
-        // widgets are the same ones once the transition is over.
+        // widgets are the same ones once the transition is over - but for a
+        // route's own move, which the page's global key carries it through.
         SlideTransition(
           key: ValueKey<int>(widget.page),
-          position: leaving != null && widget.kind == 'push'
+          position: leaving != null && motion == null && widget.kind == 'push'
               ? _slide(away: false)
               : _still,
-          child: _PageOf(
-            page: widget.page,
-            child: KeyedSubtree(key: _pageKey, child: widget.child),
-          ),
+          child: under
+              ? AnimatedBuilder(
+                  animation: route!,
+                  builder: (context, child) =>
+                      motion.at(1 - route.value, child!),
+                  child: _PageOf(
+                    page: widget.page,
+                    child: KeyedSubtree(key: _pageKey, child: widget.child),
+                  ),
+                )
+              : _PageOf(
+                  page: widget.page,
+                  child: KeyedSubtree(key: _pageKey, child: widget.child),
+                ),
         ),
-        if (leaving != null)
-          IgnorePointer(
-            key: ValueKey<int>(_leavingPage),
-            child: SlideTransition(
-              position: widget.kind == 'pop' ? _slide(away: true) : _still,
-              child: FadeTransition(
-                opacity: ReverseAnimation(_eased),
-                child: _PageOf(page: _leavingPage, child: leaving),
-              ),
-            ),
-          ),
+        if (left != null && !under) left,
         // A hero in the air: the arriving page's, drawn at its own size and
         // stretched over wherever it has got to, above both pages.
         for (final flight in _flights)
@@ -5304,7 +5492,7 @@ class _PageSwitchState extends State<_PageSwitch>
             key: ValueKey<String>('hero ${flight.tag}'),
             animation: _flown,
             builder: (context, child) => Positioned.fromRect(
-              rect: Rect.lerp(flight.from, flight.to, _flown.value)!,
+              rect: flight.at(_flown.value),
               child: child!,
             ),
             child: IgnorePointer(
@@ -5327,11 +5515,16 @@ class _PageSwitchState extends State<_PageSwitch>
 /// A hero on its way: from where the old page's stood to where the new
 /// page's stands, and what the new page's draws.
 class _Flight {
-  const _Flight(this.tag, this.from, this.to, this.child);
+  _Flight(this.tag, this.from, this.to, this.child, {bool arc = false})
+    : _arc = arc ? MaterialRectArcTween(begin: from, end: to) : null;
   final String tag;
   final Rect from;
   final Rect to;
   final Widget child;
+  final MaterialRectArcTween? _arc;
+
+  /// Where it is [t] of the way: along Flutter's own arc, or straight.
+  Rect at(double t) => _arc?.lerp(t) ?? Rect.lerp(from, to, t)!;
 }
 
 /// Says which page the widgets below belong to.
@@ -5369,10 +5562,20 @@ class _Heroes extends ChangeNotifier {
 
 /// A box with a hero's name: found by it, and not drawn while a copy flies.
 class _HeroBox extends StatefulWidget {
-  const _HeroBox({required this.tag, required this.heroes, required this.child});
+  const _HeroBox({
+    required this.tag,
+    required this.heroes,
+    required this.child,
+    this.arc = false,
+    this.shuttle,
+  });
   final String tag;
   final _Heroes heroes;
   final Widget child;
+
+  /// Whether it flies along a Material arc, and what flies in its place.
+  final bool arc;
+  final Widget? shuttle;
 
   @override
   State<_HeroBox> createState() => _HeroBoxState();

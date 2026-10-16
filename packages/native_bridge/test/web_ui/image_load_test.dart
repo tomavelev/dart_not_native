@@ -105,4 +105,46 @@ void main() {
     expect(said, isEmpty);
     expect(heard, 0);
   });
+
+  group('on the way', () {
+    late List<Map<String, dynamic>> heard;
+
+    setUp(() {
+      heard = [];
+      renderer.onEvent('img', (data) {
+        heard.add(data);
+        if (data['state'] != 'loading') said.add(data['state'] as String);
+      });
+    });
+
+    WidgetNode counted(String src) => node('Image', {
+      'src': src,
+      'alt': 'a',
+      'eventId': 'img',
+      'progress': true,
+    });
+
+    test('counts the bytes as they come, then shows the picture', () async {
+      await renderer.render(counted(_picture));
+      await settle();
+
+      final loading = heard.where((d) => d['state'] == 'loading').toList();
+      expect(loading, isNotEmpty);
+      expect(loading.last['loaded'], greaterThan(0));
+      expect(said, ['loaded']);
+      // What came is what is drawn, from memory rather than fetched again.
+      final image = root.querySelector('img')! as web.HTMLImageElement;
+      expect(image.src, startsWith('blob:'));
+      expect(image.naturalWidth, 20);
+    });
+
+    test('one that cannot be fetched is left to the <img>', () async {
+      await renderer.render(counted('http://127.0.0.1:9/none.png'));
+      await settle();
+
+      expect(said, ['failed']);
+      final image = root.querySelector('img')! as web.HTMLImageElement;
+      expect(image.src, 'http://127.0.0.1:9/none.png');
+    });
+  });
 }

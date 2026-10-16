@@ -122,6 +122,15 @@ abstract final class RootProps {
   /// screen as it does, and for a `pop` the picture slides off towards it.
   /// A renderer that does nothing with it has shown the page at once, which
   /// is what every renderer did before there was such a prop.
+  ///
+  /// A route with a transition of its own says how it moves instead, as
+  /// `{opacity, dx, dy, scale, rotate, curve}` - each left out when it moves
+  /// nothing; `dx`, `dy` in parts of the screen's width and height, `rotate`
+  /// in radians, `curve` as a box's is. With `page`, the new page starts
+  /// there and moves to its place, over the picture of the old one, which
+  /// lies still beneath it until the end. With `picture`, the picture of the
+  /// old page moves from its place to there, over the new page. Either one
+  /// stands for the renderer's own move; an empty one is no move at all.
   static const String pageTransition = 'pageTransition';
 }
 
@@ -1234,12 +1243,24 @@ class UIBuilder {
   /// axis alone: a movement that starts the other way is not the box's, and
   /// is left to the scroller it is in or holds.
   ///
+  /// [onTapDown] hears a pointer go down on the box, at once, with `{x, y}`,
+  /// and [onTapCancel] hears that the same pointer did not make a tap after
+  /// all - it moved away, a scroller or a long press took it, or it was let
+  /// go off the box: `<tapDownEventId>` and `<tapDownEventId>_cancel`. A tap
+  /// whose down a renderer did not report is told of it at the tap, first.
+  ///
   /// **Drag and drop.** A box with [dragData] can be picked up (after a long
   /// press where the platform distinguishes) and a box with [onDrop] receives
-  /// the string another box carried. `<dropEventId>_hover` fires with
-  /// `{over: bool}` as a drag enters and leaves. [onDrag] hears the box's own
-  /// drag begin and end - `<dragEventId>_start` when it is picked up and
-  /// `_end` when it is let go, wherever that is and after any drop it made.
+  /// the string another box carried, with `x`, `y` - where the top left of
+  /// the picture being carried was, in the screen's logical pixels.
+  /// `<dropEventId>_hover` fires with `{over: bool}` as a drag enters and
+  /// leaves. [onDrag] hears the box's own drag begin and end -
+  /// `<dragEventId>_start` when it is picked up and `_end` when it is let go,
+  /// wherever that is and after any drop it made, with `{x, y, vx, vy}`: the
+  /// picture's top left as for a drop, and how fast the pointer was going,
+  /// in pixels per second. [dragFeedback] is what is carried under the
+  /// pointer, held as the finger held the box; without one it is a copy of
+  /// the box.
   ///
   /// **Measuring.** [onSize] fires with `{width, height}` when the box is laid
   /// out and whenever that changes, which is how a screen learns how much room
@@ -1265,6 +1286,10 @@ class UIBuilder {
   /// for a missing label. The node's [id] is exposed as the element's
   /// identifier: Android's resource name, iOS's accessibility identifier, the
   /// DOM `id` - what a device test's `id` selector matches.
+  /// The `tapDownEventId`s whose pointer is down and has not yet made a tap
+  /// or been cancelled.
+  static final Set<String> _pressed = {};
+
   static WidgetNode box({
     WidgetNode? child,
     double? width,
@@ -1290,6 +1315,8 @@ class UIBuilder {
     double? opacity,
     Map<String, dynamic>? transform,
     void Function(double x, double y)? onTap,
+    void Function(double x, double y)? onTapDown,
+    void Function()? onTapCancel,
     void Function(double x, double y)? onDoubleTap,
     void Function(double x, double y)? onLongPress,
     void Function(String phase, Map<String, dynamic> data)? onPan,
@@ -1297,8 +1324,9 @@ class UIBuilder {
     bool panScale = false,
     bool ripple = false,
     String? dragData,
-    void Function(String phase)? onDrag,
-    void Function(String data)? onDrop,
+    WidgetNode? dragFeedback,
+    void Function(String phase, Map<String, dynamic> data)? onDrag,
+    void Function(String data, double x, double y)? onDrop,
     void Function(bool over)? onDropHover,
     void Function(double width, double height)? onSize,
     int? animateMs,
@@ -1313,6 +1341,8 @@ class UIBuilder {
     String? tooltip,
     bool ignorePointer = false,
     String? hero,
+    bool heroArc = false,
+    WidgetNode? heroShuttle,
     bool animateSize = false,
     void Function()? onSizeEnd,
     bool sticky = false,
@@ -1337,7 +1367,29 @@ class UIBuilder {
       return eventId;
     }
 
-    final tap = bind('tap', onTap == null ? null : (d) => onTap(n(d, 'x'), n(d, 'y')));
+    late final String? tapDown;
+    tapDown = onTapDown == null
+        ? null
+        : bind('tapDown', (d) {
+            if (d['phase'] == '_cancel') {
+              if (_pressed.remove(tapDown)) onTapCancel?.call();
+              return;
+            }
+            _pressed.add(tapDown!);
+            onTapDown(n(d, 'x'), n(d, 'y'));
+          }, phases: const ['', '_cancel']);
+    final tap = bind(
+      'tap',
+      onTap == null
+          ? null
+          : (d) {
+              // Told of the down first, when no renderer did.
+              if (tapDown != null && !_pressed.remove(tapDown)) {
+                onTapDown!(n(d, 'x'), n(d, 'y'));
+              }
+              onTap(n(d, 'x'), n(d, 'y'));
+            },
+    );
     final doubleTap = bind(
       'doubleTap',
       onDoubleTap == null ? null : (d) => onDoubleTap(n(d, 'x'), n(d, 'y')),
@@ -1355,13 +1407,15 @@ class UIBuilder {
     );
     final drop = bind(
       'drop',
-      onDrop == null ? null : (d) => onDrop('${d['data'] ?? ''}'),
+      onDrop == null
+          ? null
+          : (d) => onDrop('${d['data'] ?? ''}', n(d, 'x'), n(d, 'y')),
     );
     final drag = bind(
       'drag',
       dragData == null || onDrag == null
           ? null
-          : (d) => onDrag('${d['phase']}'.substring(1)),
+          : (d) => onDrag('${d['phase']}'.substring(1), d),
       phases: const ['_start', '_end'],
     );
     if (drop != null && onDropHover != null) {
@@ -1404,12 +1458,17 @@ class UIBuilder {
         if (opacity != null) 'opacity': opacity,
         if (transform != null) 'transform': transform,
         if (tap != null) 'tapEventId': tap,
+        if (tapDown != null) 'tapDownEventId': tapDown,
         if (doubleTap != null) 'doubleTapEventId': doubleTap,
         if (longPress != null) 'longPressEventId': longPress,
         if (pan != null) 'panEventId': pan,
         if (pan != null && panAxis != null) 'panAxis': panAxis,
         if (ripple) 'ripple': true,
         if (dragData != null) 'dragData': dragData,
+        // A tree of its own, built by the renderer when the drag begins and
+        // not before: it is never laid out among the box's children.
+        if (dragData != null && dragFeedback != null)
+          'dragFeedback': dragFeedback.toJson(),
         if (drag != null) 'dragEventId': drag,
         if (drop != null) 'dropEventId': drop,
         if (size != null) 'sizeEventId': size,
@@ -1430,11 +1489,19 @@ class UIBuilder {
         // box from where the old one stood to its own place, over the
         // transition's time, and shows neither of the two meanwhile.
         if (hero != null) 'hero': hero,
+        // Its flight is along a Material arc - two opposite corners each on
+        // an arc of a circle, as Flutter's `MaterialRectArcTween` - rather
+        // than a straight line.
+        if (hero != null && heroArc) 'heroArc': true,
+        // What flies instead of the box itself, built by the renderer for the
+        // flight and stretched over it as the box would be.
+        if (hero != null && heroShuttle != null)
+          'heroShuttle': heroShuttle.toJson(),
         if (animateSize) 'animateSize': true,
         // In a vertical scroller: once the content has scrolled past the
         // box, it stays at the top of the view - drawn over what scrolls
-        // beneath it, and over a sticky box before it - until it scrolls
-        // back down to its place.
+        // beneath it, and below the sticky boxes before it, which stay too -
+        // until it scrolls back down to its place.
         if (sticky) 'sticky': true,
         // Sent `{}` each time a move to the child's size runs to its end.
         if (animateSize && sizeEnd != null) 'sizeEndEventId': sizeEnd,

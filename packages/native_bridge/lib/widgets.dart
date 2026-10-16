@@ -58,6 +58,7 @@ import 'forms/form.dart' as forms;
 import 'run_app.dart';
 import 'src/icon_data.dart';
 import 'src/flutter_slots.dart';
+import 'src/hero_arc.dart';
 import 'src/icons.dart';
 import 'src/time_formats.dart';
 // What only the platform can answer - is there a Flutter binding to start,
@@ -1056,6 +1057,12 @@ class _Owner {
   /// draggable in this build reads.
   Map<String, _Dragged> _dragDataBefore = {};
 
+  /// The shuttle builders of the heroes on screen, by tag, and as the last
+  /// build left them: a hero with none of its own flies what the hero it
+  /// flies from would have, as in Flutter.
+  final Map<String, HeroFlightShuttleBuilder> _heroShuttles = {};
+  Map<String, HeroFlightShuttleBuilder> _heroShuttlesBefore = {};
+
   /// The tokens of the [Draggable]s in the air, and of those a target has
   /// taken since they were picked up - which is how a drag's end knows
   /// whether it was a drop.
@@ -1232,6 +1239,8 @@ class _Owner {
     _keyListeners.clear();
     _dragDataBefore = Map.of(_dragData);
     _dragData.clear();
+    _heroShuttlesBefore = Map.of(_heroShuttles);
+    _heroShuttles.clear();
     _navigators.clear();
     _popScopes.clear();
     _router = null;

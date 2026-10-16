@@ -828,16 +828,130 @@ abstract class ModalRoute<T> extends Route<T> {
 
   bool get canPop => !isFirst;
 
+  /// The page, for a route written as Flutter's are: built with its
+  /// animation complete, since the move is the renderer's (see
+  /// [buildTransitions]). The routes here build theirs another way; a route
+  /// of an app's own overrides this.
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) => throw UnimplementedError('$runtimeType does not build a page.');
+
+  @override
+  Widget _buildPage(BuildContext context) =>
+      buildPage(context, kAlwaysCompleteAnimation, kAlwaysDismissedAnimation);
+
   /// What Flutter wraps the page in to animate it on and off the screen.
-  /// The transition here is the renderer's ([RootProps.pageTransition]), so
-  /// this is never called; it is declared so that a route written to
-  /// override it compiles as it is.
+  ///
+  /// The route moves by it where it says something: it is asked what it
+  /// does to the page at the start of its animation - how faded, moved,
+  /// scaled and turned the [FadeTransition], [SlideTransition],
+  /// [ScaleTransition] and [RotationTransition] it returns leave it - and
+  /// the renderer moves the page from there to its place as the route
+  /// arrives, and the picture of it back there as the route leaves
+  /// ([RootProps.pageTransition]). A route that returns the page as it is
+  /// leaves the move to the renderer, which slides it in.
   Widget buildTransitions(
     BuildContext context,
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
   ) => child;
+
+  /// Whether the page is moved by [buildTransitions] even when it returns
+  /// the page as it is - which is then no move at all.
+  bool get _ownTransition => false;
+
+  /// How [buildTransitions] leaves the page at the start of its animation
+  /// (see [_pageMotion]), or null when the renderer's own move is wanted.
+  Map<String, Object>? _motion(BuildContext context, {required bool arriving}) {
+    final page = _Probe();
+    Widget at(double value) => buildTransitions(
+      context,
+      _FixedAnimation(
+        value,
+        arriving ? AnimationStatus.forward : AnimationStatus.reverse,
+      ),
+      kAlwaysDismissedAnimation,
+      page,
+    );
+    final built = at(0);
+    if (identical(built, page) && !_ownTransition) return null;
+    final motion = _pageMotion(built, page);
+    // A turn is told from where it ends, which need not be upright: a whole
+    // turn starts and ends at the same angle, and still turns.
+    final ends = _pageMotion(at(1), page)['rotate'];
+    if (ends is double) {
+      final from = (motion['rotate'] as double? ?? 0) - ends;
+      if (from == 0) {
+        motion.remove('rotate');
+      } else {
+        motion['rotate'] = from;
+      }
+    }
+    return motion;
+  }
+}
+
+/// Stands for the page in a route's transition, to be found again.
+class _Probe extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// What the transition widgets from [built] down to [page] do to it, put
+/// together: `opacity`, `dx` and `dy` - in parts of the page's own size, as
+/// a [SlideTransition] says - `scale` and `rotate` (radians), with only the
+/// ones that move anything, and the `curve` the first that names one runs
+/// along. Anything else in the way ends the reading there.
+Map<String, Object> _pageMotion(Widget built, Widget page) {
+  var opacity = 1.0;
+  var dx = 0.0;
+  var dy = 0.0;
+  var scale = 1.0;
+  var rotate = 0.0;
+  Curve? curve;
+  Widget? at = built;
+  for (
+    var depth = 0;
+    at != null && !identical(at, page) && depth < 64;
+    depth++
+  ) {
+    switch (at) {
+      case final FadeTransition fade:
+        opacity *= fade.opacity.value.clamp(0.0, 1.0);
+        curve ??= _curveIn(fade.opacity);
+        at = fade.child;
+      case final SlideTransition slide:
+        final offset = slide.position.value;
+        dx += slide.textDirection == TextDirection.rtl ? -offset.dx : offset.dx;
+        dy += offset.dy;
+        curve ??= _curveIn(slide.position);
+        at = slide.child;
+      case final ScaleTransition grow:
+        scale *= grow.scale.value;
+        curve ??= _curveIn(grow.scale);
+        at = grow.child;
+      case final RotationTransition turn:
+        rotate += turn.turns.value * 2 * math.pi;
+        curve ??= _curveIn(turn.turns);
+        at = turn.child;
+      case final Opacity faded:
+        opacity *= faded.opacity;
+        at = faded.child;
+      default:
+        at = null;
+    }
+  }
+  return {
+    if (opacity != 1) 'opacity': opacity,
+    if (dx != 0) 'dx': dx,
+    if (dy != 0) 'dy': dy,
+    if (scale != 1) 'scale': scale,
+    if (rotate != 0) 'rotate': rotate,
+    if (curve != null) 'curve': curve.name,
+  };
 }
 
 /// A page built by [builder]. Flutter slides it in with the platform's
@@ -879,7 +993,8 @@ typedef RoutePageBuilder =
       Animation<double> secondaryAnimation,
     );
 
-/// Wraps a page in its transition; accepted and never called.
+/// Wraps a page in the transition widgets it moves by - see
+/// [ModalRoute.buildTransitions].
 typedef RouteTransitionsBuilder =
     Widget Function(
       BuildContext context,
@@ -888,10 +1003,11 @@ typedef RouteTransitionsBuilder =
       Widget child,
     );
 
-/// A page with a transition of its own, in Flutter. Here the transition is
-/// the renderer's, as for every page; [transitionDuration] and
-/// [reverseTransitionDuration] say how long it takes - zero for a page that
-/// is simply there - and [transitionsBuilder] is accepted and never called.
+/// A page with a transition of its own: [transitionsBuilder] wraps the page
+/// in the transition widgets it moves by (see [ModalRoute.buildTransitions]),
+/// over [transitionDuration] as it arrives and [reverseTransitionDuration]
+/// as it leaves. Without one, as in Flutter, the page does not move - it is
+/// simply there.
 class PageRouteBuilder<T> extends PageRoute<T> {
   PageRouteBuilder({
     super.settings,
@@ -922,6 +1038,19 @@ class PageRouteBuilder<T> extends PageRoute<T> {
     kAlwaysCompleteAnimation,
     kAlwaysDismissedAnimation,
   );
+
+  @override
+  bool get _ownTransition => true;
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) =>
+      transitionsBuilder?.call(context, animation, secondaryAnimation, child) ??
+      child;
 }
 
 /// The page the app started on, as a route - so `route.isFirst` has something
@@ -1584,9 +1713,16 @@ class NavigatorState extends State<Navigator> {
         : (top is PageRoute ? top.transitionDuration : null);
     final ms = (time ?? const Duration(milliseconds: 300)).inMilliseconds;
     if (ms <= 0) return;
+    // A route with a transition of its own moves by it: the arriving page
+    // from where it starts, the leaving one's picture back there.
+    final moving = popped ? before : top;
+    final motion = moving is ModalRoute
+        ? moving._motion(owner._context(), arriving: !popped)
+        : null;
     owner._pageTransition = {
       'kind': pushed ? 'push' : popped ? 'pop' : 'fade',
       'ms': ms,
+      if (motion != null) popped ? 'picture' : 'page': motion,
     };
   }
 

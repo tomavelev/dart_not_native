@@ -201,7 +201,7 @@ Each `UIBuilder` method's doc comment is the specification; in brief:
 
 | Builder | What it is |
 |---|---|
-| `UIBuilder.box` | One decorated box around at most one child. Size (`width`/`height`, min/max, `expand`, `aspectRatio`), space (`padding`, `margin`, `alignment`), paint (`color`, `gradient`, border, `borderRadius`/`borderRadii`, `shape: 'circle'`, `shadow`, `clip`, `opacity`, `transform`), touch (`onTap`, `onDoubleTap`, `onLongPress`, `onPan` - with `panScale` a pinch too - `ripple`), drag and drop (`dragData`, `onDrop`, `onDropHover`), measuring (`onSize`), and motion (`animateMs`, `curve`, `animateSize`); `transform` is `{rotate, scale, scaleY, dx, dy}` about the middle |
+| `UIBuilder.box` | One decorated box around at most one child. Size (`width`/`height`, min/max, `expand`, `aspectRatio`), space (`padding`, `margin`, `alignment`), paint (`color`, `gradient`, border, `borderRadius`/`borderRadii`, `shape: 'circle'`, `shadow`, `clip`, `opacity`, `transform`), touch (`onTap`, `onTapDown`/`onTapCancel`, `onDoubleTap`, `onLongPress`, `onPan` - with `panScale` a pinch too - `ripple`), drag and drop (`dragData`, `dragFeedback`, `onDrag`, `onDrop`, `onDropHover`), measuring (`onSize`), and motion (`animateMs`, `curve`, `animateSize`); `transform` is `{rotate, scale, scaleY, dx, dy}` about the middle, or `{matrix, origin}` - sixteen numbers column by column, about an alignment and a shift from it |
 | `UIBuilder.stack`, `positioned` | Children drawn over one another; a `Positioned` child is pinned to the edges it names |
 | `UIBuilder.scroll` | A scroller on either axis, with `shrinkWrap`, `reverse`, pull-to-refresh (`onRefresh`, `refreshing`), a scroll-to (`scrollOffset` + `scrollVersion`) and `onScroll`: the node carries a `scrollEventId` and the renderer sends `{offset, maxExtent, viewport}` when the scroller comes to rest and at most every 100 ms on the way |
 | `UIBuilder.icon` | One glyph of an icon font, by codepoint |
@@ -241,6 +241,12 @@ start and an end turns; what names a side or a coordinate (`padding`, a
 `Positioned`'s `left`, an alignment's x, `textAlign: 'left'`, canvas
 coordinates) does not.
 
+`RootProps.pageTransition`: `{kind, ms}` on the first tree of a new page -
+`push`, `pop` or `fade`. A route with a transition of its own adds `page` -
+where the new page starts, moving to its place over the old one - or
+`picture` - where the picture of the old page goes, over the new one - as
+`{opacity, dx, dy, scale, rotate, curve}`, `dx`, `dy` in parts of the screen.
+
 `RendererEvents` are sent by a renderer on its own account:
 
 | Event | Payload |
@@ -256,6 +262,9 @@ Props a node carries for the renderer to act on by itself:
 |---|---|---|
 | `eventId` | `Image` | Sends `{state: 'loaded'}` once the picture is showing, or `{state: 'failed'}` when it has given up - each time it makes the image anew, so the same answer may come twice. `loadAsk` beside it is a number that changes when a new asker takes the place of an old one |
 | `hero` | `Box` | On a page transition (`RootProps.pageTransition`), flies the new page's box of this name from where the old page's stood to its own place, over the transition's time, and shows neither meanwhile |
+| `heroArc`, `heroShuttle` | `Box` with `hero` | Flies along a Material arc - two opposite corners each on an arc of a circle - rather than straight; flies the tree in `heroShuttle`, built for the flight and stretched over it, rather than the box |
+| `tapDownEventId` | `Box` | Sends `{x, y}` as a pointer goes down on the box, and `_cancel` when it does not make a tap after all - moved off, taken by a scroller or a long press, let go off the box |
+| `dragFeedback` | `Box` with `dragData` | A tree of its own, built when the drag begins and carried under the pointer, held by the point the box was taken by. The drag's `_end`, and a drop, carry `x`, `y` - where its top left was on the screen - and the end `vx`, `vy` too |
 | `endEventId`, `endAsk` | `Box`, `AnimatedOpacity` | Sends `{ask}` once the move this tree asked for has finished - at once, if nothing moved - and nothing for a move a newer ask overtook. `endAsk` is a number for the change; one already answered is not answered again |
 | `animateSize` | `Box` | With `animateMs`, moves the box from the size it was to the size its child came to in this render, the child laid out once at its new size and clipped to the box on the way when `clip` says so. `sizeEndEventId` beside it is sent `{}` when a move gets there |
 | `sticky` | `Box` in a vertical `Scroll` | Once the content has scrolled past the box, keeps it at the top of the view, over what scrolls beneath, until it scrolls back to its place |

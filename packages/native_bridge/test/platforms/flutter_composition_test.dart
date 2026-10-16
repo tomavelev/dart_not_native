@@ -530,7 +530,9 @@ void main() {
       await tester.pump();
       expect(events.map((e) => e.$1), ['drop_hover', 'drop_hover', 'drop']);
       expect(events[1].$2, {'over': false});
-      expect(events.last.$2, {'data': 'card-7'});
+      // With where the picture's corner was, on the screen.
+      expect(events.last.$2['data'], 'card-7');
+      expect(events.last.$2.keys, containsAll(['x', 'y']));
     });
 
     testWidgets('a box that asks hears its drag begin, and end after the drop', (
