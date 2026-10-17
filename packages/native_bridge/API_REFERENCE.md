@@ -239,6 +239,9 @@ Each `UIBuilder` method's doc comment is the specification; in brief:
 - `scaffold`: `onDrawerEdge`/`drawerEdgeEventId` and
   `onEndDrawerEdge`/`endDrawerEdgeEventId`, raised by a drag in from the
   start or the end edge.
+- A box that is a `Focus`: `focusEventId` (told `{focused}`), `focusable`,
+  `focusSkip`, `autofocus`, `focusVersion` and `focusRequested`, as a text
+  field's.
 - `checkbox`, and the `Radio` and `Toggle` nodes: `disabled`.
 
 ### Root props and renderer events
@@ -257,6 +260,12 @@ picture of the old page goes - as `{opacity, dx, dy, scale, rotate, curve}`,
 `dx`, `dy` in parts of the screen; one or both, the moving page's and the
 covered page's. The page that moves in its own right is on top: the new one,
 unless the move is a pop.
+
+`RootProps.backSwipeEventId`: present while the page on top can be popped,
+for a swipe back from the leading edge, raised with `{phase}` - `start`,
+then `commit` or `cancel`. Between the two, each tree carries the page
+beneath as `RootProps.beneath`; after `commit` the next tree is that page,
+with no `pageTransition`. `UIBuilder.withBackSwipe` puts both on a root.
 
 Any node may carry `layoutDirection` (`'rtl'`, `'ltr'`): it and everything
 below it are laid out that way, the platform's own controls included,

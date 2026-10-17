@@ -124,4 +124,83 @@ void main() {
       expect(opened, ['tapped']);
     });
   });
+
+  group('a drawer swiped open', () {
+    final closed = <Object?>[];
+
+    // A plain scaffold until the drawer comes, as an app's tree is.
+    WidgetNode frame({bool open = false}) {
+      final scaffold = UIBuilder.scaffold(
+        body: UIBuilder.text('page'),
+        drawerEdgeEventId: 'open',
+      );
+      if (!open) return scaffold;
+      return UIBuilder.overlay(
+        child: scaffold,
+        overlays: [
+          UIBuilder.bottomSheet(
+            content: [UIBuilder.text('Menu')],
+            side: 'start',
+            width: 200,
+            dismissEventId: 'shut',
+          ),
+        ],
+      );
+    }
+
+    Future<TestGesture> pullTo(WidgetTester tester, double x) async {
+      closed.clear();
+      renderer
+        ..onEvent('open', (_) => renderer.render(frame(open: true)))
+        ..onEvent('shut', (data) => closed.add(data['reason']));
+      await renderer.render(frame());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              renderer.onTreeChanged = () => setState(() {});
+              return renderer.build(context);
+            },
+          ),
+        ),
+      );
+      final finger = await tester.startGesture(const Offset(5, 300));
+      await finger.moveBy(const Offset(30, 0));
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await finger.moveTo(Offset(x, 300));
+      await tester.pump();
+      return finger;
+    }
+
+    double out(WidgetTester tester) => tester
+        .getRect(
+          find
+              .ancestor(of: find.text('Menu'), matching: find.byType(Material))
+              .first,
+        )
+        .right;
+
+    testWidgets('follows the finger, and shuts let go short of half way', (
+      tester,
+    ) async {
+      final finger = await pullTo(tester, 70);
+      // Out as far as the finger has come since the drawer was asked for.
+      expect(out(tester), closeTo(65, 20));
+      await tester.pump(const Duration(milliseconds: 100));
+      await finger.up();
+      await tester.pumpAndSettle();
+      expect(closed, ['swipe']);
+    });
+
+    testWidgets('stays open let go past half way', (tester) async {
+      final finger = await pullTo(tester, 170);
+      await tester.pump(const Duration(milliseconds: 100));
+      await finger.up();
+      await tester.pumpAndSettle();
+      expect(closed, isEmpty);
+      expect(out(tester), closeTo(200, 1));
+    });
+  });
 }

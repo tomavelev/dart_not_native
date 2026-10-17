@@ -248,12 +248,31 @@ void main() {
       );
     });
 
-    test('estimates what Roboto has no width for', () {
-      // CJK and emoji are about twice as wide as a Latin letter.
-      final wide = TextPainter(
-        text: const TextSpan(text: '日本', style: TextStyle(fontSize: 20)),
-      )..layout();
-      expect(wide.width, closeTo(2 * 1.1 * 20, 1e-9));
+    double measure(String text) => (TextPainter(
+      text: TextSpan(text: text, style: const TextStyle(fontSize: 20)),
+    )..layout()).width;
+
+    test('a CJK character or a Hangul syllable is an em, an emoji 1.245', () {
+      expect(measure('日本'), closeTo(2 * 20, 1e-9));
+      expect(measure('한국'), closeTo(2 * 20, 1e-9));
+      expect(measure('😀'), closeTo(1.245 * 20, 1e-9));
+    });
+
+    test('Hebrew, Arabic and Devanagari are measured in Noto', () {
+      // Noto's own widths at 20: none of them the old flat estimate of 11.
+      for (final letter in ['ש', 'ب', 'क']) {
+        expect(measure(letter), isNot(closeTo(0.55 * 20, 0.05)), reason: letter);
+        expect(measure(letter), greaterThan(4), reason: letter);
+      }
+      // Hebrew's widest letters are wider than its narrowest.
+      expect(measure('ש'), greaterThan(measure('ו')));
+    });
+
+    test('a mark that takes no room adds nothing', () {
+      expect(measure('e\u0301'), measure('e'));
+      expect(measure('क\u093C'), measure('क'));
+      expect(measure('a\u200Db'), measure('ab'));
+      expect(measure('\u2764\uFE0F'), measure('\u2764'));
     });
 
     test('wraps at maxWidth and never reports wider than it', () {

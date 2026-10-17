@@ -162,6 +162,66 @@ void main() {
     expect(transition()!['page'], isEmpty);
   });
 
+  test('an AnimatedBuilder is read through what it builds', () async {
+    await push(
+      (_, animation, _, child) => AnimatedBuilder(
+        animation: animation,
+        builder: (_, child) => Opacity(opacity: animation.value, child: child),
+        child: child,
+      ),
+    );
+    expect(transition()!['page'], {'opacity': 0.0});
+  });
+
+  test('a Transform moves it by its offset, scale and turn', () async {
+    final screen = MediaQuery.sizeOf(page);
+    await push(
+      (_, animation, _, child) => AnimatedBuilder(
+        animation: animation,
+        builder: (_, child) => Transform.translate(
+          offset: Offset((1 - animation.value) * screen.width / 2, 0),
+          child: Transform.scale(
+            scale: 0.5 + animation.value / 2,
+            child: child,
+          ),
+        ),
+        child: child,
+      ),
+    );
+    final moved = transition()!['page'] as Map;
+    expect(moved['dx'], closeTo(0.5, 1e-9));
+    expect(moved['scale'], closeTo(0.5, 1e-9));
+  });
+
+  test('a turning matrix is a turn', () async {
+    await push(
+      (_, animation, _, child) => AnimatedBuilder(
+        animation: animation,
+        builder: (_, child) => Transform(
+          transform: Matrix4.rotationZ((1 - animation.value) * math.pi / 4),
+          child: child,
+        ),
+        child: child,
+      ),
+    );
+    expect(
+      (transition()!['page'] as Map)['rotate'],
+      closeTo(math.pi / 4, 1e-9),
+    );
+  });
+
+  test('a SizeTransition and a KeyedSubtree are passed through', () async {
+    await push(
+      (_, animation, _, child) => SizeTransition(
+        sizeFactor: animation,
+        child: KeyedSubtree(
+          child: FadeTransition(opacity: animation, child: child),
+        ),
+      ),
+    );
+    expect(transition()!['page'], {'opacity': 0.0});
+  });
+
   test('something else in the way ends the reading there', () async {
     await push(
       (_, animation, _, child) => FadeTransition(

@@ -674,9 +674,12 @@ class DataTable extends StatelessWidget {
 
 /// How wide a [Table]'s column is.
 ///
-/// Nothing here measures a cell, so the widths that depend on measuring -
-/// [IntrinsicColumnWidth], and the smaller or larger of two - cannot be what
-/// they are in Flutter: they share the width like a [FlexColumnWidth].
+/// A cell is measured where the widget layer can tell its width without a
+/// renderer: text, by [TextPainter]'s widths; a [SizedBox], a [Container] or
+/// an [Icon] that states one; and padding, alignment, rows and columns of
+/// those. That is what an [IntrinsicColumnWidth] is as wide as, and what
+/// the larger or smaller of two widths compares; a column none of whose
+/// cells can be measured shares the width like a [FlexColumnWidth].
 abstract class TableColumnWidth {
   const TableColumnWidth();
 
@@ -685,6 +688,10 @@ abstract class TableColumnWidth {
 
   /// The column's share of the width the fixed columns leave.
   double get _flex => 1;
+
+  /// The width in pixels this column is given its cells' measured widths
+  /// ([widest], null where none could be measured), or null for a share.
+  double? _width(double? widest) => _fixed;
 }
 
 /// A share of the width left once the fixed columns have theirs.
@@ -712,16 +719,19 @@ class FractionColumnWidth extends TableColumnWidth {
   double get _flex => value;
 }
 
-/// As wide as its widest cell in Flutter; here a share of the width, [flex]
-/// of it or one.
+/// As wide as its widest cell, measured as [TableColumnWidth] says; a share
+/// of the width, [flex] of it or one, where no cell can be measured.
 class IntrinsicColumnWidth extends TableColumnWidth {
   const IntrinsicColumnWidth({this.flex});
   final double? flex;
   @override
   double get _flex => flex ?? 1;
+  @override
+  double? _width(double? widest) => widest;
 }
 
-/// The larger of two widths in Flutter; here the first.
+/// The larger of two widths, where both are widths in pixels; otherwise the
+/// one that is, or else the first.
 class MaxColumnWidth extends TableColumnWidth {
   const MaxColumnWidth(this.a, this.b);
   final TableColumnWidth a;
@@ -730,11 +740,96 @@ class MaxColumnWidth extends TableColumnWidth {
   double? get _fixed => a._fixed;
   @override
   double get _flex => a._flex;
+  @override
+  double? _width(double? widest) {
+    final first = a._width(widest);
+    final second = b._width(widest);
+    if (first == null || second == null) return first ?? second;
+    return _pick(first, second);
+  }
+
+  double _pick(double first, double second) => math.max(first, second);
 }
 
-/// The smaller of two widths in Flutter; here the first.
+/// The smaller of two widths, where both are widths in pixels; otherwise
+/// the one that is, or else the first.
 class MinColumnWidth extends MaxColumnWidth {
   const MinColumnWidth(super.a, super.b);
+  @override
+  double _pick(double first, double second) => math.min(first, second);
+}
+
+/// How wide [widget] is when nothing squeezes it, where that can be told
+/// without a renderer; null where it cannot. [style] is the text style in
+/// force around it.
+double? _intrinsicWidth(Widget? widget, TextStyle style) {
+  double? inner(Widget? child) => _intrinsicWidth(child, style);
+  double? sum(Iterable<double?> parts) {
+    var total = 0.0;
+    for (final part in parts) {
+      if (part == null) return null;
+      total += part;
+    }
+    return total;
+  }
+
+  switch (widget) {
+    case null:
+      return 0;
+    case final Text text:
+      final shown = style.merge(text.style);
+      final rich = text.textSpan;
+      final painter = TextPainter(
+        text: rich == null
+            ? TextSpan(text: text.data, style: shown)
+            : TextSpan(style: shown, children: [rich]),
+      )..layout();
+      // A whole pixel more, as Flutter rounds a text's width up.
+      return painter.width.ceilToDouble();
+    case final Icon icon:
+      return icon.size ?? 24;
+    case final SizedBox box:
+      final width = box.width;
+      return width != null && width.isFinite ? width : inner(box.child);
+    case final Container box:
+      final stated = box.constraints?.minWidth == box.constraints?.maxWidth
+          ? box.constraints?.maxWidth
+          : null;
+      final content = stated != null && stated.isFinite
+          ? stated
+          : inner(box.child);
+      if (content == null) return null;
+      return content +
+          (box.padding?.horizontal ?? 0) +
+          (box.margin?.horizontal ?? 0);
+    case final Padding padded:
+      final content = inner(padded.child);
+      return content == null ? null : content + padded.padding.horizontal;
+    case final Center centred:
+      return inner(centred.child);
+    case final Align aligned:
+      return inner(aligned.child);
+    case final TableCell cell:
+      return inner(cell.child);
+    case final KeyedSubtree kept:
+      return inner(kept.child);
+    case final DefaultTextStyle styled:
+      return _intrinsicWidth(styled.child, style.merge(styled.style));
+    case final Row row:
+      final total = sum(row.children.map(inner));
+      if (total == null) return null;
+      return total + row.spacing * math.max(0, row.children.length - 1);
+    case final Column column:
+      var widest = 0.0;
+      for (final child in column.children) {
+        final width = inner(child);
+        if (width == null) return null;
+        widest = math.max(widest, width);
+      }
+      return widest;
+    default:
+      return null;
+  }
 }
 
 /// Where a cell sits in a row taller than it.
@@ -847,7 +942,7 @@ class Table extends StatelessWidget {
   /// Accepted and not carried: see [CrossAxisAlignment.baseline].
   final Object? textBaseline;
 
-  Widget _row(TableRow row) {
+  Widget _row(TableRow row, List<double?> widths) {
     final lines = border;
     final between =
         lines != null && TableBorder._drawn(lines.verticalInside)
@@ -874,7 +969,7 @@ class Table extends StatelessWidget {
           child: cell,
         );
       }
-      final fixed = width._fixed;
+      final fixed = index < widths.length ? widths[index] : width._fixed;
       cells.add(
         fixed != null
             ? SizedBox(width: fixed, child: cell)
@@ -902,8 +997,38 @@ class Table extends StatelessWidget {
     );
   }
 
+  /// Each column's width in pixels, or null for a share: what its
+  /// [TableColumnWidth] makes of its cells' measured widths.
+  List<double?> _columnWidths(BuildContext context) {
+    final style = DefaultTextStyle.of(context).style;
+    final columns = children.fold(
+      0,
+      (most, row) => math.max(most, row.children.length),
+    );
+    return [
+      for (var index = 0; index < columns; index++)
+        (columnWidths?[index] ?? defaultColumnWidth)._width(
+          _widest(index, style),
+        ),
+    ];
+  }
+
+  /// The widest cell in column [index] that can be measured; null when none
+  /// can, or one cannot - a column is as wide as all of its cells.
+  double? _widest(int index, TextStyle style) {
+    double? widest;
+    for (final row in children) {
+      if (index >= row.children.length) continue;
+      final width = _intrinsicWidth(row.children[index], style);
+      if (width == null) return null;
+      widest = math.max(widest ?? 0, width);
+    }
+    return widest;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final widths = _columnWidths(context);
     final lines = border;
     final inside =
         lines != null && TableBorder._drawn(lines.horizontalInside)
@@ -916,7 +1041,7 @@ class Table extends StatelessWidget {
         for (final (index, row) in children.indexed) ...[
           if (inside != null && index > 0)
             Container(height: inside.width, color: inside.color),
-          _row(row),
+          _row(row, widths),
         ],
       ],
     );

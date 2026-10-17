@@ -890,6 +890,8 @@ body:has(.dnn-modal) { overflow: hidden; }
 .dnn-box > * { min-width: 0; min-height: 0; }
 .dnn-box[data-tap] { cursor: pointer; }
 .dnn-box[data-tap]:focus-visible { outline: 2px solid var(--dnn-primary); outline-offset: 2px; }
+/* A Focus: outlined while it has the keyboard, not after a tap. */
+.dnn-focus:focus-visible { outline: 2px solid var(--dnn-primary); outline-offset: 2px; }
 .dnn-box--pan, .dnn-canvas.dnn-box--pan { touch-action: none; }
 /* A pan along one axis: the browser keeps the scrolling along the other. */
 .dnn-box--pan-x { touch-action: pan-y; }

@@ -145,6 +145,73 @@ Flutter, it now agrees, and these are the places existing code has to change:
   grey block; under Materialize a disabled tonal button keeps a fill.
   A text button is written in the app's primary under both.
 
+### A swipe back on iOS
+
+A page pushed on a `Navigator` can be swiped back from the leading edge on
+iOS, the page following the finger with the one beneath it a third of the way
+behind, as iOS's own navigation does; let go past half way or flung, it is
+popped, and otherwise it comes back with its `State` as it was. The root
+carries `RootProps.backSwipeEventId` while the page on top can be popped - not
+a full-screen dialog, not one a `PopScope` holds - and the renderer raises it
+with `{phase}`: `'start'`, after which each tree carries the page beneath as
+`RootProps.beneath`, built from the same place so it keeps its `State`; then
+`'commit'`, which pops with no page transition of its own, or `'cancel'`. A
+drawer at the leading edge has that edge instead. Seen on an iOS simulator.
+Android has the system's own back gesture, and the browser its own; neither
+draws this, nor does the Flutter host yet.
+
+### `Focus`
+
+A `Focus` widget: a box that is a stop for the Tab key, outlined while it has
+focus (`:focus-visible`), that its `FocusNode`'s `requestFocus()` gives focus
+and `unfocus()` takes it from, and that tells `onFocusChange` - and the node's
+`hasFocus` - when focus comes into it and when it leaves altogether
+(`focusEventId`, `focusable`, `focusSkip`, `focusVersion`). On the web and in
+the Flutter host; the native renderers keep their controls' own keyboard
+focus, and a `Focus` there is its child.
+
+### `IntrinsicColumnWidth` measures
+
+A `Table`'s cells are measured where the widget layer can tell their width:
+text by `TextPainter`, a `SizedBox`, `Container` or `Icon` that states one,
+and padding, alignment, rows and columns of those. An `IntrinsicColumnWidth`
+is as wide as its widest cell, and `MaxColumnWidth` and `MinColumnWidth`
+compare what can be measured; a column none of whose cells can be measured
+shares the width as before.
+
+### `TextPainter` past Latin
+
+Hebrew, Arabic, Devanagari, Bengali, Tamil and Thai are measured with the
+widths of the Noto fonts Android draws them in, read by
+`tool/generate_glyph_widths.dart` from the Android SDK's API 22 platform; a
+CJK character or a Hangul syllable is an em, an emoji 1.245 em, and a mark,
+a joiner or a variation selector that takes no room is nothing - each was
+0.55 or 1.1 em. An Arabic letter is measured standing alone.
+
+### More of a transition read
+
+A route's `transitionsBuilder` is read through an `AnimatedBuilder` or a
+`ListenableBuilder` - it is built at the animation's two ends - and a
+`Transform`'s translation, scale and turn are read as the page's move; a
+`KeyedSubtree` and a `SizeTransition` are passed through rather than ending
+the reading.
+
+### Fixes this round
+
+- **A text field's icons on iOS were the wrong way round right to left.** A
+  field turned right to left shows its `leftView` on the right by itself,
+  and the renderer swapped the prefix and the suffix as well, putting them
+  back where they started - in an Arabic screen and in a `Directionality`
+  island alike. What iOS works out from the direction while building a
+  view - a field's affixes, the back chevron, where text starts - now
+  follows an island's direction too.
+- **Android page moves started before the page was drawn.** The clock of a
+  push's slide began before the new tree was rendered and laid out, which on
+  a debug build could take longer than the whole move: the page appeared in
+  place. A page move and a hero's flight now start on the frame after the
+  page is first drawn, as a route's own transition already waited for its
+  layout.
+
 ### The page beneath moves too
 
 A route's transition is now also asked what its `secondaryAnimation` does to
@@ -221,11 +288,15 @@ drawer's content is laid out to the panel's height, so a `ListView` in it
 scrolls there. A swipe in from the edge opens one too: a drag that starts
 within 20 pixels of the edge and moves in from it raises `drawerEdgeEventId`
 (`endDrawerEdgeEventId`) on the `Scaffold` node, unless
-`drawerEnableOpenDragGesture` says not. The panel then slides in by itself
-rather than under the finger. On Android with gesture navigation the 20 pixels
-start where the system's back strip ends, as in Flutter; on iOS it is a pan
-that may only begin by an edge, so a tap there still reaches what is beneath.
-Seen on an iOS simulator, an Android emulator and in Chrome.
+`drawerEnableOpenDragGesture` says not, and the panel then follows the finger,
+let go open past half way or flung inwards and shut otherwise, as Flutter's.
+The drag is watched at the renderer's root rather than on the scaffold, which
+is drawn again as the drawer arrives and took a gesture of its own with it on
+iOS, Android, the web and the Flutter host alike. On Android with gesture
+navigation the 20 pixels start where the system's back strip ends, as in
+Flutter; on iOS it is a pan that may only begin by an edge, so a tap there
+still reaches what is beneath. Seen on an iOS simulator, an Android emulator
+and in Chrome.
 
 ### An image given only a width
 

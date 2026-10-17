@@ -795,6 +795,138 @@ class NativeUIRenderer {
     }
   }
 
+  // MARK: - The swipe back
+
+  /// The event a swipe back raises, while the root offers one.
+  private var backSwipeEventId: String?
+
+  /// The page beneath, drawn under the container while a swipe is under way.
+  private var beneathView: UIView?
+  private var beneathTree: [String: Any]?
+
+  /// Whether a finger is on a swipe back, and whether one has let go far
+  /// enough to take the page off - which the next tree then shows.
+  private var backSwiping = false
+  private var backSwipeCommitted = false
+
+  private let backSwipeDelegate = BackSwipeDelegate()
+
+  /// Has a pan in from the screen's leading edge over [container] move the
+  /// page with the finger, as iOS's own navigation does.
+  private func watchBackSwipe(_ container: UIView) {
+    backSwipeDelegate.renderer = self
+    if container.gestureRecognizers?.contains(where: { $0.delegate === backSwipeDelegate }) == true {
+      return
+    }
+    let pan = UIPanGestureRecognizer(target: self, action: #selector(backSwiped(_:)))
+    pan.delegate = backSwipeDelegate
+    container.addGestureRecognizer(pan)
+  }
+
+  /// Whether a pan may start a swipe back: one is offered and none is under
+  /// way.
+  fileprivate var canSwipeBack: Bool {
+    backSwipeEventId != nil && !backSwiping && !backSwipeCommitted
+  }
+
+  /// Draws [beneath] under the container, a third of the way off, while a
+  /// swipe is under way; drops it when none is.
+  private func showBeneath(_ beneath: [String: Any]?, under container: UIView) {
+    guard backSwiping || backSwipeCommitted, let beneath, let above = container.superview else {
+      if !backSwiping && !backSwipeCommitted {
+        beneathView?.removeFromSuperview()
+        beneathView = nil
+        beneathTree = nil
+      }
+      return
+    }
+    let tree = normalized(beneath)
+    if let shown = beneathTree, valueEqual(shown, tree), beneathView != nil { return }
+    let moved = beneathView?.transform ?? beneathOffset(container, progress: 0)
+    beneathView?.removeFromSuperview()
+    guard let view = renderWidget(tree) else { return }
+    applyDirection(view)
+    view.frame = container.frame
+    view.backgroundColor = container.backgroundColor ?? surfaceColor()
+    view.isUserInteractionEnabled = false
+    above.insertSubview(view, belowSubview: container)
+    view.transform = moved
+    beneathView = view
+    beneathTree = tree
+  }
+
+  /// Where the page beneath stands with the page on top [progress] of the
+  /// way off: a third of the screen behind, coming out as it goes.
+  private func beneathOffset(_ container: UIView, progress: CGFloat) -> CGAffineTransform {
+    let inward: CGFloat = isRTL ? -1 : 1
+    return CGAffineTransform(
+      translationX: -inward * container.bounds.width * (1 - progress) / 3, y: 0)
+  }
+
+  @objc private func backSwiped(_ sender: UIPanGestureRecognizer) {
+    guard let container = sender.view else { return }
+    let inward: CGFloat = isRTL ? -1 : 1
+    let width = max(1, container.bounds.width)
+    let moved = max(0, sender.translation(in: container.superview).x * inward)
+    let progress = min(1, moved / width)
+    switch sender.state {
+    case .began:
+      guard let eventId = backSwipeEventId else { return }
+      backSwiping = true
+      container.layer.shadowColor = UIColor.black.cgColor
+      container.layer.shadowOpacity = 0.2
+      container.layer.shadowRadius = 8
+      send(eventId: eventId, data: ["phase": "start"])
+    case .changed:
+      container.transform = CGAffineTransform(translationX: inward * moved, y: 0)
+      beneathView?.transform = beneathOffset(container, progress: progress)
+    case .ended, .cancelled, .failed:
+      let flung = sender.velocity(in: container.superview).x * inward > 500
+      let leave = sender.state == .ended && (progress > 0.5 || flung) && beneathView != nil
+      backSwiping = false
+      backSwipeCommitted = leave
+      let eventId = backSwipeEventId
+      UIView.animate(
+        withDuration: 0.25, delay: 0, options: [.curveEaseOut],
+        animations: {
+          container.transform =
+            leave ? CGAffineTransform(translationX: inward * width, y: 0) : .identity
+          self.beneathView?.transform =
+            leave ? .identity : self.beneathOffset(container, progress: 0)
+        },
+        completion: { [weak self] _ in
+          guard let self else { return }
+          if !leave {
+            container.layer.shadowOpacity = 0
+            self.beneathView?.removeFromSuperview()
+            self.beneathView = nil
+            self.beneathTree = nil
+          }
+          if let eventId { self.send(eventId: eventId, data: ["phase": leave ? "commit" : "cancel"]) }
+        })
+    default:
+      break
+    }
+  }
+
+  /// After the tree a committed swipe asked for: the page beneath is drawn
+  /// in the container now, so it comes back into place and the picture of
+  /// it goes.
+  private func settleBackSwipe(_ container: UIView) {
+    // The tree that answers the commit is the first with no page beneath
+    // beside it.
+    guard backSwipeCommitted, !currentTreeHasBeneath else { return }
+    backSwipeCommitted = false
+    container.transform = .identity
+    container.layer.shadowOpacity = 0
+    beneathView?.removeFromSuperview()
+    beneathView = nil
+    beneathTree = nil
+  }
+
+  /// Whether the tree just drawn still came with the page beneath.
+  private var currentTreeHasBeneath = false
+
   /// The heroes that fly along a Material arc (`heroArc`).
   private let heroArcs = NSHashTable<UIView>.weakObjects()
 
@@ -958,6 +1090,22 @@ class NativeUIRenderer {
       props.removeValue(forKey: "pageTransition")
       next["props"] = props
     }
+    // A back swipe the root offers, and the page beneath while one is under
+    // way: about the screen as well, and taken off the same way.
+    let swipeEventId = next["backSwipeEventId"] as? String
+    let beneath = next["beneath"] as? [String: Any]
+    for key in ["backSwipeEventId", "beneath"] {
+      next.removeValue(forKey: key)
+      if var props = next["props"] as? [String: Any] {
+        props.removeValue(forKey: key)
+        next["props"] = props
+      }
+    }
+    backSwipeEventId = swipeEventId
+    currentTreeHasBeneath = beneath != nil
+    watchBackSwipe(container)
+    drawerEdgeIds = drawerEdgeIds(in: next) ?? [:]
+    watchDrawerEdges(container)
     if let transition = transition, currentTree != nil {
       var names = Set<String>()
       heroNames(next, into: &names)
@@ -967,6 +1115,10 @@ class NativeUIRenderer {
       isRTL = rtl
       currentTree = nil
     }
+    showBeneath(beneath, under: container)
+    // A swipe that took the page off has the page beneath drawn by now: the
+    // container comes back, over the picture of it, which then goes.
+    defer { settleBackSwipe(container) }
     container.semanticContentAttribute = rtl ? .forceRightToLeft : .forceLeftToRight
 
     // A colour is not a prop, so nothing in the tree changes when the device
@@ -1108,6 +1260,10 @@ class NativeUIRenderer {
   private func tryPatch(_ view: UIView, _ oldNode: [String: Any], _ newNode: [String: Any])
     -> Bool
   {
+    // As in renderWidget: a node that reads its own way is patched its way.
+    let savedRTL = isRTL
+    defer { isRTL = savedRTL }
+    if let turned = newNode["layoutDirection"] as? String { isRTL = turned == "rtl" }
     // An app bar's children are drawn in its foreground colour, which is not
     // always the one that contrasts with its background: the app can state it.
     let type = newNode["type"] as? String
@@ -1675,7 +1831,6 @@ class NativeUIRenderer {
       return false
     }
     view.backgroundColor = statedColor(newNode["backgroundColor"])
-    watchDrawerEdges(view, newNode)
     return true
   }
 
@@ -1775,7 +1930,7 @@ class NativeUIRenderer {
     ]
     if fieldKeys.contains(where: { !valueEqual(oldNode[$0], newNode[$0]) }) {
       configureField(field, newNode)
-    } else if let suffix = (isRTL ? field.leftView : field.rightView) as? UIButton {
+    } else if let suffix = field.rightView as? UIButton {
       // Only the suffix is a button; the prefix is a picture and sends nothing.
       bindings[suffix.hash] = newNode
     }
@@ -1850,6 +2005,12 @@ class NativeUIRenderer {
 
   /// Builds the view for [node], and tells accessibility which node it is.
   private func renderWidget(_ node: [String: Any]) -> UIView? {
+    // Inside a node that reads its own way, what is worked out from the
+    // direction - which side a field's affixes go, the back chevron, where
+    // text starts - is worked out from its.
+    let savedRTL = isRTL
+    defer { isRTL = savedRTL }
+    if let turned = node["layoutDirection"] as? String { isRTL = turned == "rtl" }
     guard let view = drawWidget(node) else { return nil }
     identify(view, node)
     return view
@@ -2069,7 +2230,6 @@ class NativeUIRenderer {
 
   private func renderScaffold(_ node: [String: Any]) -> UIView {
     let container = UIView()
-    watchDrawerEdges(container, node)
     let column = UIStackView()
     column.axis = .vertical
     column.alignment = .fill
@@ -3997,8 +4157,9 @@ class NativeUIRenderer {
 
     let quiet = color(themeTextSecondary, fallback: themeTextSecondary)
     // The prefix sits where the text starts and the suffix where it ends. A
-    // field's `leftView` and `rightView` are the sides they are named for, so
-    // which glyph goes in which depends on the way the screen reads.
+    // field turned right to left (`semanticContentAttribute`) shows its
+    // `leftView` on the right itself, so the prefix is always the left view:
+    // swapping them here as well put them back where they started.
     var prefix: UIView?
     var suffix: UIView?
     if let glyph = iconImage(node["prefixIcon"], size: 20) {
@@ -4019,8 +4180,8 @@ class NativeUIRenderer {
       bindings[button.hash] = node
       suffix = button
     }
-    let left = isRTL ? suffix : prefix
-    let right = isRTL ? prefix : suffix
+    let left = prefix
+    let right = suffix
     field.leftView = left
     field.leftViewMode = left == nil ? .never : .always
     field.rightView = right
@@ -5216,42 +5377,104 @@ class NativeUIRenderer {
       surface.addGestureRecognizer(drag)
       bindings[drag.hash] = node
     }
+    // Asked for by a drag in from the edge that is still going: it is where
+    // the finger has brought it rather than sliding in by itself.
+    if let pull = edgePull, pull.surface == nil, pull.side == (start ? "start" : "end") {
+      pull.surface = surface
+      pull.node = node
+      surface.pulledBy = pull.moved
+      surface.scrim = container.subviews.first
+    }
     return container
   }
 
-  /// The drawers a scaffold opens from its start and end edges
-  /// (`drawerEdgeEventId`, `endDrawerEdgeEventId`), by view.
-  private let drawerEdges = NSMapTable<UIView, NSDictionary>.weakToStrongObjects()
+  /// A drag in from a scaffold's edge that has asked for a drawer, while the
+  /// finger is down.
+  private var edgePull: EdgePull?
 
-  /// Has a pan in from the screen's left or right edge over `scaffold` open
-  /// the drawer at that edge: the platform's own edge pan, which leaves a
-  /// tap by the edge to what is there.
-  private func watchDrawerEdges(_ scaffold: UIView, _ node: [String: Any]) {
-    var ids: [String: String] = [:]
-    if let start = node["drawerEdgeEventId"] as? String { ids["start"] = start }
-    if let end = node["endDrawerEdgeEventId"] as? String { ids["end"] = end }
-    drawerEdges.setObject(ids as NSDictionary, forKey: scaffold)
-    let watched = scaffold.gestureRecognizers?.contains { $0.delegate === drawerEdgeDelegate }
-    if ids.isEmpty || watched == true { return }
+  /// The drawers the screen's scaffold opens from its start and end edges
+  /// (`drawerEdgeEventId`, `endDrawerEdgeEventId`), as the last tree said.
+  fileprivate var drawerEdgeIds: [String: String] = [:]
+
+  /// The drawers the first scaffold in [node] opens from its edges.
+  private func drawerEdgeIds(in node: [String: Any]) -> [String: String]? {
+    if node["type"] as? String == "Scaffold" {
+      var ids: [String: String] = [:]
+      if let start = node["drawerEdgeEventId"] as? String { ids["start"] = start }
+      if let end = node["endDrawerEdgeEventId"] as? String { ids["end"] = end }
+      return ids
+    }
+    for child in childNodes(node) {
+      if let ids = drawerEdgeIds(in: child) { return ids }
+    }
+    return nil
+  }
+
+  /// Has a pan in from the screen's left or right edge open the drawer at
+  /// that edge, following the finger. It is the root container's: the
+  /// scaffold is drawn again as the drawer arrives, and would take a pan of
+  /// its own away with it. A tap by the edge is left to what is there.
+  private func watchDrawerEdges(_ container: UIView) {
+    drawerEdgeDelegate.renderer = self
+    if container.gestureRecognizers?.contains(where: { $0.delegate === drawerEdgeDelegate }) == true {
+      return
+    }
     let pan = UIPanGestureRecognizer(target: self, action: #selector(drawerEdgePanned(_:)))
     pan.delegate = drawerEdgeDelegate
-    scaffold.addGestureRecognizer(pan)
+    container.addGestureRecognizer(pan)
   }
 
   private let drawerEdgeDelegate = DrawerEdgeDelegate()
 
   @objc private func drawerEdgePanned(_ sender: UIPanGestureRecognizer) {
-    guard sender.state == .began, let scaffold = sender.view,
-      let ids = drawerEdges.object(forKey: scaffold) as? [String: String]
-    else { return }
+    guard let container = sender.view else { return }
+    if sender.state != .began {
+      followEdgePull(sender, in: container)
+      return
+    }
+    let ids = drawerEdgeIds
     // The start is the left in a screen read from the left.
-    let rtl = scaffold.effectiveUserInterfaceLayoutDirection == .rightToLeft
+    let rtl = container.effectiveUserInterfaceLayoutDirection == .rightToLeft
     // Only a pan from an edge begins, and it has not got far yet: which half
     // it is in says which edge. (Its translation starts again from nothing
     // as it begins.)
-    let fromLeft = sender.location(in: scaffold).x < scaffold.bounds.midX
+    let fromLeft = sender.location(in: container).x < container.bounds.midX
     let side = fromLeft != rtl ? "start" : "end"
-    if let eventId = ids[side] { send(eventId: eventId, data: [:]) }
+    guard let eventId = ids[side] else { return }
+    edgePull = EdgePull(side: side, inward: fromLeft ? 1 : -1)
+    send(eventId: eventId, data: [:])
+  }
+
+  /// Holds the drawer an edge drag asked for under the finger, and lets it go
+  /// open or shut as Flutter's is: open past half way, or flung inwards.
+  private func followEdgePull(_ sender: UIPanGestureRecognizer, in container: UIView) {
+    guard let pull = edgePull else { return }
+    pull.moved = max(0, sender.translation(in: container).x * pull.inward)
+    let surface = pull.surface
+    switch sender.state {
+    case .changed:
+      surface?.pulledBy = pull.moved
+      surface?.follow()
+    case .ended, .cancelled, .failed:
+      edgePull = nil
+      guard let surface else { return }
+      let width = surface.bounds.width
+      let flung = sender.velocity(in: container).x * pull.inward > 365
+      let open = sender.state == .ended && (pull.moved >= width / 2 || flung)
+      surface.pulledBy = nil
+      UIView.animate(
+        withDuration: 0.2, delay: 0, options: [.curveEaseOut],
+        animations: {
+          surface.transform =
+            open ? .identity : CGAffineTransform(translationX: surface.toward * width, y: 0)
+          surface.scrim?.alpha = open ? 1 : 0
+        },
+        completion: { [weak self] _ in
+          if !open { self?.dismiss(pull.node, reason: "swipe") }
+        })
+    default:
+      break
+    }
   }
 
   @objc private func drawerDragged(_ sender: UIPanGestureRecognizer) {
@@ -6790,9 +7013,36 @@ private class SheetSurface: UIView {
 
 /// A drawer's panel, which slides in from its edge the first time it is laid
 /// out on screen.
+/// A drag in from a scaffold's edge that asked for the drawer at `side`.
+private final class EdgePull {
+  init(side: String, inward: CGFloat) {
+    self.side = side
+    self.inward = inward
+  }
+  let side: String
+  /// Which way is in, on screen: 1 from the left.
+  let inward: CGFloat
+  var moved: CGFloat = 0
+  weak var surface: DrawerSurface?
+  var node: [String: Any]?
+}
+
 private class DrawerSurface: UIView {
   var start = true
   private var entered = false
+
+  /// How far a finger has brought it out, while one holds it; and the scrim
+  /// behind it, which shows as much as it does.
+  var pulledBy: CGFloat?
+  weak var scrim: UIView?
+
+  /// Out as far as the finger has brought it.
+  func follow() {
+    guard let pulled = pulledBy, bounds.width > 0 else { return }
+    let hidden = max(0, bounds.width - pulled)
+    transform = CGAffineTransform(translationX: toward * hidden, y: 0)
+    scrim?.alpha = 1 - hidden / bounds.width
+  }
 
   /// Towards its own edge, on screen: -1 for the left.
   var toward: CGFloat {
@@ -6809,6 +7059,10 @@ private class DrawerSurface: UIView {
       : [.layerMinXMinYCorner, .layerMinXMaxYCorner]
     guard !entered, window != nil, bounds.width > 0 else { return }
     entered = true
+    if pulledBy != nil {
+      follow()
+      return
+    }
     transform = CGAffineTransform(translationX: toward * bounds.width, y: 0)
     UIView.animate(
       withDuration: 0.25, delay: 0, options: [.curveEaseOut],
@@ -6816,19 +7070,44 @@ private class DrawerSurface: UIView {
   }
 }
 
+/// Lets a swipe back begin only when one is offered and the pan went down
+/// within 20 points of the leading edge, moving in from it, further across
+/// than up or down.
+private class BackSwipeDelegate: NSObject, UIGestureRecognizerDelegate {
+  weak var renderer: NativeUIRenderer?
+
+  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    // A drawer at the leading edge has it instead, as a scaffold's does.
+    guard let renderer, renderer.canSwipeBack, renderer.drawerEdgeIds["start"] == nil,
+      let pan = gestureRecognizer as? UIPanGestureRecognizer, let view = pan.view
+    else { return false }
+    let moved = pan.translation(in: view)
+    if abs(moved.x) <= abs(moved.y) { return false }
+    let down = pan.location(in: view).x - moved.x
+    let rtl = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+    return rtl
+      ? down >= view.bounds.width - 20 && moved.x < 0
+      : down <= 20 && moved.x > 0
+  }
+}
+
 /// Lets a scaffold's drawer pan begin only when it went down within 20
 /// points of the left or the right edge and moves in from it, further across
 /// than up or down - so a tap by the edge, and a scroll, are left alone.
 private class DrawerEdgeDelegate: NSObject, UIGestureRecognizerDelegate {
+  weak var renderer: NativeUIRenderer?
+
   func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-    guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let view = pan.view else {
-      return false
-    }
+    guard let renderer, let pan = gestureRecognizer as? UIPanGestureRecognizer,
+      let view = pan.view
+    else { return false }
     let moved = pan.translation(in: view)
     let down = pan.location(in: view).x - moved.x
     if abs(moved.x) <= abs(moved.y) { return false }
-    if down <= 20 { return moved.x > 0 }
-    if down >= view.bounds.width - 20 { return moved.x < 0 }
+    let rtl = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+    let ids = renderer.drawerEdgeIds
+    if down <= 20 { return moved.x > 0 && ids[rtl ? "end" : "start"] != nil }
+    if down >= view.bounds.width - 20 { return moved.x < 0 && ids[rtl ? "start" : "end"] != nil }
     return false
   }
 }

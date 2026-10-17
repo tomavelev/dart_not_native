@@ -936,15 +936,19 @@ typedef _Measure = ({double size, double height, bool bold, double spacing});
 
 /// Measures and draws text on a [Canvas] - Flutter's `TextPainter`.
 ///
-/// **The measurements are Roboto's.** Flutter asks its text engine how wide a
-/// string is; pure Dart has no engine to ask, so each character is given its
-/// advance width in Roboto - the font Android and a Flutter app draw in -
-/// regular, or bold from weight 600 up, plus the style's `letterSpacing`
-/// (`glyph_widths.dart`, generated from the font files). That covers Latin,
-/// Greek, Cyrillic and their punctuation; iOS's and a browser's own fonts
-/// come out within a few per cent of it. Anything else is an estimate: 0.55
-/// × the font size, and 1.1 × for emoji and CJK (code points from U+2E80
-/// up). Kerning and ligatures are not counted. A line is 1.2 × the font size
+/// **The measurements are Android's fonts'.** Flutter asks its text engine
+/// how wide a string is; pure Dart has no engine to ask, so each character
+/// is given its advance width in the font Android draws it in - Roboto for
+/// Latin, Greek, Cyrillic and their punctuation, Noto for Hebrew, Arabic,
+/// Devanagari, Bengali, Tamil and Thai - regular, or bold from weight 600
+/// up, plus the style's `letterSpacing` (`glyph_widths.dart`, generated from
+/// the font files). iOS's and a browser's own fonts come out within a few
+/// per cent of it. A CJK character or a Hangul syllable is a whole em, as it
+/// is in every CJK font, an emoji 1.245 em, as in Noto Color Emoji, and
+/// anything else an estimate of 0.55 em. Kerning, ligatures and an Arabic
+/// letter's joined forms are not counted - it is measured standing alone,
+/// which most are wider than joined - and an app's own `fontFamily` is
+/// measured as these. A line is 1.2 × the font size
 /// tall (or the style's own `height` multiple). Lines break at `\n` and, past
 /// `maxWidth`, at the last space that fits. The default font size is 14.
 ///
@@ -1008,13 +1012,38 @@ class TextPainter {
       (text?.style?.fontSize ?? _defaultFontSize) *
       (text?.style?.height ?? 1.2);
 
-  /// How wide [codePoint] is at [fontSize]: Roboto's own width where the
-  /// table has it, the estimate where it does not.
+  /// How wide [codePoint] is at [fontSize]: the font's own width where the
+  /// table has it, a whole em for CJK and Hangul, an emoji's width, nothing
+  /// for a character that is not seen, and the estimate for the rest.
   static double _advance(int codePoint, double fontSize, {bool bold = false}) {
     final known = _glyphWidth(codePoint, bold: bold);
     if (known != null) return known * fontSize / 1000;
-    return (codePoint >= 0x2E80 ? 1.1 : 0.55) * fontSize;
+    if (_isWide(codePoint)) return fontSize;
+    if (_isEmoji(codePoint)) return 1.245 * fontSize;
+    // Variation selectors, joiners, marks of direction: nothing to see.
+    if ((codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||
+        (codePoint >= 0xE0100 && codePoint <= 0xE01EF) ||
+        (codePoint >= 0x200B && codePoint <= 0x200F) ||
+        (codePoint >= 0x2060 && codePoint <= 0x2064) ||
+        codePoint == 0xFEFF) {
+      return 0;
+    }
+    return 0.55 * fontSize;
   }
+
+  /// CJK ideographs, kana, Hangul and full-width forms: an em each.
+  static bool _isWide(int c) =>
+      (c >= 0x2E80 && c <= 0x303F) ||
+      (c >= 0x3040 && c <= 0x9FFF) ||
+      (c >= 0xAC00 && c <= 0xD7AF) ||
+      (c >= 0xF900 && c <= 0xFAFF) ||
+      (c >= 0xFF01 && c <= 0xFF60) ||
+      (c >= 0xFFE0 && c <= 0xFFE6) ||
+      (c >= 0x20000 && c <= 0x3FFFD);
+
+  /// The pictographs Noto Color Emoji draws.
+  static bool _isEmoji(int c) =>
+      (c >= 0x1F000 && c <= 0x1FAFF) || (c >= 0x2600 && c <= 0x27BF);
 
   /// Roboto's width for [rune] in thousandths of an em, or null where the
   /// table has none.
@@ -1023,7 +1052,7 @@ class TextPainter {
       final index = rune - start;
       if (index < 0 || index >= regular.length) continue;
       final width = (bold ? heavy : regular)[index];
-      return width == 0 ? null : width;
+      return width < 0 ? null : width;
     }
     return null;
   }

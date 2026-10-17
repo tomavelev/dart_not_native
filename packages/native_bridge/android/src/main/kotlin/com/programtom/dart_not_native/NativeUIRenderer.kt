@@ -360,7 +360,20 @@ class NativeUIRenderer(
                 picture.recycle()
             }
         })
-        run.start()
+        // The page is not drawn yet: placed at its start just before it is,
+        // and moved from the frame after - the first draw of a new page can
+        // take longer than the whole move, which would be over before it was
+        // seen.
+        root.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (root.viewTreeObserver.isAlive) {
+                    root.viewTreeObserver.removeOnPreDrawListener(this)
+                }
+                if (kind == "push") currentRoot?.translationX = travel
+                root.postOnAnimation { run.start() }
+                return true
+            }
+        })
     }
 
     /**
@@ -448,14 +461,15 @@ class NativeUIRenderer(
             }
         })
         // The page is not drawn yet: placed at its start just before it is,
-        // so it is never seen where it ends.
+        // so it is never seen where it ends, and moved from the frame after,
+        // so a slow first draw does not use up the move.
         root.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
                 if (root.viewTreeObserver.isAlive) {
                     root.viewTreeObserver.removeOnPreDrawListener(this)
                 }
                 place(0f)
-                run.start()
+                root.postOnAnimation { run.start() }
                 return true
             }
         })
@@ -675,7 +689,8 @@ class NativeUIRenderer(
                 picture?.recycle()
             }
         })
-        run.start()
+        // From the frame after this one, as the pages move.
+        root.postOnAnimation { run.start() }
     }
 
     private fun applyDirection(root: View, tree: Map<*, *>): Boolean {
@@ -1414,6 +1429,7 @@ class NativeUIRenderer(
             val props = (next["props"] as? Map<*, *>).orEmpty() - "pageTransition"
             next = next - "pageTransition" + ("props" to props)
         }
+        rootContainer?.let { watchDrawerEdges(it, frameScaffold(next)) }
         if (transition != null && currentTree != null) {
             // The heroes both pages have are left out of the picture of the
             // old one, and fly once the new one is laid out.
@@ -2213,21 +2229,69 @@ class NativeUIRenderer(
         if (oldNode["bodyScrolls"] != newNode["bodyScrolls"]) return false
         if (oldNode["safeArea"] != newNode["safeArea"]) return false
         scaffold.setBackgroundColor(color(newNode["backgroundColor"], themeSurface))
-        watchDrawerEdges(scaffold, newNode)
         return true
     }
 
+    /** The props of the first scaffold in [node], whose drawers an edge drag opens. */
+    private fun frameScaffold(node: Map<*, *>): Map<*, *>? {
+        if (node["type"] == "Scaffold") return node["props"] as? Map<*, *> ?: node
+        for (child in childNodes(node)) frameScaffold(child)?.let { return it }
+        return null
+    }
+
     /**
-     * Has a drag in from [scaffold]'s start or end edge raise the drawer
-     * event for that edge (`drawerEdgeEventId`, `endDrawerEdgeEventId`).
+     * Has a drag in from the screen's start or end edge raise the drawer
+     * event for that edge (`drawerEdgeEventId`, `endDrawerEdgeEventId`) of
+     * [node], the screen's scaffold, and the drawer then follow it. Watched
+     * at the [root], which outlasts the scaffold being drawn again.
      */
-    private fun watchDrawerEdges(scaffold: ScaffoldLayout, node: Map<*, *>) {
-        fun opener(key: String): (() -> Unit)? {
-            val eventId = node[key] as? String ?: return null
-            return { sendEvent(eventId, emptyMap()) }
+    private fun watchDrawerEdges(root: SlotHostLayout, node: Map<*, *>?) {
+        fun opener(key: String, side: String): (() -> Unit)? {
+            val eventId = node?.get(key) as? String ?: return null
+            return {
+                edgePull = EdgePull(side)
+                sendEvent(eventId, emptyMap())
+            }
         }
-        scaffold.openStart = opener("drawerEdgeEventId")
-        scaffold.openEnd = opener("endDrawerEdgeEventId")
+        root.openStart = opener("drawerEdgeEventId", "start")
+        root.openEnd = opener("endDrawerEdgeEventId", "end")
+        root.onPull = { moved ->
+            edgePull?.let { pull ->
+                pull.moved = moved
+                pull.frame?.pulledBy = moved
+                pull.frame?.follow()
+            }
+        }
+        root.onPullEnd = { moved, speed, released -> letGoEdgePull(moved, speed, released) }
+    }
+
+    /** A drag in from a scaffold's edge that asked for the drawer at [side]. */
+    private class EdgePull(val side: String) {
+        var moved = 0f
+        var frame: DrawerFrame? = null
+        var onSwipe: (() -> Unit)? = null
+    }
+
+    /** The drag in from an edge under way, while the finger is down. */
+    private var edgePull: EdgePull? = null
+
+    /**
+     * Lets the drawer an edge drag holds go open or shut, as Flutter's: open
+     * past half way, or flung inwards.
+     */
+    private fun letGoEdgePull(moved: Float, speed: Float, released: Boolean) {
+        val pull = edgePull ?: return
+        edgePull = null
+        val frame = pull.frame ?: return
+        frame.pulledBy = null
+        val density = activity.resources.displayMetrics.density
+        val open = released && (moved >= frame.width / 2f || speed / density > 365f)
+        frame.animate()
+            .translationX(if (open) 0f else frame.toward * frame.width)
+            .setDuration(200)
+            .withEndAction { if (!open) pull.onSwipe?.invoke() }
+            .start()
+        frame.scrim?.animate()?.alpha(if (open) 1f else 0f)?.setDuration(200)?.start()
     }
 
     /** Re-derives a checkbox/switch/radio's label, enabled and checked state. */
@@ -2632,7 +2696,6 @@ class NativeUIRenderer(
             layoutParams = matchParent()
             setBackgroundColor(color(node["backgroundColor"], themeSurface))
         }
-        watchDrawerEdges(scaffold, node)
         val scrolls = node["bodyScrolls"] != false
         val area = scaffold.bodyArea
         val fill = FrameLayout.LayoutParams(
@@ -5589,7 +5652,19 @@ class NativeUIRenderer(
         onSystemBars(panel) { bars ->
             content.setPadding(0, bars.top, 0, bars.bottom)
         }
-        return modalLayer(node, panel)
+        val layer = modalLayer(node, panel)
+        // Asked for by a drag in from the edge that is still going: it is
+        // where the finger has brought it rather than sliding in by itself.
+        val pull = edgePull
+        if (pull != null && pull.frame == null && pull.side == (if (start) "start" else "end")) {
+            pull.frame = panel
+            pull.onSwipe = dismiss?.let { eventId ->
+                { sendEvent(eventId, mapOf("reason" to "swipe")) }
+            }
+            panel.pulledBy = pull.moved
+            panel.scrim = (layer as? ViewGroup)?.getChildAt(0)
+        }
+        return layer
     }
 
     /** The drawers already drawn, by their overlay's id - see [renderDrawer]. */
@@ -7556,8 +7631,24 @@ class NativeUIRenderer(
         private var downX = 0f
         private var dragging = false
 
+        /**
+         * How far a finger has brought it out, while one holds it; and the
+         * scrim behind it, which shows as much as it does.
+         */
+        var pulledBy: Float? = null
+        var scrim: View? = null
+
+        /** Out as far as the finger has brought it. */
+        fun follow() {
+            val pulled = pulledBy ?: return
+            if (width <= 0) return
+            val hidden = max(0f, width - pulled)
+            translationX = toward * hidden
+            scrim?.alpha = 1f - hidden / width
+        }
+
         /** Towards its own edge, on screen: -1 for the left. */
-        private val toward: Float
+        val toward: Float
             get() = if (start == (layoutDirection == LAYOUT_DIRECTION_RTL)) 1f else -1f
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -7577,6 +7668,10 @@ class NativeUIRenderer(
                 override fun onPreDraw(): Boolean {
                     if (width <= 0) return true
                     viewTreeObserver.removeOnPreDrawListener(this)
+                    if (pulledBy != null) {
+                        follow()
+                        return true
+                    }
                     translationX = toward * width
                     animate().translationX(0f).setDuration(250)
                         .setInterpolator(android.view.animation.DecelerateInterpolator()).start()

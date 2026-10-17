@@ -2082,8 +2082,10 @@ notice.
    `CustomTransitionPage` or a `NoTransitionPage`, a hero's shuttle is laid
    out at each size it passes through and its `placeholderBuilder` stands in
    its room - seen on an iOS simulator, an Android emulator and in Chrome.
-   Still open: widgets other than the transition widgets a builder wraps the
-   page in are not read. ~~A `ShellRoute` has no `pageBuilder`~~ - it has
+   Since 2026-10-16 an `AnimatedBuilder`, a `Transform`, a `KeyedSubtree`
+   and a `SizeTransition` are read through as well. Still open: other
+   widgets a builder wraps the page in are not read, and a `SizeTransition`
+   does not clip it. ~~A `ShellRoute` has no `pageBuilder`~~ - it has
    since 2026-10-16, moving the frame as the shell is entered or left - and
    ~~the hero a flight leaves has no placeholder~~, it has its own in the
    picture of its page since the same day, seen on an iOS simulator, an
@@ -2125,7 +2127,9 @@ notice.
 6. **Widgets that are not there.** The ones this list named are all there
    now, each with what it gives up said in its doc comment. The last four
    came on 2026-10-11, built in the widget layer: `Table` (columns are a
-   stated width or a share of the rest - nothing measures a cell),
+   stated width or a share of the rest; since 2026-10-16 an
+   `IntrinsicColumnWidth` is its widest cell, where the widget layer can
+   measure it - text, stated sizes, padding),
    `ReorderableListView` (on the platform's drag and drop: the whole row is
    held; since 2026-10-14 the rows part where it will land - seen on an
    Android emulator and in Chrome), `InteractiveViewer` (a finger pans, and
@@ -2163,9 +2167,11 @@ notice.
    `tool/generate_glyph_widths.dart`), and sends the lines it measured
    unbroken - exact on Android and in the Flutter host, which draw in
    Roboto; on iOS SF is a few per cent wider, in Chrome its sans-serif.
-   Still open: kerning and ligatures are not counted, a script outside
-   Latin, Greek and Cyrillic is still 0.55 or 1.1 of the font size, and a
-   `fontFamily` of the app's own is measured as Roboto.
+   Since 2026-10-16 Hebrew, Arabic, Devanagari, Bengali, Tamil and Thai are
+   measured in Android's Noto, CJK and Hangul are an em and an emoji 1.245.
+   Still open: kerning, ligatures and Arabic's joined forms are not counted,
+   other scripts are 0.55 of the font size, and a `fontFamily` of the app's
+   own is measured as these.
 8. ~~**`Dismissible` reveals an action rather than sliding the row away**,
    and does nothing for a vertical direction~~ Since 2026-10-11 the row
    follows the finger with `background` (or `secondaryBackground`) behind
@@ -2204,8 +2210,7 @@ notice.
     2026-10-16 (`endDrawer` from the end), the height of the screen, over a
     scrim, swiped back to close; seen on an iOS simulator, an Android
     emulator and in Chrome. ~~No swipe in from the edge opens it~~ - one does
-    since the same day, though the panel slides in by itself rather than
-    following the finger; seen on all three.
+    since the same day, and the panel follows the finger; seen on all three.
     A scaffold nested in another's body is composed from a column and a
     stack.
 12. **Canvas paint is colour or a gradient.** A `Paint.shader` made by
@@ -2232,7 +2237,11 @@ notice.
     2026-10-11, and since 2026-10-14 in whatever `colorBlendMode` says; on
     the web the picture's clear parts stay clear whatever the mode
     (`text.dart`).
-14. **Focus is text fields only.** ~~Every `KeyboardListener` on screen
+14. ~~**Focus is text fields only.**~~ Since 2026-10-16 a `Focus` widget is
+    a box that takes focus, outlined while it has it and told back to its
+    node - on the web and in the Flutter host; the native renderers leave it
+    to their controls' own keyboard focus, which is what is still open.
+    ~~Every `KeyboardListener` on screen
     hears every key~~ - since 2026-10-10 the one whose `FocusNode` was asked
     for focus hears alone, and a dialog takes the keys from the page behind
     it; with no ask they all still hear. ~~`FocusScope.nextFocus()` does
@@ -2254,6 +2263,47 @@ notice.
     changed - `Theme.of`, `MediaQuery.of`, `Localizations.localeOf`, an
     inherited widget of the app's - and the widget's `updateShouldNotify`
     says whether it has. The rebuild itself is still from the root.
+17. **A swipe back is iOS's alone.** Since 2026-10-16 a page pushed on a
+    `Navigator` follows the finger back from the leading edge on iOS
+    (`RootProps.backSwipeEventId`, `beneath`), seen on a simulator. The
+    Flutter host could draw it from the same props and does not yet; a page
+    a `GoRouter` pushed is not offered one; a hero does not follow it
+    ([Hero.transitionOnUserGestures]).
+18. **An image given a width inside a box that fills its row** is drawn
+    three ways: the stated width at the start on iOS and the web, and the
+    box's whole width with the picture scaled down in the middle of it on
+    Android (2026-10-16). Flutter gives such an image the box's width - the
+    padded `Container` passes it a tight width - and draws the picture
+    filling it. Matching that needs the renderers told when a child is
+    given a tight width, which no node says today.
+19. **What the next round's large items would take** (written 2026-10-16,
+    not started):
+    - *`AnimationController`.* A node carrying a timeline - keyframes of the
+      props a box already animates (`opacity`, `transform`, `color`, size)
+      against a duration, a curve and a repeat - that the renderer runs by
+      itself, raising `endEventId` as an implicit animation does; the widget
+      layer's controller would build it from the `Tween`s an
+      `AnimatedBuilder` reads at a few points, as route transitions are read
+      at their two ends. A controller driven by hand (`value =`) stays a
+      rebuild per change.
+    - *A `ScrollController` in step with the drag.* The offset is reported
+      at most every 100 ms because every report is a message and a rebuild;
+      what wants it in step - a header that shrinks, a parallax - is better
+      given a node that names the scroller it follows and how
+      (`scrollLinked: {source, from, to, prop}`), which the renderer applies
+      on its own scroll callback without asking Dart.
+    - *Lazy slivers.* A `SliverList` with a builder becoming a windowed
+      `LazyList` section inside one scroller: the `LazyList` node's window
+      protocol (`range` events, `itemExtent`) with a scroller-wide offset
+      for each section, so the renderers lay several out in one scroll view.
+    - *A `WidgetSpan` that stays live on iOS and Android* (§6.3 item 4): the
+      run keeps its room in the line as now, and the widget's real view is
+      laid over the text at the run's place, worked out from the layout the
+      label already has (`NSLayoutManager` on iOS, `Layout` on Android) each
+      time it lays out.
+    - *Device coverage* (§6.3 item 12): Maestro flows for the node types
+      only agent-device touches, and a Flutter widget behind the device
+      lane's `FlutterSlot`.
 
 ### 6.3 Protocol gaps
 
@@ -2307,15 +2357,19 @@ event, and then the same work in four renderers.
    `Directionality` that reads the other way from what is around it puts
    `layoutDirection` on its child's node, and the platform's own controls
    below it - rows, switches, fields - run that way; seen on an iOS
-   simulator, an Android emulator and in Chrome. Still open: a few details
-   the native renderers work out from the screen's direction alone - which
-   side a field's suffix glyph is on, the back chevron - do not follow an
-   island.
+   simulator, an Android emulator and in Chrome. ~~A few details the native
+   renderers work out from the screen's direction alone do not follow an
+   island~~ - since 2026-10-16 they do: iOS builds what is inside an island
+   in its direction (Android reads each view's own), seen on an iOS
+   simulator - which found a text field's icons the wrong way round in
+   every right-to-left iOS screen, island or not, now fixed.
 6. ~~**Swipe actions are not mirrored.**~~ Mirrored 2026-10-10: trailing and
    leading follow the screen's direction on every renderer, so in Arabic the
    delete is on the left and is reached by dragging right, and a
    `Dismissible`'s `endToStart` is the same gesture it is in Flutter. The
-   Swift was already written to, and has not been looked at right to left. Web and the Flutter host are tested for it - the
+   Swift was looked at right to left on an iOS simulator on 2026-10-16:
+   dragging right shows the trailing actions on the left, dragging left the
+   leading ones on the right. Web and the Flutter host are tested for it - the
    Flutter host had it half done, the bars turned and the drag not, so a
    swipe showed one bar and fired the other's action. The Kotlin was run on
    an Android 17 emulator (2026-10-10) in a throwaway Arabic screen: a full
@@ -2490,8 +2544,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2698 tests
-  (1629 in the package, 391 for the example apps and goldens, 635 in the browser,
+  contracts, the plugin system and the design system are covered by 2721 tests
+  (1645 in the package, 393 for the example apps and goldens, 640 in the browser,
   43 in the bloc package,
   counted 2026-10-16), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

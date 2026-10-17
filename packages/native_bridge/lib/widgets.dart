@@ -978,6 +978,12 @@ class _Owner {
   /// of the tree carries it to the renderer ([RootProps.pageTransition]).
   Map<String, dynamic>? _pageTransition;
 
+  /// The navigator whose top page a back swipe would pop, as this build
+  /// found it - the last built that has a page to go back to - and the page
+  /// beneath that one, drawn while a swipe is under way.
+  NavigatorState? _backSwipe;
+  WidgetNode? _beneath;
+
   /// Whether a scaffold inside another's body drew a floating button in this
   /// build - one no renderer knows is there.
   bool _nestedFab = false;
@@ -1207,12 +1213,26 @@ class _Owner {
       // The direction is the screen's, so it is said once, on whatever node
       // turned out to be the root, and only when it is not the default.
       _pageTransition = null;
+      _backSwipe = null;
+      _beneath = null;
       _nestedFab = false;
       _nestedBar = 0;
       final tree = _buildRoot();
-      return UIBuilder.withPageTransition(
+      final root = UIBuilder.withPageTransition(
         UIBuilder.withTextDirection(tree, _screenDirection.name),
         _pageTransition,
+      );
+      // Offered once the whole tree is built: only then is it known whether
+      // a PopScope on the page refuses to let it go.
+      final swipe = _backSwipe;
+      if (swipe == null || _overlays.isNotEmpty || _popBlocked) {
+        swipe?._swiping = false;
+        return root;
+      }
+      return UIBuilder.withBackSwipe(
+        root,
+        onSwipe: swipe._swiped,
+        beneath: swipe._swiping ? _beneath : null,
       );
     } finally {
       _current = outer;

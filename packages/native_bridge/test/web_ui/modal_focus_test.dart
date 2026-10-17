@@ -288,4 +288,94 @@ void main() {
       expect(opened, ['start']);
     });
   });
+
+  group('a drawer swiped open', () {
+    late List<Object?> closed;
+    late web.HTMLElement scaffold;
+
+    // A plain scaffold until the drawer comes, as an app's tree is: the
+    // scaffold is drawn again, under the finger, as the root becomes an
+    // overlay.
+    WidgetNode frame({bool open = false}) {
+      final scaffold = UIBuilder.scaffold(
+        body: UIBuilder.text('page'),
+        drawerEdgeEventId: 'open',
+      );
+      if (!open) return scaffold;
+      return UIBuilder.overlay(
+        child: scaffold,
+        overlays: [
+          UIBuilder.bottomSheet(
+            content: [UIBuilder.text('Menu')],
+            side: 'start',
+            width: 200,
+            dismissEventId: 'closed',
+          ),
+        ],
+      );
+    }
+
+    setUp(() async {
+      closed = [];
+      renderer
+        ..onEvent('open', (_) => renderer.render(frame(open: true)))
+        ..onEvent('closed', (data) => closed.add(data['reason']));
+      await renderer.render(frame());
+      scaffold = root.querySelector('.dnn-scaffold')! as web.HTMLElement;
+    });
+
+    late web.DOMRect box;
+
+    /// A finger's event at [x], sent where a browser sends it: to whatever
+    /// is under the finger by then, the scaffold having been drawn again.
+    void touch(String type, double x) {
+      box = root.getBoundingClientRect();
+      final y = box.top + box.height / 2 + 0.5;
+      final event = web.PointerEvent(
+        type,
+        {
+              'bubbles': true,
+              'pointerType': 'touch',
+              'clientX': box.left + x,
+              'clientY': y,
+            }.jsify()!
+            as web.PointerEventInit,
+      );
+      // What is on top there: the drawer's layer once it has come.
+      final under =
+          root.querySelector('.dnn-modal') ?? root.querySelector('.dnn-scaffold');
+      (under ?? root).dispatchEvent(event);
+    }
+
+    Future<web.HTMLElement> dragTo(double x) async {
+      touch('pointerdown', 4.5);
+      touch('pointermove', 40.25);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      touch('pointermove', x);
+      return root.querySelector('.dnn-drawer')! as web.HTMLElement;
+    }
+
+    double shownWidth(web.HTMLElement panel) =>
+        panel.getBoundingClientRect().right - box.left;
+
+    test('follows the finger, and stays shut let go short of half way',
+        () async {
+      final panel = await dragTo(60.5);
+      expect(shownWidth(panel), closeTo(60.5 - 4.5, 2));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      touch('pointerup', 60.5);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(closed, ['swipe']);
+    });
+
+    test('stays open let go past half way', () async {
+      final panel = await dragTo(160.5);
+      expect(shownWidth(panel), closeTo(156, 2));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      touch('pointerup', 160.5);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(closed, isEmpty);
+      expect(shownWidth(panel), closeTo(200, 2));
+    });
+  });
 }

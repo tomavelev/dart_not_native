@@ -312,6 +312,11 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       final transition = tree.props[RootProps.pageTransition] ?? _owedTransition;
       _owedTransition = null;
       tree = UIBuilder.withPageTransition(tree, null);
+      _drawerEdges = _drawerEdgesIn(tree) ?? (null, null);
+      if (!_drawerEdgesWatched) {
+        _drawerEdgesWatched = true;
+        _watchDrawerEdges(rootElement);
+      }
       final moving = transition is Map && animations && _currentTree != null;
       // Where the heroes of the page that is going stand, before it goes.
       final heroes = moving ? _heroRects() : const <String, web.DOMRect>{};
@@ -2578,6 +2583,16 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       _style(surface, 'width', 'min(${width}px, calc(100vw - 56px))');
     }
     final eventId = p['dismissEventId'];
+    // Opened by a drag in from the edge that is still going: the panel is
+    // where the finger has brought it, not sliding in by itself.
+    final drag = _edgeDrag;
+    if (drag != null && drag.side == side && drag.surface == null) {
+      drag.hold(
+        surface,
+        modal.querySelector('.dnn-scrim') as web.HTMLElement?,
+        eventId is String ? eventId : null,
+      );
+    }
     if (p['dismissible'] == false || eventId is! String) return modal;
     // Towards its own edge: the left for a start drawer read left to right.
     double? from;
@@ -3789,6 +3804,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         if (state == null) return false;
         state.props = p;
         _applyFrame(existing, state, fresh: false);
+        _applyFocus(existing as web.HTMLElement, p, fresh: false);
       case 'Canvas':
         if (state == null) return false;
         state.props = p;
@@ -3853,30 +3869,45 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       background == null ? null : cssColor(background),
     );
     _set(scaffold, 'color', background == null ? null : textOn(background));
-    _drawerEdges[scaffold] = (
-      _optStr(p['drawerEdgeEventId']),
-      _optStr(p['endDrawerEdgeEventId']),
-    );
-    if (_drawerEdgeWatched[scaffold] != true) {
-      _drawerEdgeWatched[scaffold] = true;
-      _watchDrawerEdges(scaffold as web.HTMLElement);
-    }
   }
 
-  /// The drawers a scaffold opens from its start and its end edge
-  /// (`drawerEdgeEventId`, `endDrawerEdgeEventId`).
-  final Expando<(String?, String?)> _drawerEdges = Expando();
-  final Expando<bool> _drawerEdgeWatched = Expando();
+  /// A drag in from a scaffold's edge that has asked for a drawer, while the
+  /// finger is still down.
+  _EdgeDrag? _edgeDrag;
+
+  /// The drawers the screen's scaffold opens from its start and its end
+  /// edge (`drawerEdgeEventId`, `endDrawerEdgeEventId`), as the last tree
+  /// said.
+  (String?, String?) _drawerEdges = (null, null);
+  bool _drawerEdgesWatched = false;
+
+  /// The drawers the first scaffold in [node] opens from its edges.
+  static (String?, String?)? _drawerEdgesIn(WidgetNode node) {
+    if (node.type == 'Scaffold') {
+      return (
+        _optStr(node.props['drawerEdgeEventId']),
+        _optStr(node.props['endDrawerEdgeEventId']),
+      );
+    }
+    for (final child in node.children ?? const <WidgetNode>[]) {
+      final found = _drawerEdgesIn(child);
+      if (found != null) return found;
+    }
+    return null;
+  }
 
   /// How far in from an edge a drag opens a drawer from, as Flutter's.
   static const double _drawerEdgeWidth = 20;
 
-  /// Raises a scaffold's drawer event when a finger that went down by one
-  /// of its edges moves in from it - further across than up or down, by
-  /// more than a touch slop. A mouse does not open one, as it does not
-  /// swipe one shut.
-  void _watchDrawerEdges(web.HTMLElement scaffold) {
+  /// Raises the screen's scaffold's drawer event when a finger that went
+  /// down by one of its edges moves in from it - further across than up or
+  /// down, by more than a touch slop - and has the drawer follow it. Watched
+  /// on the root, which outlasts the scaffold being drawn again as the
+  /// drawer arrives. A mouse does not open one, as it does not swipe one
+  /// shut.
+  void _watchDrawerEdges(web.Element scaffold) {
     String? opening;
+    String side = 'start';
     double fromX = 0;
     double fromY = 0;
     double inward = 1;
@@ -3885,7 +3916,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ((web.PointerEvent event) {
         opening = null;
         if (event.pointerType == 'mouse') return;
-        final (start, end) = _drawerEdges[scaffold] ?? (null, null);
+        final (start, end) = _drawerEdges;
         if (start == null && end == null) return;
         final box = scaffold.getBoundingClientRect();
         final rtl = web.window.getComputedStyle(scaffold).direction == 'rtl';
@@ -3896,9 +3927,11 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         if (nearLeft && left != null) {
           opening = left;
           inward = 1;
+          side = rtl ? 'end' : 'start';
         } else if (nearRight && right != null) {
           opening = right;
           inward = -1;
+          side = rtl ? 'start' : 'end';
         } else {
           return;
         }
@@ -3909,6 +3942,11 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     scaffold.addEventListener(
       'pointermove',
       ((web.PointerEvent event) {
+        final drag = _edgeDrag;
+        if (drag != null) {
+          drag.follow(event.placeX, event.timeStamp);
+          return;
+        }
         final eventId = opening;
         if (eventId == null) return;
         final across = (event.placeX - fromX) * inward;
@@ -3917,11 +3955,19 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
           opening = null;
         } else if (across > 18) {
           opening = null;
+          // The panel this asks for follows the finger once it is drawn.
+          _edgeDrag = _EdgeDrag(side, inward, fromX)
+            ..follow(event.placeX, event.timeStamp);
           handleEvent(eventId, const {});
         }
       }).toJS,
     );
-    void release(web.Event _) => opening = null;
+    void release(web.Event event) {
+      opening = null;
+      final drag = _edgeDrag;
+      _edgeDrag = null;
+      drag?.letGo(handleEvent, event.timeStamp);
+    }
     scaffold.addEventListener('pointerup', release.toJS);
     scaffold.addEventListener('pointercancel', release.toJS);
   }
@@ -4095,9 +4141,81 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   // ---------------------------------------------------------------------------
 
   /// A box: size, space, paint and touch around at most one child.
+  /// The event a box that is a [Focus] reports its focus by, by element.
+  final Expando<String> _focusIds = Expando();
+  final Expando<bool> _focusWatched = Expando();
+  final Expando<bool> _focusHeld = Expando();
+  final Expando<num> _focusAsked = Expando();
+
+  /// Makes [box] a `Focus` (`focusEventId`): a stop for the Tab key while it
+  /// is `focusable` - though not one Tab lands on with `focusSkip` - that
+  /// says `{focused}` when focus comes into it or leaves it altogether, and
+  /// takes focus or gives it up when `focusVersion` moves on.
+  void _applyFocus(
+    web.HTMLElement box,
+    Map<String, dynamic> p, {
+    required bool fresh,
+  }) {
+    final eventId = _optStr(p['focusEventId']);
+    if (eventId == null) {
+      if (!fresh && _focusIds[box] != null) {
+        box
+          ..removeAttribute('tabindex')
+          ..classList.remove('dnn-focus');
+        _focusIds[box] = null;
+      }
+      return;
+    }
+    _focusIds[box] = eventId;
+    box.classList.add('dnn-focus');
+    if (p['focusable'] != true) {
+      // A box that is tapped keeps the stop it has for that.
+      if (!box.hasAttribute('data-tap')) box.removeAttribute('tabindex');
+    } else {
+      box.tabIndex = p['focusSkip'] == true ? -1 : 0;
+    }
+    if (_focusWatched[box] != true) {
+      _focusWatched[box] = true;
+      void tell(bool focused) {
+        if ((_focusHeld[box] ?? false) == focused) return;
+        _focusHeld[box] = focused;
+        final id = _focusIds[box];
+        if (id != null) handleEvent(id, {'focused': focused});
+      }
+
+      box
+        ..addEventListener('focusin', ((web.Event _) => tell(true)).toJS)
+        ..addEventListener(
+          'focusout',
+          ((web.FocusEvent event) {
+            // Only out of it altogether: from one thing in it to another is
+            // still inside.
+            final to = event.relatedTarget;
+            if (to != null && box.contains(to as web.Node)) return;
+            tell(false);
+          }).toJS,
+        );
+    }
+    final version = _num(p['focusVersion']);
+    final asked = version != null && version != _focusAsked[box];
+    if (version != null) _focusAsked[box] = version;
+    // Carried out once the whole tree is in the page, as a field's is.
+    if (asked && p['focusRequested'] == false) {
+      final active = web.document.activeElement;
+      if (active != null && box.contains(active)) {
+        _focusAsk = (active as web.HTMLElement, false);
+      }
+    } else if (asked || (fresh && p['autofocus'] == true)) {
+      _focusAsk = (box, true);
+    }
+  }
+
   web.Element _box(Map<String, dynamic> p) {
     final box = _host(_el('div', 'dnn-box'));
     _applyFrame(box, _nodes[box] = _NodeState(p), fresh: true);
+    // After the rest, which leaves a box that is not tapped out of the Tab
+    // order.
+    _applyFocus(box as web.HTMLElement, p, fresh: true);
     return box;
   }
 
@@ -6607,6 +6725,96 @@ class _NodeState {
   /// What a dropdown's options were built from.
   List<String> items = const [];
   String? placeholder;
+}
+
+/// A drag in from a scaffold's edge that a drawer was asked for by: once
+/// the panel is drawn it is held where the finger has brought it, and let
+/// go open or shut as Flutter's is - open past half way, or flung inward.
+class _EdgeDrag {
+  _EdgeDrag(this.side, this.inward, this.fromX);
+
+  /// `start` or `end`; and which way is in, on screen.
+  final String side;
+  final double inward;
+  final double fromX;
+
+  double _moved = 0;
+  double _lastX = 0;
+  double _lastTime = 0;
+
+  /// Pixels a millisecond, inwards.
+  double _speed = 0;
+
+  web.HTMLElement? surface;
+  web.HTMLElement? _scrim;
+  String? _dismissEventId;
+
+  void follow(double x, double time) {
+    if (_lastTime > 0 && time > _lastTime) {
+      _speed = (x - _lastX) * inward / (time - _lastTime);
+    }
+    _lastX = x;
+    _lastTime = time;
+    _moved = math.max(0, (x - fromX) * inward);
+    _place();
+  }
+
+  void hold(web.HTMLElement panel, web.HTMLElement? scrim, String? dismiss) {
+    surface = panel;
+    _scrim = scrim;
+    _dismissEventId = dismiss;
+    panel.style.animation = 'none';
+    scrim?.style.animation = 'none';
+    _place();
+  }
+
+  /// How much of the panel is out, from 0 to 1 - all of it until it has a
+  /// width to measure.
+  double get _shown {
+    final width = surface?.getBoundingClientRect().width ?? 0;
+    if (width <= 0) return 1;
+    return math.min(1, _moved / width);
+  }
+
+  void _place() {
+    final panel = surface;
+    if (panel == null) return;
+    // Not yet in the page: placed once it is.
+    if (!panel.isConnected) {
+      web.window.requestAnimationFrame(((num _) => _place()).toJS);
+      return;
+    }
+    final shown = _shown;
+    panel.style
+      ..transition = 'none'
+      ..transform = 'translateX(${-inward * (1 - shown) * 100}%)';
+    _scrim?.style
+      ?..transition = 'none'
+      ..opacity = '$shown';
+  }
+
+  void letGo(
+    Future<dynamic> Function(String, Map<String, dynamic>) send,
+    double time,
+  ) {
+    final panel = surface;
+    if (panel == null) return;
+    // A finger that rested before it let go flung nothing.
+    final speed = time - _lastTime > 40 ? 0 : _speed;
+    final open = _shown >= 0.5 || speed > 0.365;
+    panel.style
+      ..transition = 'transform 200ms ease-out'
+      ..transform = open ? '' : 'translateX(${-inward * 100}%)';
+    _scrim?.style
+      ?..transition = 'opacity 200ms linear'
+      ..opacity = open ? '' : '0';
+    final dismiss = _dismissEventId;
+    if (!open && dismiss != null) {
+      Timer(const Duration(milliseconds: 200), () {
+        send(dismiss, {'reason': 'swipe'});
+      });
+    }
+  }
 }
 
 /// A box being dragged: what it carries, the copy following the pointer and

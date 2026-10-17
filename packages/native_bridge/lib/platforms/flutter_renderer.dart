@@ -279,28 +279,55 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // keep the widgets of the page before it and move from one to the other.
     final page = _page;
     final kind = _pageKind;
+    // The drawers the screen's scaffold opens from its edges, watched here
+    // above everything: the scaffold is built again under the finger as the
+    // drawer arrives, and would take a gesture of its own away with it.
+    final (drawerStart, drawerEnd) = _drawerEdgesIn(tree) ?? (null, null);
     return Directionality(
       textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
-      child: _PageSwitch(
-        page: page,
-        kind: kind,
-        motion: _pageMotion,
-        pictureMotion: _pictureMotion,
-        time: _pageTime,
-        rtl: rtl,
-        heroes: _heroes,
-        heroTags: _pageHeroes,
-        child: Builder(
-          builder: (context) {
-            final widget = buildNode(tree, context);
-            if (tree.type == 'Scaffold' || tree.type == 'NavigationStack') {
-              return widget;
-            }
-            return Material(type: MaterialType.transparency, child: widget);
-          },
+      child: _DrawerEdges(
+        start: drawerStart,
+        end: drawerEnd,
+        onOpen: (eventId, pull) {
+          _edgePull = pull;
+          handleEvent(eventId, const {});
+        },
+        child: _PageSwitch(
+          page: page,
+          kind: kind,
+          motion: _pageMotion,
+          pictureMotion: _pictureMotion,
+          time: _pageTime,
+          rtl: rtl,
+          heroes: _heroes,
+          heroTags: _pageHeroes,
+          child: Builder(
+            builder: (context) {
+              final widget = buildNode(tree, context);
+              if (tree.type == 'Scaffold' || tree.type == 'NavigationStack') {
+                return widget;
+              }
+              return Material(type: MaterialType.transparency, child: widget);
+            },
+          ),
         ),
       ),
     );
+  }
+
+  /// The drawers the first scaffold in [node] opens from its edges.
+  static (String?, String?)? _drawerEdgesIn(WidgetNode node) {
+    if (node.type == 'Scaffold') {
+      return (
+        _optString(node.props['drawerEdgeEventId']),
+        _optString(node.props['endDrawerEdgeEventId']),
+      );
+    }
+    for (final child in node.children ?? const <WidgetNode>[]) {
+      final found = _drawerEdgesIn(child);
+      if (found != null) return found;
+    }
+    return null;
   }
 
   /// Builds one node. Public so a host can render a subtree of its own.
@@ -733,15 +760,12 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
               child: _bottomBar(bottomBar, context),
             ),
     );
-    // Always the same shape, so the scaffold keeps its widgets when a
-    // drawer comes or goes.
-    return _DrawerEdges(
-      start: _optString(p['drawerEdgeEventId']),
-      end: _optString(p['endDrawerEdgeEventId']),
-      onOpen: (eventId) => handleEvent(eventId, const {}),
-      child: scaffold,
-    );
+    return scaffold;
   }
+
+  /// The drag in from a scaffold's edge that last asked for a drawer, which
+  /// the drawer follows once it is drawn.
+  _EdgePull? _edgePull;
 
   /// How far up from the scaffold's bottom edge its bottom bar and its
   /// floating button reach, as last painted; zero for one it does not have.
@@ -2200,6 +2224,15 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
     final tooltip = _optString(p['tooltip']);
     if (tooltip != null) box = Tooltip(message: tooltip, child: box);
+    final focusEventId = _optString(p['focusEventId']);
+    if (focusEventId != null) {
+      box = _NodeFocus(
+        props: p,
+        onChange: (focused) =>
+            handleEvent(focusEventId, {'focused': focused}),
+        child: box,
+      );
+    }
     final hero = _optString(p['hero']);
     if (hero != null) {
       Widget? built(Object? node) => node is Map
@@ -3307,13 +3340,57 @@ class _NodeDrawerState extends State<_NodeDrawer>
   late final AnimationController _shown = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 250),
-  )..forward();
+  );
 
   /// How far it has been swiped towards its edge.
   double _swiped = 0;
 
+  /// The drag in from the edge it follows, when one opened it.
+  _EdgePull? _pull;
+  double _width = 304;
+
+  /// Whether a finger brought it out, which it then finishes in a line.
+  bool _pulled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final pull = widget.renderer._edgePull;
+    final side = widget.props['side'] == 'end' ? 'end' : 'start';
+    if (pull != null && !pull.taken && pull.open == null && pull.side == side) {
+      pull.taken = true;
+      _pulled = true;
+      _pull = pull..addListener(_follow);
+      _shown.value = 0;
+    } else {
+      _shown.forward();
+    }
+  }
+
+  void _follow() {
+    final pull = _pull;
+    if (pull == null) return;
+    pull.width = _width;
+    final open = pull.open;
+    if (open == null) {
+      _shown.value = (pull.moved / _width).clamp(0, 1);
+      return;
+    }
+    pull.removeListener(_follow);
+    _pull = null;
+    if (open) {
+      _shown.animateTo(1, duration: const Duration(milliseconds: 200));
+    } else {
+      final dismiss = widget.renderer._dismiss(widget.props, 'swipe');
+      _shown
+          .animateTo(0, duration: const Duration(milliseconds: 200))
+          .whenComplete(() => dismiss?.call());
+    }
+  }
+
   @override
   void dispose() {
+    _pull?.removeListener(_follow);
     _shown.dispose();
     super.dispose();
   }
@@ -3332,6 +3409,10 @@ class _NodeDrawerState extends State<_NodeDrawer>
       (p['width'] as num?)?.toDouble() ?? 304,
       MediaQuery.sizeOf(context).width - 56,
     );
+    _width = width;
+    _pull?.width = width;
+    // Under the finger it moves as the finger does; by itself, eased.
+    final following = _pulled;
     const round = Radius.circular(16);
     final panel = renderer._modalSurface(
       p,
@@ -3384,7 +3465,10 @@ class _NodeDrawerState extends State<_NodeDrawer>
             builder: (context, child) => Transform.translate(
               offset: Offset(
                 toward *
-                    (width * Curves.easeOut.transform(1 - _shown.value) +
+                    (width *
+                            (following
+                                ? 1 - _shown.value
+                                : Curves.easeOut.transform(1 - _shown.value)) +
                         _swiped),
                 0,
               ),
@@ -5790,7 +5874,7 @@ class _PageSwitchState extends State<_PageSwitch>
 /// 20 pixels in from where the system's own edge gesture ends, as Flutter's
 /// `DrawerController` has them. They are translucent, so a tap there still
 /// reaches what is beneath.
-class _DrawerEdges extends StatelessWidget {
+class _DrawerEdges extends StatefulWidget {
   const _DrawerEdges({
     required this.start,
     required this.end,
@@ -5799,17 +5883,28 @@ class _DrawerEdges extends StatelessWidget {
   });
   final String? start;
   final String? end;
-  final void Function(String eventId) onOpen;
+  final void Function(String eventId, _EdgePull pull) onOpen;
   final Widget child;
 
   @override
+  State<_DrawerEdges> createState() => _DrawerEdgesState();
+}
+
+class _DrawerEdgesState extends State<_DrawerEdges> {
+  /// The drag under way. Kept here, as the strips are built again - when
+  /// the drawer it asks for is drawn, for one - while it goes on.
+  _EdgePull? _pull;
+
+  @override
   Widget build(BuildContext context) {
+    final start = widget.start;
+    final end = widget.end;
+    final onOpen = widget.onOpen;
+    final child = widget.child;
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final insets = MediaQuery.systemGestureInsetsOf(context);
     final (left, right) = rtl ? (end, start) : (start, end);
     Widget strip(String eventId, {required bool fromLeft}) {
-      var moved = 0.0;
-      var sent = false;
       return Positioned(
         top: 0,
         bottom: 0,
@@ -5818,29 +5913,69 @@ class _DrawerEdges extends StatelessWidget {
         width: 20 + (fromLeft ? insets.left : insets.right),
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onHorizontalDragStart: (_) {
-            moved = 0;
-            sent = false;
-          },
+          onHorizontalDragStart: (_) => _pull = null,
           onHorizontalDragUpdate: (details) {
-            moved += fromLeft ? details.delta.dx : -details.delta.dx;
-            if (!sent && moved > 0) {
-              sent = true;
-              onOpen(eventId);
+            final inward = fromLeft ? details.delta.dx : -details.delta.dx;
+            final held = _pull;
+            if (held != null) {
+              held.moveBy(inward);
+            } else if (inward > 0) {
+              final side = fromLeft != rtl ? 'start' : 'end';
+              onOpen(eventId, _pull = _EdgePull(side)..moveBy(inward));
             }
+          },
+          onHorizontalDragEnd: (details) {
+            final speed = details.primaryVelocity ?? 0;
+            _pull?.letGo(fromLeft ? speed : -speed);
+            _pull = null;
+          },
+          onHorizontalDragCancel: () {
+            _pull?.letGo(0);
+            _pull = null;
           },
         ),
       );
     }
 
+    // Its child's size, whatever that is, and clipping nothing of it: the
+    // strips lie over it.
     return Stack(
-      fit: StackFit.expand,
+      fit: StackFit.passthrough,
+      clipBehavior: Clip.none,
       children: [
         child,
         if (left != null) strip(left, fromLeft: true),
         if (right != null) strip(right, fromLeft: false),
       ],
     );
+  }
+}
+
+/// A drag in from a scaffold's edge that asked for the drawer at [side]:
+/// how far in it has come, and - once the finger lets go - whether the
+/// drawer stays open, as Flutter's does past half way or flung inwards.
+class _EdgePull extends ChangeNotifier {
+  _EdgePull(this.side);
+  final String side;
+  double moved = 0;
+
+  /// Null while the finger is down.
+  bool? open;
+
+  /// Whether a drawer has taken it, so only one follows it.
+  bool taken = false;
+
+  /// How wide the drawer following it is, once one is.
+  double width = 304;
+
+  void moveBy(double inward) {
+    moved = math.max(0, moved + inward);
+    notifyListeners();
+  }
+
+  void letGo(double speed) {
+    open = moved >= width / 2 || speed > 365;
+    notifyListeners();
   }
 }
 
@@ -5900,6 +6035,58 @@ class _Heroes extends ChangeNotifier {
 
   Rect? rectOf(String tag, {required int page, required RenderObject within}) =>
       boxOf(tag, page: page)?.rectIn(within);
+}
+
+/// A box that is a `Focus` (`focusEventId`): Flutter's own, with a node of
+/// its own that takes focus or gives it up when `focusVersion` moves on.
+class _NodeFocus extends StatefulWidget {
+  const _NodeFocus({
+    required this.props,
+    required this.onChange,
+    required this.child,
+  });
+  final Map<String, dynamic> props;
+  final ValueChanged<bool> onChange;
+  final Widget child;
+
+  @override
+  State<_NodeFocus> createState() => _NodeFocusState();
+}
+
+class _NodeFocusState extends State<_NodeFocus> {
+  final FocusNode _node = FocusNode();
+
+  @override
+  void didUpdateWidget(_NodeFocus oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final version = widget.props['focusVersion'];
+    if (version == null || version == oldWidget.props['focusVersion']) return;
+    if (widget.props['focusRequested'] == false) {
+      _node.unfocus();
+    } else {
+      _node.requestFocus();
+    }
+  }
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.props;
+    final ready = p['focusable'] == true;
+    return Focus(
+      focusNode: _node,
+      canRequestFocus: ready,
+      skipTraversal: p['focusSkip'] == true,
+      autofocus: ready && p['autofocus'] == true,
+      onFocusChange: widget.onChange,
+      child: widget.child,
+    );
+  }
 }
 
 /// A box with a hero's name: found by it, and not drawn while a copy flies.

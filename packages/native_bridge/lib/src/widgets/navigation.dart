@@ -967,8 +967,8 @@ Map<String, Object>? _transitionMotion(
         );
   final away = at(secondary ? 1 : 0);
   if (identical(away, page)) return null;
-  final motion = _pageMotion(away, page);
-  final home = _pageMotion(at(secondary ? 0 : 1), page);
+  final motion = _pageMotion(context, away, page);
+  final home = _pageMotion(context, at(secondary ? 0 : 1), page);
   // A turn is told from where it ends, which need not be upright: a whole
   // turn starts and ends at the same angle, and still turns.
   final ends = home['rotate'];
@@ -994,8 +994,21 @@ class _Probe extends StatelessWidget {
 /// together: `opacity`, `dx` and `dy` - in parts of the page's own size, as
 /// a [SlideTransition] says - `scale` and `rotate` (radians), with only the
 /// ones that move anything, and the `curve` the first that names one runs
-/// along. Anything else in the way ends the reading there.
-Map<String, Object> _pageMotion(Widget built, Widget page) {
+/// along. An [AnimatedBuilder] or a [ListenableBuilder] is read through what
+/// it builds, a [Transform] by its move, scale and turn (a translation in
+/// pixels is told as a part of the screen's size), and a [KeyedSubtree] or a
+/// [SizeTransition] is passed through - the page is not clipped as one
+/// reveals it. Anything else in the way ends the reading there.
+Map<String, Object> _pageMotion(
+  BuildContext context,
+  Widget built,
+  Widget page,
+) {
+  final screen = MediaQuery.maybeOf(context)?.size;
+  double across(double pixels) =>
+      screen == null || screen.width <= 0 ? 0 : pixels / screen.width;
+  double down(double pixels) =>
+      screen == null || screen.height <= 0 ? 0 : pixels / screen.height;
   var opacity = 1.0;
   var dx = 0.0;
   var dy = 0.0;
@@ -1030,6 +1043,30 @@ Map<String, Object> _pageMotion(Widget built, Widget page) {
       case final Opacity faded:
         opacity *= faded.opacity;
         at = faded.child;
+      case final ListenableBuilder built:
+        at = built.builder(context, built.child);
+      case final KeyedSubtree kept:
+        at = kept.child;
+      case final SizeTransition revealed:
+        at = revealed.child;
+      case final Transform moved:
+        final map = moved._map;
+        final matrix = moved.transform;
+        if (map != null) {
+          dx += across((map['dx'] as num?)?.toDouble() ?? 0);
+          dy += down((map['dy'] as num?)?.toDouble() ?? 0);
+          scale *= (map['scale'] as num?)?.toDouble() ?? 1;
+          rotate += (map['rotate'] as num?)?.toDouble() ?? 0;
+        } else if (matrix != null) {
+          // A flat matrix: its move, and the scale and turn of its first
+          // column.
+          final m = matrix._m;
+          dx += across(m[12]);
+          dy += down(m[13]);
+          scale *= math.sqrt(m[0] * m[0] + m[1] * m[1]);
+          rotate += math.atan2(m[1], m[0]);
+        }
+        at = moved.child;
       default:
         at = null;
     }
@@ -1796,6 +1833,11 @@ class NavigatorState extends State<Navigator> {
     if (before == null || top == null || identical(before, top)) return;
     final pushed = pages.length > depth;
     final popped = pages.length < depth;
+    // A back swipe has moved the page off already.
+    if (_poppedBySwipe) {
+      _poppedBySwipe = false;
+      if (popped) return;
+    }
     // The page that moves is the one whose time it is: arriving, the new
     // one's; leaving, the old one's way back.
     final time = popped
@@ -1842,6 +1884,19 @@ class NavigatorState extends State<Navigator> {
     _base.child = widget.child;
     final pages = [if (!_baseReplaced) _base, ..._routes];
     if (owner._hidden == 0) _noteTransition(owner, pages);
+    // A page to go back to, and one that is not a dialog held full screen:
+    // a back swipe may take this navigator's top page off.
+    final top = pages.lastOrNull;
+    final swipeable =
+        owner._hidden == 0 &&
+        pages.length > 1 &&
+        top is PageRoute &&
+        !top.fullscreenDialog;
+    if (swipeable) {
+      owner._backSwipe = this;
+    } else {
+      _swiping = false;
+    }
     WidgetNode? shown;
     for (final (index, route) in pages.indexed) {
       // Each page has its own keys: the same screen twice on the stack is
@@ -1849,6 +1904,13 @@ class NavigatorState extends State<Navigator> {
       owner._withKeyScope(route._id, () {
         if (index == pages.length - 1) {
           shown = owner.inSlot(route._id, () => _page(route)._render(owner));
+        } else if (swipeable && _swiping && index == pages.length - 2) {
+          // Under a back swipe the page beneath is drawn too, from the same
+          // place, so it keeps its State.
+          owner._beneath = owner.inSlot(
+            route._id,
+            () => _page(route)._render(owner),
+          );
         } else {
           owner._offstage(route._id, _page(route));
         }
@@ -1856,6 +1918,29 @@ class NavigatorState extends State<Navigator> {
     }
     return shown ?? UIBuilder.sizedBox();
   });
+
+  /// Whether a back swipe is under way over this navigator's top page.
+  bool _swiping = false;
+
+  /// Whether the next pop is a back swipe's, which the renderer has moved
+  /// already.
+  bool _poppedBySwipe = false;
+
+  /// A back swipe's phase, as the renderer tells it.
+  void _swiped(String phase) {
+    switch (phase) {
+      case 'start':
+        _swiping = true;
+        _host._requestRebuild();
+      case 'commit':
+        _swiping = false;
+        _poppedBySwipe = true;
+        if (_host._refusePop() || !_popRoute(null)) _poppedBySwipe = false;
+      default:
+        _swiping = false;
+        _host._requestRebuild();
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

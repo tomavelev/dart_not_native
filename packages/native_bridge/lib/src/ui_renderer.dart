@@ -132,6 +132,22 @@ abstract final class RootProps {
   /// old page moves from its place to there, over the new page. Either one
   /// stands for the renderer's own move; an empty one is no move at all.
   static const String pageTransition = 'pageTransition';
+
+  /// Offers a swipe back from the screen's leading edge, as iOS has: the
+  /// event a renderer that draws one raises with `{phase}` - `'start'` as a
+  /// finger sets off from the edge, then `'commit'` once it has let go far
+  /// enough or fast enough to leave the page, or `'cancel'`. Present while
+  /// the page on top can be popped.
+  ///
+  /// Between `'start'` and the end, each tree carries the page beneath as
+  /// [beneath], for the renderer to draw under the page it moves with the
+  /// finger. After `'commit'` the next tree is that page, with no
+  /// [pageTransition]: the renderer has moved it already.
+  static const String backSwipeEventId = 'backSwipeEventId';
+
+  /// The page under the one on top, as a node, while a back swipe is under
+  /// way ([backSwipeEventId]).
+  static const String beneath = 'beneath';
 }
 
 /// Event ids a renderer fires on its own account, with no node asking.
@@ -191,6 +207,27 @@ class UIBuilder {
         for (final entry in root.props.entries)
           if (entry.key != RootProps.pageTransition) entry.key: entry.value,
         RootProps.pageTransition: ?transition,
+      },
+      children: root.children,
+    );
+  }
+
+  /// [root] offering a swipe back ([RootProps.backSwipeEventId]) that calls
+  /// [onSwipe] with its phase, and carrying [beneath] while one is under way.
+  static WidgetNode withBackSwipe(
+    WidgetNode root, {
+    required void Function(String phase) onSwipe,
+    WidgetNode? beneath,
+  }) {
+    final bindings = EventBindings.required;
+    final eventId = bindings.allocate(key: 'backSwipe');
+    bindings.on(eventId, (data) => onSwipe('${data['phase']}'));
+    return WidgetNode(
+      type: root.type,
+      props: {
+        ...root.props,
+        RootProps.backSwipeEventId: eventId,
+        RootProps.beneath: ?beneath?.toJson(),
       },
       children: root.children,
     );

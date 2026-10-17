@@ -182,6 +182,75 @@ class FocusScopeNode {
   bool previousFocus() => _owner._moveFocus(-1);
 }
 
+/// A part of the screen that can take the keyboard's focus, as Flutter's
+/// `Focus` is: a stop for the Tab key, outlined while it has focus, which
+/// [focusNode]'s `requestFocus()` gives it and `unfocus()` takes away, and
+/// which tells [onFocusChange] - and [focusNode]'s `hasFocus` - when it has
+/// focus and when not. It has it while anything inside it does, a button
+/// included. [autofocus] takes it on first showing.
+///
+/// Drawn on the web and in the Flutter host. The native renderers keep
+/// their controls' own keyboard focus, and a [Focus] there is its child.
+class Focus extends Widget {
+  const Focus({
+    super.key,
+    required this.child,
+    this.focusNode,
+    this.autofocus = false,
+    this.onFocusChange,
+    this.canRequestFocus = true,
+    this.skipTraversal = false,
+    this.debugLabel,
+  });
+
+  final Widget child;
+  final FocusNode? focusNode;
+  final bool autofocus;
+  final ValueChanged<bool>? onFocusChange;
+
+  /// False makes it no stop for the keyboard; [skipTraversal] passes it
+  /// over with the Tab key, though it can still be asked for focus.
+  final bool canRequestFocus;
+  final bool skipTraversal;
+  final String? debugLabel;
+
+  @override
+  WidgetNode _render(_Owner owner) {
+    final node = owner._focusFor(focusNode);
+    node._owner = owner;
+    final bindings = EventBindings.required;
+    final id = _idOf(key);
+    final eventId = bindings.allocate(key: id == null ? null : '$id.focus');
+    final changed = onFocusChange;
+    bindings.on(eventId, (data) {
+      final focused = data['focused'] == true;
+      final was = node.hasFocus;
+      node._report(focused);
+      if (was != focused) changed?.call(focused);
+    });
+    final box = UIBuilder.box(
+      id: id,
+      child: owner.inSlot('child', () => child._render(owner)),
+    );
+    final ready = canRequestFocus && node.canRequestFocus;
+    return WidgetNode(
+      type: box.type,
+      props: {
+        ...box.props,
+        'focusEventId': eventId,
+        if (ready) 'focusable': true,
+        if (ready && (skipTraversal || node.skipTraversal)) 'focusSkip': true,
+        if (ready && autofocus) 'autofocus': true,
+        // Version 0 is "never asked", as for a field.
+        if (ready && node._version > 0) 'focusVersion': node._version,
+        if (ready && node._version > 0 && !node._wanted)
+          'focusRequested': false,
+      },
+      children: box.children,
+    );
+  }
+}
+
 /// Flutter's entry to the focus tree, for the two calls apps make on it.
 abstract final class FocusScope {
   static FocusScopeNode of(BuildContext context) =>

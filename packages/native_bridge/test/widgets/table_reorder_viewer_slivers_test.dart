@@ -57,6 +57,62 @@ void main() {
       }
     });
 
+    test('an intrinsic column is as wide as its widest cell', () {
+      double measured(String text) =>
+          (TextPainter(text: TextSpan(text: text))..layout()).width
+              .ceilToDouble();
+      final app = AppTester.widget(
+        _app(
+          const Table(
+            columnWidths: {
+              0: IntrinsicColumnWidth(),
+              1: MaxColumnWidth(FixedColumnWidth(40), IntrinsicColumnWidth()),
+            },
+            children: [
+              TableRow(
+                children: [
+                  Text('short'),
+                  SizedBox(width: 30),
+                  Text('rest'),
+                ],
+              ),
+              TableRow(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('a longer one'),
+                  ),
+                  SizedBox(width: 60),
+                  Text('rest'),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      for (final row in rows(app)) {
+        final cells = row.children!;
+        expect(cells[0].props['width'], measured('a longer one') + 16);
+        expect(cells[1].props['width'], 60, reason: 'the larger of 40 and 60');
+        expect(cells[2].type, 'Expanded');
+      }
+    });
+
+    test('an intrinsic column that cannot be measured shares the width', () {
+      final app = AppTester.widget(
+        _app(
+          Table(
+            defaultColumnWidth: const IntrinsicColumnWidth(),
+            children: [
+              TableRow(children: [Builder(builder: (_) => const Text('a'))]),
+            ],
+          ),
+        ),
+      );
+      final cells = app.ofType('Row').first.children!;
+      expect(cells.single.type, 'Expanded');
+    });
+
     test('a border draws lines between the rows and round the outside', () {
       final plain = AppTester.widget(table()).ofType('Box').length;
       final lined = AppTester.widget(
