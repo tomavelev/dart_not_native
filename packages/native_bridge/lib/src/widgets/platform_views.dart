@@ -50,7 +50,7 @@ class SwipeActions extends Widget {
 
   @override
   WidgetNode _render(_Owner owner) => UIBuilder.swipeActions(
-    child: owner.inSlot('child', () => child._render(owner)),
+    child: _passOn(owner, this, child),
     actions: [
       for (final a in actions)
         (label: a.label, color: a.color, onPressed: a.onPressed),

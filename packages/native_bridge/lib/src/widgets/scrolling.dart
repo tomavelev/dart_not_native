@@ -525,7 +525,10 @@ class SingleChildScrollView extends Widget {
     controller: controller,
     reverse: reverse,
     id: _idOf(key),
-    content: () => _renderChild(owner, child ?? const SizedBox.shrink()),
+    // Across a scroller its child has the scroller's own width.
+    content: () => scrollDirection == Axis.vertical
+        ? _passOn(owner, this, child ?? const SizedBox.shrink())
+        : _renderChild(owner, child ?? const SizedBox.shrink()),
   );
 }
 
@@ -550,7 +553,7 @@ class Scrollbar extends Widget {
   final Radius? radius;
   final bool? interactive;
   @override
-  WidgetNode _render(_Owner owner) => _renderChild(owner, child);
+  WidgetNode _render(_Owner owner) => _passOn(owner, this, child);
 }
 
 /// What a windowed list knows about the room it is in when it is asked for a

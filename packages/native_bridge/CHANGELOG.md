@@ -160,12 +160,12 @@ drawer at the leading edge has that edge instead. Seen on an iOS simulator.
 Android has the system's own back gesture, and the browser its own; neither
 draws this. The Flutter host draws it too, on iOS. `BackSwipeStack` offers
 it to a router of an app's own, and `router.dart`'s `GoRouter` stacks its
-pages in one - a page pushed inside a `ShellRoute` included, whose page
-beneath is drawn in the same frame: while a swipe is under way the page
-beneath is the whole screen as it will be once the top page goes, so a
-nested `Navigator`'s is drawn inside its scaffold too. The whole screen
-moves with the finger, the shell's bar with it, where Flutter would move
-the inner page alone. A `Hero` with `transitionOnUserGestures` flies with
+pages in one - a page pushed inside a `ShellRoute` included. Where the page
+a swipe takes off is not the whole screen - inside a `ShellRoute`'s frame,
+or a `BackSwipeStack` of an app's own inside a scaffold - its node says so
+(`RootProps.backSwipePage`) and `beneath` is just the page under it: the
+renderer moves that page alone, the page beneath drawn in its place, and the
+frame's bars stay still, as in Flutter. A `Hero` with `transitionOnUserGestures` flies with
 the swipe on iOS (`heroGestures`), as far as the page has moved, to its
 counterpart on the page beneath - in the Flutter host as well. Seen on an
 iOS simulator.
@@ -209,6 +209,37 @@ every renderer clips it to the share shown, growing from where its alignment
 says - seen on an iOS simulator and an Android emulator, and tested in the
 browser and the Flutter host.
 
+### `AnimationController`
+
+An `AnimationController` - `forward`, `reverse`, `animateTo`, `animateBack`,
+`repeat` (with `reverse`, `period` and `count`), `fling`, `stop`, `reset`,
+`value =`, status listeners and the `TickerFuture` each run returns - drives
+`FadeTransition`, `ScaleTransition`, `RotationTransition`, `SlideTransition`,
+`SizeTransition` and an `AnimatedBuilder`, through a `CurvedAnimation` or a
+tween's `animate` too. Nothing ticks: a run is one tree built at the value it
+ends at, carrying how long it takes and its curve, and the renderer moves the
+screen there; in an `AnimatedBuilder` every box built - an `Opacity`, a
+`Transform`, a `Container`'s colour or size - moves over the run. Listeners
+hear a run start and end, not each frame, and `value` read outside a build is
+where the run is by the clock. A run started while the screen is built, from
+`initState`, is drawn at its start first, so an entrance is seen; a slide
+whose child has not been measured yet stays out of sight until it has, and
+then slides from where it starts. Each lap of `repeat` is a run of its own,
+and without `reverse` the value goes straight back between laps. Seen on an
+iOS simulator, an Android emulator and in Chrome: a pulse, a spin, a page
+whose square slides in from `initState`, and a button that turns and fades a
+box through an `AnimatedBuilder`. On the emulator, which was drawing frames
+of up to three seconds at the time, the page's push held its main thread
+past the end of the slide's run, so the square arrived in place; on the
+simulator and in Chrome it slid in.
+
+Two renderer fixes it needed: iOS turns a box by the angle when it changes
+by half a turn or more, since UIKit moves between two matrices and a whole
+turn is no change to one (a `RotationTransition` repeating stood still); and
+the Flutter host builds a box that says `animateMs: 0` as one that moves, so
+a later tree that gives it a time moves it from where it was rather than
+building it afresh at its end.
+
 ### A `DataTable`'s columns follow their cells
 
 A column's share of the table's width is its widest cell, measured as an
@@ -229,7 +260,13 @@ as the picture at that width (`fillWidth` on the node), as in Flutter.
 Anywhere else - centred, aligned, in a row - its own width is kept. The
 widget layer says which by following what each parent hands its child
 (`_Owner._tightWidth`); a widget it does not know leaves the image as it
-was. A `Scaffold`'s body is not yet counted as such a room. It was drawn
+was. A `Scaffold`'s body is such a room, and so is a vertical
+`SingleChildScrollView`; a `Card`, a `Hero`, a `Dismissible` and the widgets
+that leave their child's room alone - `GestureDetector`, `InkWell`,
+`Semantics`, `Opacity`, a clip, `Tooltip`, `SafeArea`, `Theme` and any
+inherited widget, the implicit animations - hand it on; a `ListTile`'s parts
+are as wide as they ask, as in Flutter. On the web a card holding such an
+image drops the kits' reading width and is as wide as the room. It was drawn
 three ways before: at its width at the start on iOS and the web, and the
 box's width with the picture shrunk in the middle on Android. Seen on an
 iOS simulator, an Android emulator and in Chrome.

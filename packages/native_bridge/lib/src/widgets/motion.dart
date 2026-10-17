@@ -5,8 +5,9 @@ part of '../../widgets.dart';
 //
 // The tree says what the screen *is*, and a renderer animates the difference
 // from what it was. So the animated widgets here are the plain ones with a
-// duration attached, and there is no AnimationController: the frames happen
-// on the far side of the channel.
+// duration attached, and an AnimationController is a run from one value to
+// another that the tree is built at the end of: the frames happen on the far
+// side of the channel.
 // ---------------------------------------------------------------------------
 
 /// How an animation is paced over its duration.
@@ -153,10 +154,11 @@ abstract final class Curves {
 /// Where an animation is in its run.
 enum AnimationStatus { dismissed, forward, reverse, completed }
 
-/// A value that changes over time, in Flutter. Nothing here animates in Dart,
-/// so the only animations there are stand still: the class exists for the
-/// signatures that name it - a progress indicator's `valueColor`, a page
-/// route's builder.
+/// A value that changes over time, in Flutter. The ones that move are an
+/// [AnimationController] and what is made from one - a [CurvedAnimation], a
+/// tween's [Animatable.animate] - and they move as runs the renderer plays
+/// (see [AnimationController]); the rest stand still, for the signatures that
+/// name them - a progress indicator's `valueColor`, a page route's builder.
 abstract class Animation<T> extends Listenable {
   const Animation();
   T get value;
@@ -208,6 +210,24 @@ Curve? _curveOfAnimatable(Animatable<Object?> animatable) =>
       _ => null,
     };
 
+/// How long a transition widget takes to move to the value [animation] has
+/// now - over an [AnimatedSwitcher]'s transition, or over the run of the
+/// controller that drives it, which it then follows; null when it is
+/// simply drawn at its value.
+({Duration duration, Curve curve})? _timeFor(
+  BuildContext context,
+  Animation<Object?> animation,
+) {
+  final switching = _TransitionTime.of(context);
+  if (switching != null) {
+    return (duration: switching.duration, curve: switching.curve);
+  }
+  if (!_controlled(animation)) return null;
+  _Owner._current?._watch(animation);
+  return _runTime(animation) ??
+      (duration: Duration.zero, curve: Curves.linear);
+}
+
 /// How long a transition widget takes to move to the value its animation
 /// has now: set round what an [AnimatedSwitcher]'s `transitionBuilder`
 /// returns, which is built at the animation's start and then at its end.
@@ -231,11 +251,12 @@ class _TransitionTime extends InheritedWidget {
 
 /// A child at the opacity an [Animation] says, in Flutter.
 ///
-/// An animation here stands still (see [Animation]), so the child is drawn at
-/// the value it has when the widget is built - which, for the animation a
-/// page route hands its `buildTransitions`, is fully shown. Built by an
-/// [AnimatedSwitcher]'s `transitionBuilder`, it fades from the value at the
-/// start to the value at the end.
+/// Driven by an [AnimationController], it fades over each of its runs (and
+/// so do the other transitions below). Otherwise the child is drawn at the
+/// value the animation has when the widget is built - which, for the
+/// animation a page route hands its `buildTransitions`, is fully shown.
+/// Built by an [AnimatedSwitcher]'s `transitionBuilder`, it fades from the
+/// value at the start to the value at the end.
 class FadeTransition extends StatelessWidget {
   const FadeTransition({
     super.key,
@@ -249,9 +270,9 @@ class FadeTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final time = _timeFor(context, opacity);
     final value = opacity.value.clamp(0.0, 1.0).toDouble();
     final child = this.child ?? const SizedBox.shrink();
-    final time = _TransitionTime.of(context);
     if (time != null) {
       return AnimatedOpacity(
         opacity: value,
@@ -283,7 +304,7 @@ class ScaleTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final time = _TransitionTime.of(context);
+    final time = _timeFor(context, scale);
     return AnimatedScale(
       scale: scale.value,
       duration: time?.duration ?? Duration.zero,
@@ -310,7 +331,7 @@ class RotationTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final time = _TransitionTime.of(context);
+    final time = _timeFor(context, turns);
     return AnimatedRotation(
       turns: turns.value,
       duration: time?.duration ?? Duration.zero,
@@ -338,7 +359,7 @@ class SlideTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final time = _TransitionTime.of(context);
+    final time = _timeFor(context, position);
     var offset = position.value;
     // Read from the right, a slide along the line is the other way round.
     if (textDirection == TextDirection.rtl) offset = Offset(-offset.dx, offset.dy);
@@ -372,7 +393,7 @@ class SizeTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final time = _TransitionTime.of(context);
+    final time = _timeFor(context, sizeFactor);
     final shown = sizeFactor.value > 0
         ? (child ?? const SizedBox.shrink())
         : (axis == Axis.vertical
@@ -568,6 +589,438 @@ const Animation<double> kAlwaysDismissedAnimation = _FixedAnimation(
   AnimationStatus.dismissed,
 );
 
+/// How long after a tree that shows where something starts the tree that
+/// moves it is built: long enough to be a tree of its own, which a renderer
+/// does not take together with the one before.
+const _nextTree = Duration(milliseconds: 40);
+
+/// Whether an animation that is done takes its time, when the platform asks
+/// for less motion. Accepted; a run here always takes its time.
+enum AnimationBehavior { normal, preserve }
+
+/// A run of an [AnimationController] from one value to another.
+class _ControllerRun {
+  _ControllerRun(this.from, this.to, this.duration, this.curve, this.startPass);
+  final double from;
+  final double to;
+  final Duration duration;
+  final Curve curve;
+
+  /// The build it was started in, if it was started in one: that build
+  /// shows where it starts, and the next where it ends.
+  final int? startPass;
+  final Stopwatch clock = Stopwatch()..start();
+  final TickerFuture future = TickerFuture._();
+  Timer? timer;
+
+  double get along => duration == Duration.zero
+      ? 1
+      : (clock.elapsedMicroseconds / duration.inMicroseconds)
+            .clamp(0.0, 1.0)
+            .toDouble();
+}
+
+/// A value that runs between [lowerBound] and [upperBound] over [duration],
+/// in Flutter: what an explicit animation - a shake, a pulse, a staggered
+/// entrance, a ring that eases - is driven by, through the transitions
+/// ([FadeTransition], [ScaleTransition], [RotationTransition],
+/// [SlideTransition], [SizeTransition]) or an [AnimatedBuilder].
+///
+/// ```dart
+/// late final _controller = AnimationController(
+///   vsync: this,
+///   duration: const Duration(seconds: 1),
+/// )..repeat(reverse: true);
+///
+/// FadeTransition(opacity: _controller, child: const Text('Listening'))
+/// ```
+///
+/// What differs: nothing here ticks. A run - [forward], [reverse],
+/// [animateTo], each lap of [repeat] - is one build at the value it ends at,
+/// carrying the run's length and curve, and the renderer moves the screen
+/// there. So listeners and status listeners hear a run start and end, not
+/// each frame; [value] read outside a build is where the run is by the clock.
+/// Inside an [AnimatedBuilder] the boxes built - an [Opacity], a
+/// [Transform], a [Container]'s size or colour - move over the run; what has
+/// no box to move, a [Text]'s words or a [CustomPaint]'s picture, is drawn at
+/// the end. A run started while the screen is being built - from `initState`
+/// - is drawn at its start first, so an entrance is seen.
+class AnimationController extends Animation<double> {
+  AnimationController({
+    double? value,
+    this.duration,
+    this.reverseDuration,
+    this.debugLabel,
+    this.lowerBound = 0.0,
+    this.upperBound = 1.0,
+    this.animationBehavior = AnimationBehavior.normal,
+    required TickerProvider vsync,
+  }) : _value = (value ?? lowerBound).clamp(lowerBound, upperBound).toDouble() {
+    _status = _value == upperBound
+        ? AnimationStatus.completed
+        : AnimationStatus.dismissed;
+  }
+
+  /// A controller with no bounds, starting at [value].
+  AnimationController.unbounded({
+    double value = 0.0,
+    this.duration,
+    this.reverseDuration,
+    this.debugLabel,
+    required TickerProvider vsync,
+    this.animationBehavior = AnimationBehavior.preserve,
+  }) : lowerBound = double.negativeInfinity,
+       upperBound = double.infinity,
+       _value = value,
+       _status = AnimationStatus.forward;
+
+  Duration? duration;
+  Duration? reverseDuration;
+  final String? debugLabel;
+  final double lowerBound;
+  final double upperBound;
+  final AnimationBehavior animationBehavior;
+
+  double _value;
+  late AnimationStatus _status;
+  _ControllerRun? _run;
+
+  /// Set while [repeat] goes on: the laps it has left, null for ever.
+  ({double min, double max, bool reverse, Duration period, int? left})? _laps;
+
+  final List<VoidCallback> _listeners = [];
+  final List<void Function(AnimationStatus)> _statusListeners = [];
+  bool _disposed = false;
+
+  /// The run under way, if any.
+  _ControllerRun? get _running => _run;
+
+  /// Where it is: inside a build, where the run under way ends - or starts,
+  /// in the build it was started in - and elsewhere where it is by the clock.
+  @override
+  double get value {
+    final run = _run;
+    if (run == null) return _value;
+    final owner = _Owner._current;
+    if (owner != null && owner._building) {
+      return run.startPass == owner._pass ? run.from : run.to;
+    }
+    return run.from + (run.to - run.from) * run.curve.transform(run.along);
+  }
+
+  /// Stops and goes to [newValue] at once.
+  set value(double newValue) {
+    _stopRun();
+    _laps = null;
+    _value = newValue.clamp(lowerBound, upperBound).toDouble();
+    _settleStatus();
+    _notify();
+  }
+
+  @override
+  AnimationStatus get status => _status;
+
+  bool get isAnimating => _run != null;
+
+  /// How fast it moves, in units a second; zero at rest.
+  double get velocity {
+    final run = _run;
+    if (run == null || run.duration == Duration.zero) return 0;
+    return (run.to - run.from) / (run.duration.inMicroseconds / 1e6);
+  }
+
+  /// Cannot be made to run off another clock here; accepted.
+  void resync(TickerProvider vsync) {}
+
+  /// Runs to [upperBound], from [from] if given.
+  TickerFuture forward({double? from}) {
+    if (from != null) _value = from;
+    _laps = null;
+    return _animate(upperBound, null, Curves.linear, AnimationStatus.forward);
+  }
+
+  /// Runs to [lowerBound], from [from] if given.
+  TickerFuture reverse({double? from}) {
+    if (from != null) _value = from;
+    _laps = null;
+    return _animate(lowerBound, null, Curves.linear, AnimationStatus.reverse);
+  }
+
+  /// Runs to [target], over [duration] if given and along [curve].
+  TickerFuture animateTo(
+    double target, {
+    Duration? duration,
+    Curve curve = Curves.linear,
+  }) {
+    _laps = null;
+    return _animate(target, duration, curve, AnimationStatus.forward);
+  }
+
+  /// Runs back to [target], as a reverse run.
+  TickerFuture animateBack(
+    double target, {
+    Duration? duration,
+    Curve curve = Curves.linear,
+  }) {
+    _laps = null;
+    return _animate(target, duration, curve, AnimationStatus.reverse);
+  }
+
+  /// Runs from [min] to [max] again and again - back and forth with
+  /// [reverse] - [count] times, or until stopped. Each lap is a run of its
+  /// own; without [reverse] the value goes straight back to [min] between
+  /// them, which is not animated.
+  TickerFuture repeat({
+    double? min,
+    double? max,
+    bool reverse = false,
+    Duration? period,
+    int? count,
+  }) {
+    final lo = min ?? lowerBound;
+    final hi = max ?? upperBound;
+    final lap = period ?? duration;
+    assert(lap != null, 'An AnimationController needs a duration to repeat.');
+    _stopRun();
+    _laps = (
+      min: lo,
+      max: hi,
+      reverse: reverse,
+      period: lap ?? Duration.zero,
+      left: count,
+    );
+    final future = TickerFuture._();
+    _nextLap(future);
+    return future;
+  }
+
+  /// Flung with [velocity]: runs to the bound it points at, as fast as a
+  /// spring would be most of the way there.
+  TickerFuture fling({double velocity = 1.0}) {
+    _laps = null;
+    final target = velocity < 0 ? lowerBound : upperBound;
+    final time = Duration(
+      microseconds: (300000 / velocity.abs().clamp(0.5, 10.0)).round(),
+    );
+    return _animate(
+      target,
+      time,
+      Curves.easeOut,
+      velocity < 0 ? AnimationStatus.reverse : AnimationStatus.forward,
+    );
+  }
+
+  /// Stops where it is.
+  void stop({bool canceled = true}) {
+    final run = _run;
+    if (run == null && _laps == null) return;
+    _laps = null;
+    if (run != null) _value = value;
+    _stopRun();
+    _notify();
+  }
+
+  /// Back to [lowerBound], stopped.
+  void reset() => value = lowerBound;
+
+  void dispose() {
+    _stopRun();
+    _laps = null;
+    _disposed = true;
+    _listeners.clear();
+    _statusListeners.clear();
+  }
+
+  @override
+  void addListener(VoidCallback listener) => _listeners.add(listener);
+  @override
+  void removeListener(VoidCallback listener) => _listeners.remove(listener);
+  void addStatusListener(void Function(AnimationStatus) listener) =>
+      _statusListeners.add(listener);
+  void removeStatusListener(void Function(AnimationStatus) listener) =>
+      _statusListeners.remove(listener);
+
+  void _notify() {
+    if (_disposed) return;
+    for (final listener in List.of(_listeners)) {
+      listener();
+    }
+  }
+
+  void _setStatus(AnimationStatus status) {
+    if (_status == status || _disposed) return;
+    _status = status;
+    for (final listener in List.of(_statusListeners)) {
+      listener(status);
+    }
+  }
+
+  void _settleStatus() => _setStatus(
+    _value == upperBound
+        ? AnimationStatus.completed
+        : _value == lowerBound
+        ? AnimationStatus.dismissed
+        : (_status == AnimationStatus.reverse
+              ? AnimationStatus.reverse
+              : AnimationStatus.forward),
+  );
+
+  void _stopRun() {
+    final run = _run;
+    if (run == null) return;
+    run.timer?.cancel();
+    run.future._complete();
+    _run = null;
+  }
+
+  TickerFuture _animate(
+    double target,
+    Duration? time,
+    Curve curve,
+    AnimationStatus status, {
+    TickerFuture? future,
+  }) {
+    final from = _run == null ? _value : value;
+    _stopRun();
+    final to = target.clamp(lowerBound, upperBound).toDouble();
+    // As Flutter does: the whole duration for the whole range, the part of it
+    // for the part.
+    final whole = time ??
+        (status == AnimationStatus.reverse
+            ? reverseDuration ?? duration
+            : duration);
+    assert(whole != null, 'An AnimationController needs a duration to run.');
+    final range = upperBound - lowerBound;
+    final part = time != null || !range.isFinite || range == 0
+        ? 1.0
+        : ((to - from).abs() / range).clamp(0.0, 1.0);
+    final length = Duration(
+      microseconds: ((whole ?? Duration.zero).inMicroseconds * part).round(),
+    );
+    _value = from;
+    final owner = _Owner._current;
+    final pass = owner != null && owner._building ? owner._pass : null;
+    final run = _run = _ControllerRun(from, to, length, curve, pass);
+    final done = future ?? run.future;
+    _setStatus(status);
+    if (length == Duration.zero || from == to) {
+      _finish(run, done);
+      return done;
+    }
+    run.timer = Timer(length, () => _finish(run, done));
+    if (pass != null) {
+      // Started inside a build, which shows where it starts: the next one
+      // shows where it goes.
+      Timer(_nextTree, _notify);
+    } else {
+      _notify();
+    }
+    return done;
+  }
+
+  void _finish(_ControllerRun run, TickerFuture future) {
+    if (!identical(_run, run)) return;
+    _run = null;
+    _value = run.to;
+    if (_laps != null) {
+      _notify();
+      _nextLap(future);
+      return;
+    }
+    _settleStatus();
+    run.future._complete();
+    future._complete();
+    _notify();
+  }
+
+  /// Starts the next lap of [repeat], or finishes it.
+  void _nextLap(TickerFuture future) {
+    final laps = _laps;
+    if (laps == null || _disposed) return;
+    if (laps.left == 0) {
+      _laps = null;
+      _settleStatus();
+      future._complete();
+      _notify();
+      return;
+    }
+    _laps = (
+      min: laps.min,
+      max: laps.max,
+      reverse: laps.reverse,
+      period: laps.period,
+      left: laps.left == null ? null : laps.left! - 1,
+    );
+    final back = laps.reverse && (_value - laps.max).abs() < 1e-9;
+    if (!laps.reverse && (_value - laps.max).abs() < 1e-9) {
+      // Straight back to the start, shown, and then the lap.
+      _value = laps.min;
+      _notify();
+      Timer(_nextTree, () {
+        if (_laps != null && _run == null) _lap(laps, false, future);
+      });
+      return;
+    }
+    _lap(laps, back, future);
+  }
+
+  void _lap(
+    ({double min, double max, bool reverse, Duration period, int? left}) laps,
+    bool back,
+    TickerFuture future,
+  ) {
+    final target = back ? laps.min : laps.max;
+    final range = (laps.max - laps.min).abs();
+    final part = range == 0 ? 1.0 : ((target - _value).abs() / range);
+    _animate(
+      target,
+      Duration(microseconds: (laps.period.inMicroseconds * part).round()),
+      Curves.linear,
+      back ? AnimationStatus.reverse : AnimationStatus.forward,
+      future: future,
+    );
+  }
+}
+
+/// The controller [animation] is driven by, along whatever it is made of,
+/// while that is running.
+AnimationController? _runningUnder(Animation<Object?> animation) =>
+    switch (animation) {
+      AnimationController() => animation._running == null ? null : animation,
+      CurvedAnimation(:final parent) => _runningUnder(parent),
+      ReverseAnimation(:final parent) => _runningUnder(parent),
+      _AnimatedEvaluation(:final parent) => _runningUnder(parent),
+      _ => null,
+    };
+
+/// Whether [animation] is driven by a controller at all.
+bool _controlled(Animation<Object?> animation) => switch (animation) {
+  AnimationController() => true,
+  CurvedAnimation(:final parent) => _controlled(parent),
+  ReverseAnimation(:final parent) => _controlled(parent),
+  _AnimatedEvaluation(:final parent) => _controlled(parent),
+  _ => false,
+};
+
+/// How long the run [animation] is part of takes, and along what curve -
+/// the one the animation is curved by, else the run's own; null when it is
+/// not running.
+({Duration duration, Curve curve})? _runTime(Animation<Object?> animation) {
+  final controller = _runningUnder(animation);
+  final run = controller?._running;
+  if (run == null) return null;
+  // The build that shows where the run starts does not move.
+  final owner = _Owner._current;
+  if (owner != null && owner._building && run.startPass == owner._pass) {
+    return (duration: Duration.zero, curve: Curves.linear);
+  }
+  final curve = _curveIn(animation);
+  return (
+    duration: run.duration,
+    curve: curve ?? run.curve,
+  );
+}
+
 /// Fades [child] whenever [opacity] changes - Flutter's `AnimatedOpacity`.
 ///
 /// It works the way the rest of the framework does: the tree says what the
@@ -608,7 +1061,7 @@ class AnimatedOpacity extends Widget {
       opacity: opacity,
       duration: duration,
       curve: curve.name,
-      child: _renderChild(owner, child ?? const SizedBox.shrink()),
+      child: _passOn(owner, this, child ?? const SizedBox.shrink()),
     ),
     opacity,
     duration,
@@ -729,7 +1182,7 @@ class AnimatedScale extends Widget {
       animateMs: duration.inMilliseconds,
       curve: curve.name,
       id: _idOf(key),
-      child: child == null ? null : _renderChild(owner, child!),
+      child: child == null ? null : _passOn(owner, this, child!),
     ),
     scale,
     duration,
@@ -763,7 +1216,7 @@ class AnimatedRotation extends Widget {
       animateMs: duration.inMilliseconds,
       curve: curve.name,
       id: _idOf(key),
-      child: child == null ? null : _renderChild(owner, child!),
+      child: child == null ? null : _passOn(owner, this, child!),
     ),
     turns,
     duration,
@@ -799,6 +1252,16 @@ class AnimatedSlide extends StatefulWidget {
 class _AnimatedSlideState extends State<AnimatedSlide> {
   Size? _size;
 
+  /// The offset it first stood at, before its size was known - out of sight
+  /// until then if that is not its place, and drawn there once measured, so
+  /// that a slide in from the side (an entrance) is seen.
+  Offset? _unplaced;
+
+  /// Where it is held, once measured, until the tree that slides it from
+  /// there: any build before then - its size settling, say - draws it there
+  /// too, rather than at the end in the same tree.
+  Offset? _held;
+
   void _report(double width, double height) {
     final old = _size;
     if (old != null &&
@@ -814,19 +1277,40 @@ class _AnimatedSlideState extends State<AnimatedSlide> {
   Widget build(BuildContext context) => _NodeWidget((owner) {
     final size = _size;
     final child = widget.child;
+    var offset = widget.offset;
+    var ms = widget.duration.inMilliseconds;
+    if (size == null) {
+      _unplaced ??= widget.offset;
+    } else if (_unplaced case final from?) {
+      _unplaced = null;
+      if (from != widget.offset) {
+        // Where it started, at once; where it goes, a little after - in a
+        // tree of its own, not one the renderer takes with the first.
+        _held = from;
+        Timer(_nextTree, () {
+          if (mounted) setState(() => _held = null);
+        });
+      }
+    }
+    if (_held case final from?) {
+      offset = from;
+      ms = 0;
+    }
+    final hidden = size == null && _unplaced != Offset.zero;
     return owner._animated(
       UIBuilder.box(
         transform: size == null
             ? null
             : {
-                'dx': widget.offset.dx * size.width,
-                'dy': widget.offset.dy * size.height,
+                'dx': offset.dx * size.width,
+                'dy': offset.dy * size.height,
               },
+        opacity: hidden ? 0 : null,
         onSize: _report,
-        animateMs: widget.duration.inMilliseconds,
+        animateMs: ms,
         curve: widget.curve.name,
         id: _idOf(widget.key),
-        child: child == null ? null : _renderChild(owner, child),
+        child: child == null ? null : _passOn(owner, owner._node!, child),
       ),
       // The offset asked for, not the pixels it comes to: learning the
       // child's size is not the slide moving.
@@ -863,7 +1347,7 @@ class AnimatedPadding extends Widget {
         animateMs: duration.inMilliseconds,
         curve: curve.name,
         id: _idOf(key),
-        child: child == null ? null : _renderChild(owner, child!),
+        child: child == null ? null : _passOn(owner, this, child!),
       ),
       insets.toString(),
       duration,

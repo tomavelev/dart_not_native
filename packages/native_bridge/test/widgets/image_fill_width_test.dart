@@ -88,6 +88,43 @@ void main() {
     expect(fills(Row(children: [Expanded(child: image())])), isTrue);
   });
 
+  test('as a scaffold\'s body, and in a scroller there', () {
+    expect(fills(image()), isTrue);
+    expect(fills(SingleChildScrollView(child: image())), isTrue);
+    expect(
+      fills(
+        SingleChildScrollView(scrollDirection: Axis.horizontal, child: image()),
+      ),
+      isNull,
+    );
+  });
+
+  test('through a card and the widgets that leave a child\'s room alone', () {
+    for (final wrap in <Widget Function(Widget)>[
+      (c) => Card(child: c),
+      (c) => Card(color: const Color(0xFFEEEEEE), child: c),
+      (c) => GestureDetector(onTap: () {}, child: c),
+      (c) => InkWell(onTap: () {}, child: c),
+      (c) => Hero(tag: 'h', child: c),
+      (c) => Semantics(label: 'a picture', child: c),
+      (c) => Opacity(opacity: 0.5, child: c),
+      (c) => ClipRRect(borderRadius: BorderRadius.circular(8), child: c),
+      (c) => Tooltip(message: 'tip', child: c),
+      (c) => Dismissible(key: const ValueKey('d'), child: c),
+      (c) => Theme(data: ThemeData(), child: c),
+      (c) => SafeArea(child: c),
+    ]) {
+      expect(fills(ListView(children: [wrap(image())])), isTrue);
+    }
+  });
+
+  test('not in a list tile, whose parts are as wide as they ask', () {
+    expect(
+      fills(ListView(children: [ListTile(title: image())])),
+      isNull,
+    );
+  });
+
   test('not where it is free to be its own width', () {
     expect(fills(Column(children: [image()])), isNull);
     expect(fills(Row(children: [image()])), isNull);

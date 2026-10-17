@@ -146,8 +146,17 @@ abstract final class RootProps {
   static const String backSwipeEventId = 'backSwipeEventId';
 
   /// The page under the one on top, as a node, while a back swipe is under
-  /// way ([backSwipeEventId]).
+  /// way ([backSwipeEventId]). The whole screen as it will be once the page
+  /// is popped - unless a node in the tree is [backSwipePage], and then just
+  /// the page that takes that node's place.
   static const String beneath = 'beneath';
+
+  /// A node prop, not a root one: `true` on the page a back swipe moves
+  /// where that page is not the whole screen - a page inside a
+  /// `ShellRoute`'s frame, or a `BackSwipeStack`'s inside a scaffold. The
+  /// renderer moves that node's view alone, with [beneath] drawn under it in
+  /// its place, and what is around it - the frame's bars - stays still.
+  static const String backSwipePage = 'backSwipePage';
 }
 
 /// Event ids a renderer fires on its own account, with no node asking.

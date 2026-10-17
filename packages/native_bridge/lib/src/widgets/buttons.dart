@@ -1017,7 +1017,7 @@ class InkWell extends Widget {
 
   @override
   WidgetNode _render(_Owner owner) {
-    final node = child == null ? null : _renderChild(owner, child!);
+    final node = child == null ? null : _passOn(owner, this, child!);
     final tap = onTap;
     final doubleTap = onDoubleTap;
     final longPress = onLongPress;

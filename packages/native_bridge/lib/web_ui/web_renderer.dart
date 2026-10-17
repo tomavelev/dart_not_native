@@ -1544,6 +1544,12 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
   // Node builders
   // ---------------------------------------------------------------------------
 
+  /// Whether [node] is as wide as the room it is laid out in: an image the
+  /// tree says fills it, or something that only wraps one.
+  static bool _fillsWidth(WidgetNode node) =>
+      node.props['fillWidth'] == true ||
+      (node.children?.length == 1 && _fillsWidth(node.children!.single));
+
   web.Element _build(WidgetNode node) {
     final p = node.props;
     // node-types:begin
@@ -1894,6 +1900,11 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
           title: _optStr(p['title']),
           backgroundColor: background is String ? background : null,
         );
+        // A card the width of the room is as wide as it in Flutter; the
+        // kits' cards stop at a reading width otherwise.
+        if (node.children?.any(_fillsWidth) ?? false) {
+          _style(parts.root, 'max-width', 'none');
+        }
         _host(parts.childHost);
         return parts.root;
       case 'Badge':

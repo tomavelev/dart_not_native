@@ -851,6 +851,31 @@ class NativeUIRenderer {
 
   private let backSwipeDelegate = BackSwipeDelegate()
 
+  /// The views of pages a swipe back moves by themselves, being less than
+  /// the screen (`backSwipePage`) - a page in a `ShellRoute`'s frame.
+  private let swipePages = NSHashTable<UIView>.weakObjects()
+
+  /// What the swipe under way moves: such a page, or else the container.
+  private weak var swiped: UIView?
+
+  /// A page moving by itself is given the screen's colour while it moves,
+  /// so the page beneath does not show through it; what it had before.
+  private var swipedBackground: UIColor??
+
+  /// The page in [container] a swipe moves by itself, if there is one.
+  private func swipePage(in container: UIView) -> UIView? {
+    swipePages.allObjects.first { $0.window != nil && $0.isDescendant(of: container) }
+  }
+
+  /// Where [view] stands in [space] with no transform on it.
+  private func restingFrame(_ view: UIView, in space: UIView) -> CGRect {
+    let size = view.bounds.size
+    let center = view.superview?.convert(view.center, to: space) ?? view.center
+    return CGRect(
+      x: center.x - size.width / 2, y: center.y - size.height / 2,
+      width: size.width, height: size.height)
+  }
+
   /// Has a pan in from the screen's leading edge over [container] move the
   /// page with the finger, as iOS's own navigation does.
   private func watchBackSwipe(_ container: UIView) {
@@ -872,7 +897,8 @@ class NativeUIRenderer {
   /// Draws [beneath] under the container, a third of the way off, while a
   /// swipe is under way; drops it when none is.
   private func showBeneath(_ beneath: [String: Any]?, under container: UIView) {
-    guard backSwiping || backSwipeCommitted, let beneath, let above = container.superview else {
+    let moving = swiped ?? container
+    guard backSwiping || backSwipeCommitted, let beneath, let above = moving.superview else {
       if !backSwiping && !backSwipeCommitted {
         beneathView?.removeFromSuperview()
         beneathView = nil
@@ -882,14 +908,16 @@ class NativeUIRenderer {
     }
     let tree = normalized(beneath)
     if let shown = beneathTree, valueEqual(shown, tree), beneathView != nil { return }
-    let moved = beneathView?.transform ?? beneathOffset(container, progress: 0)
+    let moved = beneathView?.transform ?? beneathOffset(moving, progress: 0)
     beneathView?.removeFromSuperview()
     guard let view = renderWidget(tree) else { return }
     applyDirection(view)
-    view.frame = container.frame
+    // In the moving page's place: the screen's, or the page's in its frame.
+    view.frame = restingFrame(moving, in: above)
     view.backgroundColor = container.backgroundColor ?? surfaceColor()
     view.isUserInteractionEnabled = false
-    above.insertSubview(view, belowSubview: container)
+    view.clipsToBounds = moving !== container
+    above.insertSubview(view, belowSubview: moving)
     view.transform = moved
     beneathView = view
     beneathTree = tree
@@ -907,21 +935,27 @@ class NativeUIRenderer {
 
   @objc private func backSwiped(_ sender: UIPanGestureRecognizer) {
     guard let container = sender.view else { return }
+    if sender.state == .began { swiped = swipePage(in: container) ?? container }
+    let moving = swiped ?? container
     let inward: CGFloat = isRTL ? -1 : 1
-    let width = max(1, container.bounds.width)
+    let width = max(1, moving.bounds.width)
     let moved = max(0, sender.translation(in: container.superview).x * inward)
     let progress = min(1, moved / width)
     switch sender.state {
     case .began:
       guard let eventId = backSwipeEventId else { return }
       backSwiping = true
-      container.layer.shadowColor = UIColor.black.cgColor
-      container.layer.shadowOpacity = 0.2
-      container.layer.shadowRadius = 8
+      moving.layer.shadowColor = UIColor.black.cgColor
+      moving.layer.shadowOpacity = 0.2
+      moving.layer.shadowRadius = 8
+      if moving !== container, moving.backgroundColor == nil || moving.backgroundColor == .clear {
+        swipedBackground = .some(moving.backgroundColor)
+        moving.backgroundColor = container.backgroundColor ?? surfaceColor()
+      }
       send(eventId: eventId, data: ["phase": "start"])
     case .changed:
-      container.transform = CGAffineTransform(translationX: inward * moved, y: 0)
-      beneathView?.transform = beneathOffset(container, progress: progress)
+      moving.transform = CGAffineTransform(translationX: inward * moved, y: 0)
+      beneathView?.transform = beneathOffset(moving, progress: progress)
       placeSwipeFlights(container, progress: progress)
     case .ended, .cancelled, .failed:
       let flung = sender.velocity(in: container.superview).x * inward > 500
@@ -932,17 +966,17 @@ class NativeUIRenderer {
       UIView.animate(
         withDuration: 0.25, delay: 0, options: [.curveEaseOut],
         animations: {
-          container.transform =
+          moving.transform =
             leave ? CGAffineTransform(translationX: inward * width, y: 0) : .identity
           self.beneathView?.transform =
-            leave ? .identity : self.beneathOffset(container, progress: 0)
+            leave ? .identity : self.beneathOffset(moving, progress: 0)
           self.placeSwipeFlights(container, progress: leave ? 1 : 0)
         },
         completion: { [weak self] _ in
           guard let self else { return }
           if !leave { self.landSwipeFlights() }
           if !leave {
-            container.layer.shadowOpacity = 0
+            self.restSwiped(moving)
             self.beneathView?.removeFromSuperview()
             self.beneathView = nil
             self.beneathTree = nil
@@ -963,8 +997,8 @@ class NativeUIRenderer {
     guard backSwipeCommitted, !currentTreeHasBeneath else { return }
     backSwipeCommitted = false
     landSwipeFlights()
+    restSwiped(swiped ?? container)
     container.transform = .identity
-    container.layer.shadowOpacity = 0
     beneathView?.removeFromSuperview()
     beneathView = nil
     beneathTree = nil
@@ -972,6 +1006,17 @@ class NativeUIRenderer {
 
   /// Whether the tree just drawn still came with the page beneath.
   private var currentTreeHasBeneath = false
+
+  /// [moving] back in its place, as it was before the swipe.
+  private func restSwiped(_ moving: UIView) {
+    moving.transform = .identity
+    moving.layer.shadowOpacity = 0
+    if let background = swipedBackground {
+      moving.backgroundColor = background
+      swipedBackground = nil
+    }
+    swiped = nil
+  }
 
   /// The heroes that follow a swipe back (`heroGestures`).
   private let gestureHeroes = NSHashTable<UIView>.weakObjects()
@@ -992,10 +1037,11 @@ class NativeUIRenderer {
   /// its counterpart on the page beneath - once that page is drawn.
   private func flyWithSwipe(_ container: UIView, beneath: UIView) {
     guard swipeFlights.isEmpty, let above = container.superview else { return }
+    let moving = swiped ?? container
     beneath.layoutIfNeeded()
     var flown = Set<String>()
     for case let view as UIView in heroViews.keyEnumerator().allObjects {
-      guard gestureHeroes.contains(view), view.isDescendant(of: container),
+      guard gestureHeroes.contains(view), view.isDescendant(of: moving),
         let name = heroViews.object(forKey: view) as String?, !flown.contains(name),
         view.window != nil, !view.bounds.isEmpty
       else { continue }
@@ -1010,7 +1056,7 @@ class NativeUIRenderer {
           from: heroRoom(view), afterScreenUpdates: true, withCapInsets: .zero)
       else { continue }
       flown.insert(name)
-      let from = view.convert(heroRoom(view), to: container)
+      let from = view.convert(heroRoom(view), to: moving)
       let to = counterpart.convert(heroRoom(counterpart), to: beneath)
       picture.isUserInteractionEnabled = false
       above.addSubview(picture)
@@ -1023,10 +1069,10 @@ class NativeUIRenderer {
 
   /// Each hero flying with a swipe, [progress] of the way to the page beneath.
   private func placeSwipeFlights(_ container: UIView, progress: CGFloat) {
-    // The container's place before it was moved: the space both pages share.
-    let origin = CGPoint(
-      x: container.center.x - container.bounds.width / 2,
-      y: container.center.y - container.bounds.height / 2)
+    // The moving page's place before it was moved: the space both pages
+    // share.
+    let moving = swiped ?? container
+    let origin = container.superview.map { restingFrame(moving, in: $0).origin } ?? .zero
     for flight in swipeFlights {
       func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * progress }
       flight.picture.frame = CGRect(
@@ -2155,6 +2201,11 @@ class NativeUIRenderer {
    render function made it.
    */
   private func identify(_ view: UIView, _ node: [String: Any]) {
+    if node["backSwipePage"] as? Bool == true {
+      swipePages.add(view)
+    } else {
+      swipePages.remove(view)
+    }
     switch node["layoutDirection"] as? String {
     case "rtl": turnedViews.setObject(NSNumber(value: true), forKey: view)
     case "ltr": turnedViews.setObject(NSNumber(value: false), forKey: view)
@@ -5792,6 +5843,7 @@ class NativeUIRenderer {
       )
       .rotated(by: finite(transform["rotate"]) ?? 0)
       .scaledBy(x: scale, y: scaleY)
+      style.rotation = finite(transform["rotate"]) ?? 0
     }
 
     style.tapEventId = node["tapEventId"] as? String

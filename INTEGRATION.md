@@ -628,8 +628,8 @@ import 'package:dart_not_native/widgets.dart';
 Then read the analyzer's list. What it reports falls into three kinds:
 
 - **A widget this layer does not have.**
-  `AnimationController` and `Tween`
-  are the common ones. Each needs a decision:
+  The ones the analyzer used to name most - `AnimationController` and
+  `Tween` - are here now; what is left is rarer. Each needs a decision:
   restructure with what there is (§8.5), or keep the real Flutter widget in a
   `FlutterSlot` (§8.6).
 - **A non-widget Flutter API** - `Clipboard`, `HapticFeedback`, `rootBundle`.
@@ -1050,7 +1050,7 @@ border) - there are many, each documented on the field.
 | `AnimatedSize` animates between sizes | It does: the renderer moves the box to the size its child came to, the child clipped on the way, and says when it got there (`onEnd`) - also when the child changes size between renders, a picture arriving |
 | `AnimatedContainer` animates every property | Size, colour, opacity, transform, padding, margin and alignment move, and so do `AnimatedPadding` and `AnimatedAlign` |
 | `onEnd` fires when an implicit animation finishes | Called when the renderer says the move has finished - iOS and Android from their own animation, the browser and the Flutter host the duration after they applied the tree. A renderer that never says is waited for a quarter of a second past the duration. Not for `AnimatedSize` |
-| `AnimationController`, `Tween`, `AnimatedBuilder` driven by one | No `AnimationController`. `Animation` exists for signatures and stands still. A `Ticker` is a 16 ms timer; each tick that calls `setState` is a full rebuild and a message to the platform (§10) |
+| `AnimationController`, `Tween`, `AnimatedBuilder` driven by one | Each run - `forward`, `reverse`, `animateTo`, a lap of `repeat` - is one tree built at the value it ends at, carrying its length and curve, which the renderer plays: the transitions move, and so does every box an `AnimatedBuilder` builds (opacity, transform, a container's colour and size); text and a `CustomPaint`'s picture are drawn at the end. Listeners hear a run start and end, not each frame, so a listener that reads `value` to draw something step by step sees two steps. A run started from `initState` is drawn at its start first. A `Ticker` is a 16 ms timer; each tick that calls `setState` is a full rebuild and a message to the platform (§10) |
 | Forty-odd `Curves` | Each that is a cubic Bézier in Flutter reaches the renderers as that cubic, with Flutter's numbers - `fastOutSlowIn`, `easeOutBack` with its overshoot, any `Cubic` an app makes. The bounces, springs and three-point curves travel as the nearest of `linear`, `ease`, `easeIn`, `easeOut` and `easeInOut` |
 | `TextPainter` measures real glyphs | **It measures Roboto's**: each Latin, Greek or Cyrillic character's advance width in Roboto, regular or bold, plus `letterSpacing` - exact on Android and in the Flutter host, a few per cent narrow for iOS's SF; other scripts are estimated (0.55 × font size, 1.1 × for CJK and emoji), kerning is not counted, and a line is 1.2 × the font size. The text is drawn by the platform in the lines it was measured as, aligned within the measured box. `didExceedMaxLines` is always false |
 | `CustomPainter.shouldRepaint` gates repainting | Not consulted; `paint` runs on every build and a renderer repaints when the commands changed. A paint's blend mode and `saveLayer`'s opacity and blend are drawn; mask filters other than a blur and shaders other than a gradient are not carried - a gradient may be `dart:ui`'s (`Gradient.linear` without the `ui.`), in any tile mode, and a blur in any style; `foregroundPainter` shares the one surface |

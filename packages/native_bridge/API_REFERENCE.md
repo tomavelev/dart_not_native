@@ -267,9 +267,12 @@ then `commit` or `cancel`. Between the two, each tree carries the page
 beneath as `RootProps.beneath`; after `commit` the next tree is that page,
 with no `pageTransition`. `UIBuilder.withBackSwipe` puts both on a root;
 in the widget layer a `Navigator` offers it, and `BackSwipeStack` does for a
-router of an app's own - nested inside another page too, where `beneath` is
-the whole screen with the top page swapped for the one under it. A hero's
-`heroGestures` flies it with the swipe.
+router of an app's own - nested inside another page too. There the node of
+the page that goes carries `backSwipePage: true` (`RootProps.backSwipePage`)
+and `beneath` is just the page under it: the renderer moves that node's view
+alone, with `beneath` drawn in its place, and the frame around it stays
+still. Without one, `beneath` is the whole screen and the screen moves. A
+hero's `heroGestures` flies it with the swipe.
 
 A route's motion may also carry `reveal` - the share of the page shown, a
 `SizeTransition`'s - with `revealAxis` (`vertical`, `horizontal`) and
@@ -341,7 +344,7 @@ Flutter's names, signatures and semantics; pure Dart.
 | Scrolling and lists | `lib/src/widgets/scrolling.dart` | `SingleChildScrollView`, `ListView` (+ `.builder`, `.separated`), `GridView` (+ `.count`, `.builder`, `.extent`), `ScrollController`, `RefreshIndicator`, `ListTile`, `ExpansionTile`, `CheckboxListTile`, `SwitchListTile`, `RadioListTile` |
 | Navigation and chrome | `lib/src/widgets/navigation.dart` | `MaterialApp` (+ `.router`), `Navigator`/`NavigatorState`, `MaterialPageRoute`, `PageRouteBuilder`, `Scaffold`, `AppBar`, `BackButton`, `NavigationBar`, `BottomNavigationBar`, `NavigationRail`, `TabBar`/`TabBarView`/`TabController`/`DefaultTabController`, `showDialog`, `AlertDialog`, `SimpleDialog`, `showModalBottomSheet`, `ScaffoldMessenger`, `SnackBar` |
 | Gestures | `lib/src/widgets/gestures.dart` | `GestureDetector`, `Draggable`, `LongPressDraggable`, `DragTarget`, `Dismissible` |
-| Motion | `lib/src/widgets/motion.dart` | `Curves`, `AnimatedOpacity`, `AnimatedContainer`, `AnimatedScale`, `AnimatedRotation`, `AnimatedSlide`, `AnimatedSwitcher` and `AnimatedCrossFade` (a fade from the old child to the new, the cross-fade's size moving with it), `AnimatedPadding`, `AnimatedAlign` and `AnimatedSize` |
+| Motion | `lib/src/widgets/motion.dart` | `Curves`, `AnimationController` (a run the renderer plays: the tree is built at its end, carrying its length and curve), `Tween` and its kin, `CurvedAnimation`, the transitions (`FadeTransition`, `ScaleTransition`, `RotationTransition`, `SlideTransition`, `SizeTransition`), `AnimatedOpacity`, `AnimatedContainer`, `AnimatedScale`, `AnimatedRotation`, `AnimatedSlide`, `AnimatedSwitcher` and `AnimatedCrossFade` (a fade from the old child to the new, the cross-fade's size moving with it), `AnimatedPadding`, `AnimatedAlign` and `AnimatedSize` |
 | Drawing | `lib/src/widgets/custom_paint.dart` | `CustomPaint`, `CustomPainter`, `Canvas`, `Paint`, `Path`, `TextPainter` |
 | Platform views | `lib/src/widgets/platform_views.dart` | `SwipeActions`, `WebView`, `MapView`, `CameraPreview`, `Badge`, `Alert`, `FlutterSlot` |
 | Steppers and tables | `lib/src/widgets/data.dart` | `Stepper`, `Step`, `StepState`, `StepperType`, `ControlsDetails`, `DataTable`, `DataColumn`, `DataRow`, `DataCell`, `Table`, `TableRow`, `TableCell`, `TableBorder`, the column widths, `ReorderableListView`, `InteractiveViewer`, `TransformationController` |
@@ -359,10 +362,9 @@ the top of `CHANGELOG.md`; the ones existing code meets first:
   model is `FormModel`, bound with `ModelTextFormField(field:)`.
 - `Locale('en', 'US')` is positional; a script needs `Locale.fromSubtags`.
 
-Not in the layer at all: `AnimationController` and `Tween`. There in name only,
-so that a screen compiles: `MouseRegion` (no hover),
-`FadeTransition` (the value when built). `PopupMenuButton` opens its menu as
-a dialog.
+There in name only, so that a screen compiles: `MouseRegion` (no hover).
+`PopupMenuButton` opens its menu as a dialog. An `AnimationController` does
+not tick: its listeners hear a run start and end, not each frame.
 
 ## Router - `package:dart_not_native/router.dart`
 

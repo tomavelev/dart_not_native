@@ -359,30 +359,39 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
       'ltr' => TextDirection.ltr,
       _ => null,
     };
-    if (direction == null) return _buildNode(node, context);
-    Widget turned(Widget child) =>
-        Directionality(textDirection: direction, child: child);
-    final built = _buildNode(node, context);
-    return switch (built) {
-      Flexible(:final flex, :final fit, :final child) => Flexible(
-        key: built.key,
-        flex: flex,
-        fit: fit,
-        child: turned(child),
-      ),
-      Positioned() => Positioned(
-        key: built.key,
-        left: built.left,
-        top: built.top,
-        right: built.right,
-        bottom: built.bottom,
-        width: built.width,
-        height: built.height,
-        child: turned(built.child),
-      ),
-      _ => turned(built),
-    };
+    final swiped = node.props[RootProps.backSwipePage] == true;
+    var built = _buildNode(node, context);
+    // The page a back swipe moves, when it is not the whole screen.
+    if (swiped) built = _inside(built, (child) => _SwipedPage(child: child));
+    if (direction == null) return built;
+    return _inside(
+      built,
+      (child) => Directionality(textDirection: direction, child: child),
+    );
   }
+
+  /// [built] with [wrap] round it - inside a [Flexible] or a [Positioned],
+  /// which have to stay where their parent finds them.
+  static Widget _inside(Widget built, Widget Function(Widget) wrap) =>
+      switch (built) {
+        Flexible(:final flex, :final fit, :final child) => Flexible(
+          key: built.key,
+          flex: flex,
+          fit: fit,
+          child: wrap(child),
+        ),
+        Positioned() => Positioned(
+          key: built.key,
+          left: built.left,
+          top: built.top,
+          right: built.right,
+          bottom: built.bottom,
+          width: built.width,
+          height: built.height,
+          child: wrap(built.child),
+        ),
+        _ => wrap(built),
+      };
 
   Widget _buildNode(WidgetNode node, BuildContext context) {
     final p = node.props;
@@ -1988,8 +1997,13 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     BuildContext context, {
     bool canvas = false,
   }) {
-    final ms = _double(p['animateMs'])?.toInt() ?? 0;
-    final duration = ms > 0 ? Duration(milliseconds: ms) : null;
+    final ms = _double(p['animateMs'])?.toInt();
+    // A box that says how long it takes - nothing, for now - is built as one
+    // that moves, so that when a later tree gives it a time it is the same
+    // widget, and moves from where it was rather than starting at its end.
+    final duration = ms == null
+        ? null
+        : Duration(milliseconds: ms < 0 ? 0 : ms);
     final curve = _curve(p);
 
     final circle = p['shape'] == 'circle';
@@ -6067,6 +6081,111 @@ class _DrawerEdgesState extends State<_DrawerEdges> {
   }
 }
 
+const _swipeShadow = BoxShadow(color: Color(0x33000000), blurRadius: 8);
+
+/// Where a back swipe has moved the page to, for a page that moves by itself
+/// ([_SwipedPage]): null while no swipe is under way.
+class _SwipeScope extends InheritedWidget {
+  const _SwipeScope({
+    required this.renderer,
+    required this.pageAt,
+    required this.beneathAt,
+    required this.beneath,
+    required this.host,
+    required super.child,
+  });
+  final FlutterUIRenderer renderer;
+  final Offset? pageAt;
+  final Offset beneathAt;
+  final WidgetNode? beneath;
+  final _BackSwipeState host;
+
+  @override
+  bool updateShouldNotify(_SwipeScope oldWidget) =>
+      pageAt != oldWidget.pageAt ||
+      beneathAt != oldWidget.beneathAt ||
+      !identical(beneath, oldWidget.beneath);
+}
+
+/// The page a back swipe moves when it is not the whole screen
+/// (`RootProps.backSwipePage`) - a page in a `ShellRoute`'s frame: it
+/// follows the finger with the page beneath drawn under it in its place,
+/// and the frame around it stays still.
+class _SwipedPage extends StatefulWidget {
+  const _SwipedPage({required this.child});
+  final Widget child;
+
+  @override
+  State<_SwipedPage> createState() => _SwipedPageState();
+}
+
+class _SwipedPageState extends State<_SwipedPage> {
+  _BackSwipeState? _host;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final host = context
+        .dependOnInheritedWidgetOfExactType<_SwipeScope>()
+        ?.host;
+    if (identical(host, _host)) return;
+    _host?._pagesMoving--;
+    host?._pagesMoving++;
+    _host = host;
+  }
+
+  @override
+  void dispose() {
+    _host?._pagesMoving--;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<_SwipeScope>();
+    final at = scope?.pageAt;
+    final beneath = scope?.beneath;
+    // What the page stood on, so the page beneath does not show through it.
+    final ground =
+        Material.maybeOf(context)?.color ??
+        Theme.of(context).scaffoldBackgroundColor;
+    return Stack(
+      fit: StackFit.passthrough,
+      clipBehavior: Clip.none,
+      children: [
+        if (scope != null && at != null && beneath != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Transform.translate(
+                offset: scope.beneathAt,
+                child: _PageOf(
+                  page: _Heroes.beneath,
+                  child: Material(
+                    color: ground,
+                    child: scope.renderer.buildNode(beneath, context),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        KeyedSubtree(
+          key: const ValueKey('page'),
+          child: Transform.translate(
+            offset: at ?? Offset.zero,
+            // The same shape still or moving, so the page keeps its state.
+            child: DecoratedBox(
+              decoration: at == null
+                  ? const BoxDecoration()
+                  : BoxDecoration(color: ground, boxShadow: const [_swipeShadow]),
+              child: widget.child,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// A swipe back from the leading edge, as iOS has it
 /// (`RootProps.backSwipeEventId`): the page follows the finger with the
 /// page beneath drawn under it a third of the way behind, and is taken off
@@ -6108,6 +6227,10 @@ class _BackSwipeState extends State<_BackSwipe>
   /// for since this swipe began.
   List<_Flight> _flights = const [];
   bool _flightsSought = false;
+
+  /// The pages in the tree that move with a swipe themselves
+  /// (`RootProps.backSwipePage`); while there is one, the screen stays.
+  int _pagesMoving = 0;
 
   late final AnimationController _settle = AnimationController(
     vsync: this,
@@ -6239,12 +6362,14 @@ class _BackSwipeState extends State<_BackSwipe>
           _seekFlights(pageAt, beneathAt);
         }
         final along = width > 0 ? (moved ?? 0) / width : 0.0;
+        // A page in a frame moves by itself, the page beneath under it.
+        final inPage = _pagesMoving > 0;
         return Stack(
           fit: StackFit.passthrough,
           clipBehavior: Clip.none,
           children: [
             // The page beneath, while a swipe shows it.
-            if (moved != null && beneath != null)
+            if (moved != null && beneath != null && !inPage)
               Positioned.fill(
                 child: IgnorePointer(
                   child: Transform.translate(
@@ -6261,18 +6386,21 @@ class _BackSwipeState extends State<_BackSwipe>
             KeyedSubtree(
               key: const ValueKey('page'),
               child: Transform.translate(
-                offset: pageAt(),
+                offset: inPage ? Offset.zero : pageAt(),
                 // Always the same shape, so the page keeps its widgets
                 // whether or not it is moving.
                 child: DecoratedBox(
-                  decoration: moved == null
+                  decoration: moved == null || inPage
                       ? const BoxDecoration()
-                      : const BoxDecoration(
-                          boxShadow: [
-                            BoxShadow(color: Color(0x33000000), blurRadius: 8),
-                          ],
-                        ),
-                  child: widget.child,
+                      : const BoxDecoration(boxShadow: [_swipeShadow]),
+                  child: _SwipeScope(
+                    renderer: widget.renderer,
+                    pageAt: moved == null ? null : pageAt(),
+                    beneathAt: beneathAt(),
+                    beneath: beneath,
+                    host: this,
+                    child: widget.child,
+                  ),
                 ),
               ),
             ),

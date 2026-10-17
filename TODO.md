@@ -2056,14 +2056,22 @@ compiles and then does less. Each is stated in the widget's own doc comment
 (`lib/src/widgets/<file>.dart`). Ordered by how likely a migrated app is to
 notice.
 
-1. **No `AnimationController`.** `Animation` exists for signatures and stands
-   still (`motion.dart`); there is no `Tween`, no `AnimatedBuilder` driven by
-   a controller. A `Ticker` is a 16 ms timer whose tick, if it calls
-   `setState`, is a full rebuild and a message to the platform
-   (`binding.dart`). Anything explicit - a progress ring that eases, a shake,
-   a staggered entrance - has to be restated as an implicit animation or a
-   canvas. The real answer is probably a node that carries a timeline to the
-   renderer, as `animateMs` carries an end state.
+1. ~~**No `AnimationController`.**~~ There is one since 2026-10-17
+   (`motion.dart`): each run - `forward`, `reverse`, `animateTo`, a lap of
+   `repeat` - is one tree built at the value it ends at, carrying its length
+   and curve, which the renderer plays; the transitions follow it, and so
+   does every box an `AnimatedBuilder` builds. A run started from
+   `initState` is drawn at its start first, and a slide not yet measured
+   waits out of sight. Seen on an iOS simulator, an Android emulator and in
+   Chrome (a pulse, a spin, an entrance, a turn and fade by a button);
+   tested in the Flutter host. What it does not do: tick. Listeners hear a
+   run start and end, so a listener drawing step by step - a `CustomPaint`
+   that reads `value` - sees two steps; text is drawn at the end; a keyframe
+   sequence (`TweenSequence`, `Interval`) is not here. A `Ticker` is still a
+   16 ms timer whose tick, if it calls `setState`, is a full rebuild and a
+   message to the platform (`binding.dart`). On a device too slow to draw
+   the page before a run ends - the emulator, once, at three-second frames -
+   an entrance arrives in place.
 2. ~~**No page transitions.**~~ Since 2026-10-11 a renderer moves from the
    old page to the new one (`RootProps.pageTransition`): the old page, kept
    as a picture, fades away; a pushed page slides in from the end of the
@@ -2273,22 +2281,31 @@ notice.
     `transitionOnUserGestures` flies with it on iOS - seen on a simulator.
     Since the same day a page pushed inside a `ShellRoute` is offered it,
     the page beneath drawn in the frame (seen on an iOS simulator), and a
-    hero follows it in the Flutter host (tested). Still open: the whole
-    screen moves, the shell's bar with it, where Flutter would move the
-    inner page alone - that needs a renderer told which part of the screen
-    a swipe moves.
+    hero follows it in the Flutter host (tested). Since the same day only
+    that page moves (`RootProps.backSwipePage`), the frame's bars still,
+    with the page beneath in its place - seen on an iOS simulator, a hero
+    flying with it; tested in the Flutter host. What is left is the
+    platform: Android and the browser have their own back gestures, and
+    draw none of this.
 18. ~~**An image given a width inside a box that fills its row** is drawn
     three ways.~~ Since 2026-10-17 the widget layer follows which child is
     given a width it cannot change - a vertical list's rows, a stretched
     column, a box with a width, a row's `Expanded`, through padding and the
     app's own widgets - and an `Image` with a width and no height there
     fills it (`fillWidth`), as in Flutter; seen on an iOS simulator, an
-    Android emulator and in Chrome. Not yet counted as such a room: a
-    `Scaffold`'s body, a `Card`, a `ListTile`'s parts, or any other widget
-    that does not hand it on - there the image keeps its own width.
+    Android emulator and in Chrome. Since the same day a `Scaffold`'s body,
+    a vertical `SingleChildScrollView`, a `Card`, a `Hero`, a `Dismissible`
+    and the widgets that leave their child's room alone hand it on too, seen
+    on all three; a `ListTile`'s parts are loose in Flutter and stay so.
+    Still drawn its own way: a `Container` given a width in such a room,
+    which Flutter makes as wide as the room and the renderers do not (iOS
+    does under an `AnimatedOpacity`, Android does not).
 19. **What the next round's large items would take** (written 2026-10-16,
     not started):
-    - *`AnimationController`.* A node carrying a timeline - keyframes of the
+    - ~~*`AnimationController`.*~~ Done another way on 2026-10-17 (item 1):
+      a run is a tree built at its end, which the renderers already move
+      to. What this note proposed is still the answer for keyframes and
+      for listeners that want every frame. A node carrying a timeline - keyframes of the
       props a box already animates (`opacity`, `transform`, `color`, size)
       against a duration, a curve and a repeat - that the renderer runs by
       itself, raising `endEventId` as an implicit animation does; the widget
@@ -2513,18 +2530,15 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 
 1. **Cut a version.** The pubspec still says 0.1.0 and everything since -
    including a section of breaking changes - sits under `Unreleased`. By
-   RELEASING.md's own rule this is 0.2.0. Three apps depend on "whatever is
-   in the checkout", which is no version at all.
-2. **pub.dev.** The apps depend by path (`../dart_not_native/packages/
-   native_bridge`), so each of their build machines needs this repository
-   checked out beside them at a compatible commit; a git dependency with a
-   `ref:` is the stopgap. `dart_not_native_bloc` is `publish_to: none` until
-   the main package is hosted, and depends on it by path itself.
-3. **CI for the consuming apps.** Nothing here builds an app that depends on
-   the framework, so a breaking change in the widget layer is found when
-   somebody next builds one of the three. The cheap version is a lane that
-   checks out one of them and runs `flutter analyze` and its tests against
-   the commit under test.
+   RELEASING.md's own rule this is 0.2.0.
+2. ~~**pub.dev.**~~ Not needed for now (2026-10-17): the apps depend on the
+   GitHub repository as a git dependency, so a build machine needs no
+   checkout beside it. `dart_not_native_bloc` is `publish_to: none` and
+   depends on the main package by path, which is fine inside the
+   repository.
+3. ~~**CI for the consuming apps.**~~ Dropped on 2026-10-17 as not relevant:
+   the apps are built against a git reference of this repository, and
+   their own builds are where a breaking change shows.
 4. ~~**CI does not run `packages/dart_not_native_bloc`.**~~ `ci.yml` analyses
    it and runs its suite since 2026-10-09, and `tool/count_tests.sh` counts
    it.
@@ -2553,8 +2567,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2742 tests
-  (1665 in the package, 393 for the example apps and goldens, 641 in the browser,
+  contracts, the plugin system and the design system are covered by 2756 tests
+  (1679 in the package, 393 for the example apps and goldens, 641 in the browser,
   43 in the bloc package,
   counted 2026-10-17), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

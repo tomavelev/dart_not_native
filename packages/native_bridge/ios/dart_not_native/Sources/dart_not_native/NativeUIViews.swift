@@ -188,6 +188,10 @@ struct DnnBoxStyle {
   var clip = false
   var opacity: CGFloat = 1
   var transform = CGAffineTransform.identity
+  /// The turn in [transform], in radians: kept apart because a whole turn is
+  /// no change to a matrix, and a box that spins has to be told the way
+  /// round.
+  var rotation: CGFloat = 0
   /// A whole matrix (`transform.matrix`), in place of `transform`, worked
   /// about `pivot`: an alignment in the box and a shift from it.
   var matrix: CATransform3D?
@@ -561,7 +565,19 @@ class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
     if next.sizeEventId != style.sizeEventId {
       reportedSize = CGSize(width: -1, height: -1)
     }
+    let turnedFrom = style.rotation
     style = next
+    // A turn of half a circle or more, animated: UIKit moves between the two
+    // matrices, which for a whole turn are the same one and for more than a
+    // half go the short way round. So the angle itself is moved.
+    let time = UIView.inheritedAnimationDuration
+    if time > 0, next.matrix == nil, abs(next.rotation - turnedFrom) >= .pi {
+      let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+      spin.fromValue = turnedFrom
+      spin.toValue = next.rotation
+      spin.duration = time
+      layer.add(spin, forKey: "dnn.spin")
+    }
 
     if marginConstraints.count == 4 {
       marginConstraints[0].constant = next.margin.left

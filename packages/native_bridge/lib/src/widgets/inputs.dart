@@ -231,7 +231,7 @@ class Focus extends Widget {
     });
     final box = UIBuilder.box(
       id: id,
-      child: owner.inSlot('child', () => child._render(owner)),
+      child: _passOn(owner, this, child),
     );
     final ready = canRequestFocus && node.canRequestFocus;
     return WidgetNode(
@@ -1414,7 +1414,7 @@ class DropdownMenuItem<T> extends Widget {
   final AlignmentGeometry alignment;
   final Widget child;
   @override
-  WidgetNode _render(_Owner owner) => _renderChild(owner, child);
+  WidgetNode _render(_Owner owner) => _passOn(owner, this, child);
 }
 
 WidgetNode _dropdown<T>(

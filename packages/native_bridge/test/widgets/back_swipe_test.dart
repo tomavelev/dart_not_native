@@ -72,6 +72,16 @@ void main() {
     expect(beneath(), contains('home'));
   });
 
+  test('a page that is the whole screen is not marked as moving alone: the '
+      'screen moves', () async {
+    await pushTwo();
+    await swipe('start');
+    expect(
+      tester.nodes.where((n) => n.props.containsKey(RootProps.backSwipePage)),
+      isEmpty,
+    );
+  });
+
   test('a commit pops, with no transition of its own', () async {
     await pushTwo();
     await swipe('start');

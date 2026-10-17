@@ -66,4 +66,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(find.text('child')).dx - from, greaterThan(midway));
   });
+
+  testWidgets('a whole turn goes round, though it ends where it began', (
+    tester,
+  ) async {
+    WidgetNode turned(double angle) => UIBuilder.box(
+      width: 100,
+      height: 20,
+      transform: {'rotate': angle},
+      animateMs: angle == 0 ? 0 : 1000,
+      curve: 'linear',
+      child: UIBuilder.text('child'),
+    );
+    await show(tester, turned(0));
+    final from = tester.getTopLeft(find.text('child'));
+    await show(tester, turned(2 * 3.141592653589793));
+    await tester.pump(const Duration(milliseconds: 500));
+    // Half way round, the text's first corner is at the far side.
+    final midway = tester.getTopLeft(find.text('child'));
+    expect((midway - from).distance, greaterThan(20));
+    await tester.pumpAndSettle();
+    final end = tester.getTopLeft(find.text('child'));
+    expect((end - from).distance, lessThan(0.5));
+  });
 }

@@ -766,7 +766,7 @@ void main() {
       });
 
       test('a page pushed inside a shell is swiped back to the one beneath '
-          'it, drawn in the same frame', () async {
+          'it, in the frame, which stays still', () async {
         final m = _Mounted(
           GoRouter(
             routes: [
@@ -782,19 +782,43 @@ void main() {
             ],
           ),
         );
+        bool moves(WidgetNode node) =>
+            node.props[RootProps.backSwipePage] == true;
+        // Only the shell's page moves, and only once there is one to go
+        // back to.
+        expect(tree.findNode(m.root, moves), isNull);
         m.router.push('/b');
         expect(offered(m), isA<String>());
+        final page = tree.findNode(m.root, moves)!;
+        expect(tree.texts(page), ['b /b']);
 
         await swipe(m, 'start');
         final beneath = WidgetNode.fromJson(
           (m.root.props[RootProps.beneath] as Map).cast<String, dynamic>(),
         );
-        expect(tree.texts(beneath), ['frame', 'a /']);
+        expect(tree.texts(beneath), ['a /']);
         expect(m.texts, containsAllInOrder(['frame', 'b /b']));
+        expect(tree.texts(tree.findNode(m.root, moves)!), ['b /b']);
 
         await swipe(m, 'commit');
         expect(m.text('page'), 'a /');
         expect(m.root.props.containsKey(RootProps.pageTransition), isFalse);
+        expect(tree.findNode(m.root, moves), isNull);
+      });
+
+      test('a page that is the whole screen is not marked: the screen '
+          'moves', () async {
+        final m = _Mounted(router());
+        m.router.push('/form');
+        expect(
+          tree.findNode(m.root, (n) => n.props.containsKey(RootProps.backSwipePage)),
+          isNull,
+        );
+        await swipe(m, 'start');
+        final beneath = WidgetNode.fromJson(
+          (m.root.props[RootProps.beneath] as Map).cast<String, dynamic>(),
+        );
+        expect(tree.texts(beneath), contains('home /'));
       });
     });
 

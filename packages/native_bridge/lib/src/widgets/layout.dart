@@ -30,6 +30,16 @@ WidgetNode _renderChild(
   () => owner.inSlot(slot, () => child._render(owner)),
 );
 
+/// [child] laid out in what [self] was given, as a widget that leaves its
+/// child's constraints alone lays it out: a width [self] cannot change is
+/// one [child] cannot either.
+WidgetNode _passOn(
+  _Owner owner,
+  Widget self,
+  Widget child, [
+  Object slot = 'child',
+]) => _renderChild(owner, child, slot, identical(owner._tightWidth, self));
+
 /// The names the protocol knows a main-axis alignment by.
 String _mainAxis(MainAxisAlignment alignment) => alignment.name;
 
@@ -662,8 +672,8 @@ WidgetNode _box(
     onTap: onTap,
     onLongPress: onLongPress,
     ripple: ripple,
-    animateMs: animateMs,
-    curve: curve,
+    animateMs: animateMs ?? owner._boxRun?.ms,
+    curve: curve ?? owner._boxRun?.curve,
     semanticLabel: semanticLabel,
     tooltip: tooltip,
     id: id,
@@ -933,7 +943,7 @@ class SafeArea extends Widget {
 
   @override
   WidgetNode _render(_Owner owner) {
-    final node = _renderChild(owner, child);
+    final node = _passOn(owner, this, child);
     final insets = owner._scaffoldDepth > 0
         ? EdgeInsets.zero
         : _mediaOf(owner).padding;
@@ -1065,8 +1075,10 @@ class Transform extends Widget {
   @override
   WidgetNode _render(_Owner owner) => UIBuilder.box(
     transform: _map ?? transform?._transformAbout(alignment, origin),
+    animateMs: owner._boxRun?.ms,
+    curve: owner._boxRun?.curve,
     id: _idOf(key),
-    child: child == null ? null : _renderChild(owner, child!),
+    child: child == null ? null : _passOn(owner, this, child!),
   );
 }
 
@@ -1370,12 +1382,12 @@ class Visibility extends Widget {
 
   @override
   WidgetNode _render(_Owner owner) {
-    if (visible) return _renderChild(owner, child);
+    if (visible) return _passOn(owner, this, child);
     if (maintainSize) {
       return UIBuilder.box(
         opacity: 0,
         ignorePointer: true,
-        child: _renderChild(owner, child),
+        child: _passOn(owner, this, child),
       );
     }
     if (maintainState) owner._offstage('child', child);
@@ -1393,7 +1405,7 @@ class Offstage extends Widget {
   WidgetNode _render(_Owner owner) {
     final child = this.child;
     if (child == null) return UIBuilder.sizedBox();
-    if (!offstage) return _renderChild(owner, child);
+    if (!offstage) return _passOn(owner, this, child);
     owner._offstage('child', child);
     return UIBuilder.sizedBox();
   }
@@ -1406,7 +1418,7 @@ class IgnorePointer extends Widget {
   final Widget? child;
   @override
   WidgetNode _render(_Owner owner) {
-    final node = _renderChild(owner, child ?? const SizedBox.shrink());
+    final node = _passOn(owner, this, child ?? const SizedBox.shrink());
     return ignoring ? UIBuilder.box(ignorePointer: true, child: node) : node;
   }
 }
@@ -1420,7 +1432,7 @@ class AbsorbPointer extends Widget {
   final Widget? child;
   @override
   WidgetNode _render(_Owner owner) {
-    final node = _renderChild(owner, child ?? const SizedBox.shrink());
+    final node = _passOn(owner, this, child ?? const SizedBox.shrink());
     return absorbing ? UIBuilder.box(ignorePointer: true, child: node) : node;
   }
 }
@@ -1468,7 +1480,7 @@ class Semantics extends Widget {
 
   @override
   WidgetNode _render(_Owner owner) {
-    final node = child == null ? null : _renderChild(owner, child!);
+    final node = child == null ? null : _passOn(owner, this, child!);
     final spoken = [label, value, hint].whereType<String>().join(', ');
     final role = header == true
         ? 'heading'
@@ -1523,7 +1535,7 @@ class MergeSemantics extends Widget {
   final Widget? child;
   @override
   WidgetNode _render(_Owner owner) =>
-      _renderChild(owner, child ?? const SizedBox.shrink());
+      _passOn(owner, this, child ?? const SizedBox.shrink());
 }
 
 /// Hides its child from screen readers - decoration that would only be noise.
@@ -1533,7 +1545,7 @@ class ExcludeSemantics extends Widget {
   final Widget? child;
   @override
   WidgetNode _render(_Owner owner) {
-    final node = _renderChild(owner, child ?? const SizedBox.shrink());
+    final node = _passOn(owner, this, child ?? const SizedBox.shrink());
     return excluding ? UIBuilder.box(excludeSemantics: true, child: node) : node;
   }
 }
@@ -1550,7 +1562,7 @@ class PreferredSize extends Widget implements PreferredSizeWidget {
   final Size preferredSize;
   final Widget child;
   @override
-  WidgetNode _render(_Owner owner) => _renderChild(owner, child);
+  WidgetNode _render(_Owner owner) => _passOn(owner, this, child);
 }
 
 /// A hint shown on hover or long press, where the platform has such a thing.
@@ -1573,7 +1585,7 @@ class Tooltip extends Widget {
   @override
   WidgetNode _render(_Owner owner) {
     final text = message ?? richMessage?.toPlainText() ?? '';
-    final node = child == null ? null : _renderChild(owner, child!);
+    final node = child == null ? null : _passOn(owner, this, child!);
     final id = _idOf(key);
     // Around something that takes a tap, the hint is that thing's own: it is
     // then its name when it has no text, on the node a reader activates.
@@ -1750,7 +1762,7 @@ class _HeroState extends State<Hero> {
       heroShuttle: flown,
       heroPlaceholder: placeholder,
       id: _idOf(widget.key),
-      child: _renderChild(owner, widget.child),
+      child: _passOn(owner, owner._node!, widget.child),
     );
     if (!widget.transitionOnUserGestures) return box;
     return WidgetNode(
@@ -1993,10 +2005,7 @@ class Card extends Widget {
       card = shadow == null ? node : _withProps(node, {'shadow': shadow});
     } else {
       // Flutter's card adds no padding of its own, and neither does this.
-      final content = owner.inSlot(
-        'content',
-        () => (child ?? const SizedBox())._render(owner),
-      );
+      final content = _passOn(owner, this, child ?? const SizedBox(), 'content');
       card = switch (_variant) {
         'outlined' => DSCard.outlined(content: content, padding: 0),
         'filled' => DSCard.filled(content: content, padding: 0),

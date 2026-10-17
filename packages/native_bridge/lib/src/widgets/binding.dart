@@ -895,7 +895,7 @@ class KeyboardListener extends Widget {
         _KeyListener(handler, focusNode, owner._buildingOverlay),
       );
     }
-    return owner.inSlot('child', () => child._render(owner));
+    return _passOn(owner, this, child);
   }
 }
 

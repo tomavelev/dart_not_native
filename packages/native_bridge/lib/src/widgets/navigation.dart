@@ -1291,7 +1291,7 @@ class PopScope<T> extends Widget {
         onStage: owner._hidden == 0,
       ),
     );
-    return _renderChild(owner, child);
+    return _passOn(owner, this, child);
   }
 }
 
@@ -1935,7 +1935,7 @@ class NavigatorState extends State<Navigator> implements _BackSwipeable {
         }
       });
     }
-    if (swipeable && _swiping) owner._beneathOver = shown;
+    if (swipeable) owner._beneathOver = shown;
     return shown ?? UIBuilder.sizedBox();
   });
 
@@ -2029,7 +2029,7 @@ class _BackSwipeStackState extends State<BackSwipeStack>
         owner._offstage(i, pages[i]);
       }
     }
-    if (swipeable && _swiping) owner._beneathOver = shown;
+    if (swipeable) owner._beneathOver = shown;
     return shown ?? UIBuilder.sizedBox();
   });
 }
@@ -2952,7 +2952,8 @@ class _ScaffoldFrame extends Widget {
     final body = this.body;
     var node = body == null
         ? UIBuilder.sizedBox()
-        : owner.inSlot('body', () => body._render(owner));
+        // Laid out as wide as the scaffold, as Flutter's body is.
+        : _renderChild(owner, body, 'body', true);
     if (fab != null) {
       node = UIBuilder.stack(
         fit: 'expand',

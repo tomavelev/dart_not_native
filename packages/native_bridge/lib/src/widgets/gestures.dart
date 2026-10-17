@@ -366,7 +366,7 @@ class GestureDetector extends Widget {
 
   @override
   WidgetNode _render(_Owner owner) {
-    final node = child == null ? null : _renderChild(owner, child!);
+    final node = child == null ? null : _passOn(owner, this, child!);
     final doubleTap = onDoubleTap;
     final longPress = onLongPress;
     final scales = _scales;
@@ -479,7 +479,7 @@ class Draggable<T extends Object> extends Widget {
 
   @override
   WidgetNode _render(_Owner owner) {
-    final node = _renderChild(owner, child);
+    final node = _passOn(owner, this, child);
     if (maxSimultaneousDrags == 0) return node;
     // The wire carries a string; the object it stands for stays here, looked
     // up again when a target reports the drop.
@@ -924,7 +924,7 @@ class _DismissibleState extends State<Dismissible> {
   @override
   Widget build(BuildContext context) => _NodeWidget((owner) {
     final rtl = owner._direction == TextDirection.rtl;
-    final row = _renderChild(owner, widget.child);
+    final row = _passOn(owner, owner._node!, widget.child);
     if (widget.direction == DismissDirection.none) return row;
     // What shows behind the row is the background of the way it has gone.
     final way = _way(_offset.sign, rtl);

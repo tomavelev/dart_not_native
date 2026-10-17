@@ -441,7 +441,7 @@ abstract class InheritedWidget extends Widget {
   @override
   WidgetNode _render(_Owner owner) => owner._withInherited(
     this,
-    () => owner.inSlot('child', () => child._render(owner)),
+    () => _passOn(owner, this, child),
   );
 }
 
@@ -571,8 +571,25 @@ class ListenableBuilder extends Widget {
 
   @override
   WidgetNode _render(_Owner owner) {
+    final listenable = this.listenable;
     owner._watch(listenable);
-    return builder(owner._context(), child)._render(owner);
+    if (listenable is! Animation<Object?> || !_controlled(listenable)) {
+      return builder(owner._context(), child)._render(owner);
+    }
+    // Built at the end of a controller's run, the boxes in it moving there
+    // over the run - and saying they take no time at rest, so that they are
+    // the same boxes to a renderer either way.
+    final run = _runTime(listenable);
+    final outer = owner._boxRun;
+    owner._boxRun = (
+      ms: run?.duration.inMilliseconds ?? 0,
+      curve: (run?.curve ?? Curves.linear).name,
+    );
+    try {
+      return builder(owner._context(), child)._render(owner);
+    } finally {
+      owner._boxRun = outer;
+    }
   }
 }
 
@@ -626,7 +643,15 @@ class _NodeWidget extends Widget {
   const _NodeWidget(this.builder);
   final WidgetNode Function(_Owner owner) builder;
   @override
-  WidgetNode _render(_Owner owner) => builder(owner);
+  WidgetNode _render(_Owner owner) {
+    final was = owner._node;
+    owner._node = this;
+    try {
+      return builder(owner);
+    } finally {
+      owner._node = was;
+    }
+  }
 }
 
 /// Takes the callbacks of a subtree that is built and thrown away.
@@ -844,6 +869,14 @@ class _Owner {
     }
   }
 
+  /// The run of an [AnimationController] an [AnimatedBuilder] is being
+  /// built at the end of: each box built in it moves there over the run.
+  ({int ms, String curve})? _boxRun;
+
+  /// The [_NodeWidget] whose builder is running: the widget a `State` that
+  /// ends in a node lays its child out as (`_passOn`).
+  _NodeWidget? _node;
+
   /// What [widget] built is laid out where it is: in the width it was given.
   Widget _handOn(Widget widget, Widget built) {
     if (identical(_tightWidth, widget)) _tightWidth = built;
@@ -1010,10 +1043,10 @@ class _Owner {
   _BackSwipeable? _backSwipe;
   WidgetNode? _beneath;
 
-  /// The node [_beneath] takes the place of: the top page of the one that
-  /// is swiping. Where that is nested - a page inside a `ShellRoute`'s
-  /// frame, or a [Navigator] inside a scaffold - the page beneath is drawn
-  /// inside everything around it, as the screen will be once it is popped.
+  /// The top page of the navigator a swipe would pop, the node [_beneath]
+  /// takes the place of. Where that is nested - a page inside a
+  /// `ShellRoute`'s frame, or a [BackSwipeStack] inside a scaffold - the renderer
+  /// is told it is the part that moves ([RootProps.backSwipePage]).
   WidgetNode? _beneathOver;
 
   /// Whether a swipe back has just taken a page off: the renderer has moved
@@ -1240,30 +1273,39 @@ class _Owner {
     }
   }
 
-  /// The screen as it will be once the swiping page is popped: [tree] with
-  /// its top page swapped for the page beneath. Just that page where the
-  /// top one cannot be found in the tree.
-  WidgetNode? _screenBeneath(WidgetNode tree) {
-    final beneath = _beneath;
-    final over = _beneathOver;
-    if (beneath == null || over == null) return beneath;
-    WidgetNode? swap(WidgetNode node) {
-      if (identical(node, over)) return beneath;
-      final children = node.children;
-      if (children == null) return null;
-      for (final (index, child) in children.indexed) {
-        final swapped = swap(child);
-        if (swapped == null) continue;
-        return WidgetNode(
-          type: node.type,
-          props: node.props,
-          children: [...children]..[index] = swapped,
-        );
-      }
-      return null;
+  /// [tree] with the node [over] swapped for what [into] makes of it, or
+  /// null where [over] is not in it; [nested] is set when something stands
+  /// beside it on the way down - a bar, an app bar - so it is not the whole
+  /// screen.
+  static WidgetNode? _swapped(
+    WidgetNode tree,
+    WidgetNode over,
+    WidgetNode Function(WidgetNode) into, [
+    List<bool>? nested,
+  ]) {
+    if (identical(tree, over)) return into(tree);
+    final children = tree.children;
+    if (children == null) return null;
+    for (final (index, child) in children.indexed) {
+      final swapped = _swapped(child, over, into, nested);
+      if (swapped == null) continue;
+      if (children.length > 1) nested?[0] = true;
+      return WidgetNode(
+        type: tree.type,
+        props: tree.props,
+        children: [...children]..[index] = swapped,
+      );
     }
+    return null;
+  }
 
-    return swap(tree) ?? beneath;
+  /// The screen as it will be once the swiping page [over] is popped:
+  /// [tree] with it swapped for the page beneath. Just that page where [over]
+  /// cannot be found in the tree.
+  WidgetNode? _screenBeneath(WidgetNode tree, WidgetNode? over) {
+    final beneath = _beneath;
+    if (beneath == null || over == null) return beneath;
+    return _swapped(tree, over, (_) => beneath) ?? beneath;
   }
 
   WidgetNode buildRoot() {
@@ -1280,7 +1322,19 @@ class _Owner {
       _beneathOver = null;
       _nestedFab = false;
       _nestedBar = 0;
-      final tree = _buildRoot();
+      var tree = _buildRoot();
+      // A page that is not the whole screen is the part a swipe moves.
+      final over = _beneathOver;
+      final nested = [false];
+      final marked = over == null
+          ? null
+          : _swapped(
+              tree,
+              over,
+              (page) => _withProps(page, {RootProps.backSwipePage: true}),
+              nested,
+            );
+      if (marked != null && nested[0]) tree = marked;
       if (_poppedBySwipe) {
         _poppedBySwipe = false;
         if (_pageTransition?['kind'] == 'pop') _pageTransition = null;
@@ -1299,7 +1353,11 @@ class _Owner {
       return UIBuilder.withBackSwipe(
         root,
         onSwipe: swipe._swiped,
-        beneath: swipe._swiping ? _screenBeneath(tree) : null,
+        beneath: !swipe._swiping
+            ? null
+            : nested[0]
+            ? _beneath
+            : _screenBeneath(tree, over),
       );
     } finally {
       _current = outer;
