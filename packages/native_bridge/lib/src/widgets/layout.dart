@@ -1607,9 +1607,11 @@ class MaterialRectArcTween extends RectTween {
 /// hero's room while it flies - the arriving hero's, and the one it flies
 /// from in the picture of its page - laid out to that room by the renderer:
 /// the `heroSize` it is handed is [Size.zero], since the size is the
-/// renderer's to know. A hero with none leaves its room empty. A hero does not follow a back swipe
-/// ([transitionOnUserGestures]). The [tag] is told to the renderer as its
-/// `toString()`, so two tags that print alike are one.
+/// renderer's to know. A hero with none leaves its room empty. With
+/// [transitionOnUserGestures] it follows a swipe back on iOS, flying as far
+/// as the page has been moved (`heroGestures`); without, it moves with its
+/// page. The [tag] is told to the renderer as its `toString()`, so two tags
+/// that print alike are one.
 class Hero extends StatefulWidget {
   const Hero({
     super.key,
@@ -1685,13 +1687,19 @@ class _HeroState extends State<Hero> {
               'placeholder',
             ),
           );
-    return UIBuilder.box(
+    final box = UIBuilder.box(
       hero: tag,
       heroArc: _arcs(context),
       heroShuttle: flown,
       heroPlaceholder: placeholder,
       id: _idOf(widget.key),
       child: _renderChild(owner, widget.child),
+    );
+    if (!widget.transitionOnUserGestures) return box;
+    return WidgetNode(
+      type: box.type,
+      props: {...box.props, 'heroGestures': true},
+      children: box.children,
     );
   });
 }

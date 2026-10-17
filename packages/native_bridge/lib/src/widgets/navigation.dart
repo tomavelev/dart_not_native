@@ -996,9 +996,11 @@ class _Probe extends StatelessWidget {
 /// ones that move anything, and the `curve` the first that names one runs
 /// along. An [AnimatedBuilder] or a [ListenableBuilder] is read through what
 /// it builds, a [Transform] by its move, scale and turn (a translation in
-/// pixels is told as a part of the screen's size), and a [KeyedSubtree] or a
-/// [SizeTransition] is passed through - the page is not clipped as one
-/// reveals it. Anything else in the way ends the reading there.
+/// pixels is told as a part of the screen's size), a [SizeTransition] as
+/// `reveal` - the share of the page shown along its `revealAxis`
+/// (`vertical` or `horizontal`), from where `revealAlign` (-1 to 1, the
+/// start to the end) says - and a [KeyedSubtree] is passed through. Anything
+/// else in the way ends the reading there.
 Map<String, Object> _pageMotion(
   BuildContext context,
   Widget built,
@@ -1014,6 +1016,9 @@ Map<String, Object> _pageMotion(
   var dy = 0.0;
   var scale = 1.0;
   var rotate = 0.0;
+  var reveal = 1.0;
+  String? revealAxis;
+  var revealAlign = 0.0;
   Curve? curve;
   Widget? at = built;
   for (
@@ -1048,6 +1053,12 @@ Map<String, Object> _pageMotion(
       case final KeyedSubtree kept:
         at = kept.child;
       case final SizeTransition revealed:
+        reveal *= revealed.sizeFactor.value.clamp(0.0, 1.0);
+        revealAxis ??= revealed.axis == Axis.horizontal
+            ? 'horizontal'
+            : 'vertical';
+        revealAlign = revealed.axisAlignment;
+        curve ??= _curveIn(revealed.sizeFactor);
         at = revealed.child;
       case final Transform moved:
         final map = moved._map;
@@ -1077,6 +1088,9 @@ Map<String, Object> _pageMotion(
     if (dy != 0) 'dy': dy,
     if (scale != 1) 'scale': scale,
     if (rotate != 0) 'rotate': rotate,
+    if (reveal != 1) 'reveal': reveal,
+    if (reveal != 1) 'revealAxis': revealAxis ?? 'vertical',
+    if (reveal != 1 && revealAlign != 0) 'revealAlign': revealAlign,
     if (curve != null) 'curve': curve.name,
   };
 }
@@ -1447,7 +1461,17 @@ class Navigator extends StatefulWidget {
   NavigatorState createState() => NavigatorState();
 }
 
-class NavigatorState extends State<Navigator> {
+/// What a swipe back takes the top page off: a [Navigator]'s, or a
+/// [BackSwipeStack]'s.
+abstract interface class _BackSwipeable {
+  /// Whether a swipe is under way over its top page.
+  abstract bool _swiping;
+
+  /// A swipe's phase, as the renderer tells it.
+  void _swiped(String phase);
+}
+
+class NavigatorState extends State<Navigator> implements _BackSwipeable {
   NavigatorState();
 
   /// For a context no navigator is above and an app that has not built one:
@@ -1833,11 +1857,6 @@ class NavigatorState extends State<Navigator> {
     if (before == null || top == null || identical(before, top)) return;
     final pushed = pages.length > depth;
     final popped = pages.length < depth;
-    // A back swipe has moved the page off already.
-    if (_poppedBySwipe) {
-      _poppedBySwipe = false;
-      if (popped) return;
-    }
     // The page that moves is the one whose time it is: arriving, the new
     // one's; leaving, the old one's way back.
     final time = popped
@@ -1919,14 +1938,10 @@ class NavigatorState extends State<Navigator> {
     return shown ?? UIBuilder.sizedBox();
   });
 
-  /// Whether a back swipe is under way over this navigator's top page.
+  @override
   bool _swiping = false;
 
-  /// Whether the next pop is a back swipe's, which the renderer has moved
-  /// already.
-  bool _poppedBySwipe = false;
-
-  /// A back swipe's phase, as the renderer tells it.
+  @override
   void _swiped(String phase) {
     switch (phase) {
       case 'start':
@@ -1934,13 +1949,87 @@ class NavigatorState extends State<Navigator> {
         _host._requestRebuild();
       case 'commit':
         _swiping = false;
-        _poppedBySwipe = true;
-        if (_host._refusePop() || !_popRoute(null)) _poppedBySwipe = false;
+        _host._poppedBySwipe = true;
+        if (_host._refusePop() || !_popRoute(null)) {
+          _host._poppedBySwipe = false;
+        }
       default:
         _swiping = false;
         _host._requestRebuild();
     }
   }
+}
+
+/// Pages one over another, the last showing, that a swipe back from the
+/// leading edge can take the top one off, as it can a [Navigator]'s
+/// (`RootProps.backSwipeEventId`) - for a router of an app's own. While a
+/// swipe is under way the page beneath is drawn under the one moving, built
+/// where it always is so it keeps its `State`; let go far enough, [onPop]
+/// is called, and should take the top page off. Offered while [canPop] and
+/// there are two pages or more. The pages beneath are built for their state
+/// only, as an [IndexedStack]'s are.
+class BackSwipeStack extends StatefulWidget {
+  const BackSwipeStack({
+    super.key,
+    required this.children,
+    required this.onPop,
+    this.canPop = true,
+  });
+
+  final List<Widget> children;
+  final VoidCallback onPop;
+  final bool canPop;
+
+  @override
+  State<BackSwipeStack> createState() => _BackSwipeStackState();
+}
+
+class _BackSwipeStackState extends State<BackSwipeStack>
+    implements _BackSwipeable {
+  _Owner? _host;
+
+  @override
+  bool _swiping = false;
+
+  @override
+  void _swiped(String phase) {
+    final host = _host;
+    switch (phase) {
+      case 'start':
+        _swiping = true;
+        host?._requestRebuild();
+      case 'commit':
+        _swiping = false;
+        host?._poppedBySwipe = true;
+        widget.onPop();
+      default:
+        _swiping = false;
+        host?._requestRebuild();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => _NodeWidget((owner) {
+    _host = owner;
+    final pages = widget.children;
+    final swipeable = owner._hidden == 0 && widget.canPop && pages.length > 1;
+    if (swipeable) {
+      owner._backSwipe = this;
+    } else {
+      _swiping = false;
+    }
+    WidgetNode? shown;
+    for (var i = 0; i < pages.length; i++) {
+      if (i == pages.length - 1) {
+        shown = owner.inSlot(i, () => pages[i]._render(owner));
+      } else if (swipeable && _swiping && i == pages.length - 2) {
+        owner._beneath = owner.inSlot(i, () => pages[i]._render(owner));
+      } else {
+        owner._offstage(i, pages[i]);
+      }
+    }
+    return shown ?? UIBuilder.sizedBox();
+  });
 }
 
 // ---------------------------------------------------------------------------

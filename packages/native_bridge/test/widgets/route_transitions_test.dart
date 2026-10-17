@@ -210,16 +210,24 @@ void main() {
     );
   });
 
-  test('a SizeTransition and a KeyedSubtree are passed through', () async {
+  test('a SizeTransition reveals the page, and a KeyedSubtree is passed '
+      'through', () async {
     await push(
       (_, animation, _, child) => SizeTransition(
         sizeFactor: animation,
+        axis: Axis.horizontal,
+        axisAlignment: -1,
         child: KeyedSubtree(
           child: FadeTransition(opacity: animation, child: child),
         ),
       ),
     );
-    expect(transition()!['page'], {'opacity': 0.0});
+    expect(transition()!['page'], {
+      'opacity': 0.0,
+      'reveal': 0.0,
+      'revealAxis': 'horizontal',
+      'revealAlign': -1.0,
+    });
   });
 
   test('something else in the way ends the reading there', () async {

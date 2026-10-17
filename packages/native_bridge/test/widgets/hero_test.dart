@@ -243,6 +243,22 @@ void main() {
     expect(hero().props['heroPlaceholder'].toString(), contains('big'));
   });
 
+  test('one that follows a swipe back says so', () {
+    WidgetNode heroOf(bool gestures) => AppTester.widget(
+      MaterialApp(
+        home: Scaffold(
+          body: Hero(
+            tag: 'a',
+            transitionOnUserGestures: gestures,
+            child: const Text('a'),
+          ),
+        ),
+      ),
+    ).ofType('Box').singleWhere((n) => n.props['hero'] == 'a');
+    expect(heroOf(true).props['heroGestures'], isTrue);
+    expect(heroOf(false).props.containsKey('heroGestures'), isFalse);
+  });
+
   group('MaterialRectArcTween', () {
     const begin = Rect.fromLTWH(0, 0, 10, 10);
     const end = Rect.fromLTWH(100, 200, 40, 40);

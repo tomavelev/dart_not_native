@@ -5,7 +5,7 @@ library;
 import 'dart:async';
 
 import 'package:dart_not_native/core.dart'
-    show InMemoryRenderer, NativeUIApp, SystemBack, WidgetNode;
+    show InMemoryRenderer, NativeUIApp, RootProps, SystemBack, WidgetNode;
 import 'package:dart_not_native/router.dart';
 import 'package:dart_not_native/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -725,6 +725,46 @@ void main() {
         GoRoute(path: '/other', builder: _page('other')),
       ],
     );
+
+    group('a swipe back', () {
+      String? offered(_Mounted m) =>
+          m.root.props[RootProps.backSwipeEventId] as String?;
+      Future<void> swipe(_Mounted m, String phase) async {
+        await m.renderer.handleEvent(offered(m)!, {'phase': phase});
+        await pumpEventQueue();
+      }
+
+      test('is offered over a pushed page, and draws the one beneath while '
+          'a finger is on it', () async {
+        final m = _Mounted(router());
+        expect(offered(m), isNull);
+        m.router.push('/form');
+        expect(offered(m), isA<String>());
+
+        await swipe(m, 'start');
+        expect(m.text('page'), 'form /form');
+        expect(m.root.props[RootProps.beneath].toString(), contains('home /'));
+      });
+
+      test('pops on commit, with no transition of its own', () async {
+        final m = _Mounted(router());
+        m.router.push('/form');
+        await swipe(m, 'start');
+        await swipe(m, 'commit');
+        expect(m.text('page'), 'home /');
+        expect(m.root.props.containsKey(RootProps.pageTransition), isFalse);
+        expect(m.root.props.containsKey(RootProps.beneath), isFalse);
+      });
+
+      test('a cancel leaves the page where it is', () async {
+        final m = _Mounted(router());
+        m.router.push('/form');
+        await swipe(m, 'start');
+        await swipe(m, 'cancel');
+        expect(m.text('page'), 'form /form');
+        expect(m.root.props.containsKey(RootProps.beneath), isFalse);
+      });
+    });
 
     test('push puts a page on top; pop takes it off again', () {
       final m = _Mounted(router());

@@ -292,23 +292,39 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
           _edgePull = pull;
           handleEvent(eventId, const {});
         },
-        child: _PageSwitch(
-          page: page,
-          kind: kind,
-          motion: _pageMotion,
-          pictureMotion: _pictureMotion,
-          time: _pageTime,
-          rtl: rtl,
-          heroes: _heroes,
-          heroTags: _pageHeroes,
-          child: Builder(
-            builder: (context) {
-              final widget = buildNode(tree, context);
-              if (tree.type == 'Scaffold' || tree.type == 'NavigationStack') {
-                return widget;
-              }
-              return Material(type: MaterialType.transparency, child: widget);
-            },
+        child: _BackSwipe(
+          renderer: this,
+          eventId: _optString(tree.props[RootProps.backSwipeEventId]),
+          beneath: switch (tree.props[RootProps.beneath]) {
+            final Map<dynamic, dynamic> node => WidgetNode.fromJson(
+              Map<String, dynamic>.from(node),
+            ),
+            _ => null,
+          },
+          // A drawer at the leading edge has it instead.
+          blocked: (rtl ? drawerEnd : drawerStart) != null,
+          child: _PageSwitch(
+            page: page,
+            kind: kind,
+            motion: _pageMotion,
+            pictureMotion: _pictureMotion,
+            time: _pageTime,
+            rtl: rtl,
+            heroes: _heroes,
+            heroTags: _pageHeroes,
+            child: Builder(
+              builder: (context) {
+                final widget = buildNode(tree, context);
+                if (tree.type == 'Scaffold' ||
+                    tree.type == 'NavigationStack') {
+                  return widget;
+                }
+                return Material(
+                  type: MaterialType.transparency,
+                  child: widget,
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -5582,6 +5598,33 @@ const _travel = Duration(milliseconds: 300);
 /// given when it arrived: a page leaves in the time its own transition says.
 /// A route's own move ([RootProps.pageTransition]'s `page` or `picture`):
 /// where the page starts, arriving, or where its picture ends, leaving.
+/// The part of a page a reveal shows: [shown] of it along one axis, the
+/// rest cut away as [align] says (-1 keeps the start).
+class _Reveal extends CustomClipper<Rect> {
+  const _Reveal(this.shown, {required this.horizontally, required this.align});
+  final double shown;
+  final bool horizontally;
+  final double align;
+
+  @override
+  Rect getClip(Size size) {
+    final whole = Offset.zero & size;
+    if (shown >= 1) return whole;
+    final length = horizontally ? size.width : size.height;
+    final cut = length * (1 - shown);
+    final before = cut * (align + 1) / 2;
+    return horizontally
+        ? Rect.fromLTWH(before, 0, size.width - cut, size.height)
+        : Rect.fromLTWH(0, before, size.width, size.height - cut);
+  }
+
+  @override
+  bool shouldReclip(_Reveal oldClipper) =>
+      oldClipper.shown != shown ||
+      oldClipper.horizontally != horizontally ||
+      oldClipper.align != align;
+}
+
 class _RouteMotion {
   const _RouteMotion({
     required this.opacity,
@@ -5589,6 +5632,9 @@ class _RouteMotion {
     required this.scale,
     required this.rotate,
     required this.curve,
+    this.reveal = 1,
+    this.revealHorizontally = false,
+    this.revealAlign = 0,
   });
 
   factory _RouteMotion.of(Map<dynamic, dynamic> m) {
@@ -5599,6 +5645,9 @@ class _RouteMotion {
       offset: Offset(n('dx', 0), n('dy', 0)),
       scale: n('scale', 1),
       rotate: n('rotate', 0),
+      reveal: n('reveal', 1).clamp(0.0, 1.0),
+      revealHorizontally: m['revealAxis'] == 'horizontal',
+      revealAlign: n('revealAlign', 0).clamp(-1.0, 1.0),
       // Straight through, as a route's animation runs, unless it says.
       curve: FlutterUIRenderer._curve({'curve': m['curve'] ?? 'linear'}),
     );
@@ -5610,6 +5659,12 @@ class _RouteMotion {
   final double rotate;
   final Curve curve;
 
+  /// The share of the page shown (a `SizeTransition`'s), along which axis,
+  /// and from where.
+  final double reveal;
+  final bool revealHorizontally;
+  final double revealAlign;
+
   /// [child] [t] of the way from its place to the motion's.
   Widget at(double t, Widget child) {
     double lerp(double from, double to) => from + (to - from) * t;
@@ -5619,7 +5674,19 @@ class _RouteMotion {
         translation: offset * t,
         child: Transform.rotate(
           angle: rotate * t,
-          child: Transform.scale(scale: lerp(1, scale), child: child),
+          child: Transform.scale(
+            scale: lerp(1, scale),
+            // Always clipped, so the page keeps its widgets: to all of it
+            // where nothing is revealed.
+            child: ClipRect(
+              clipper: _Reveal(
+                lerp(1, reveal),
+                horizontally: revealHorizontally,
+                align: revealAlign,
+              ),
+              child: child,
+            ),
+          ),
         ),
       ),
     );
@@ -5947,6 +6014,177 @@ class _DrawerEdgesState extends State<_DrawerEdges> {
         if (left != null) strip(left, fromLeft: true),
         if (right != null) strip(right, fromLeft: false),
       ],
+    );
+  }
+}
+
+/// A swipe back from the leading edge, as iOS has it
+/// (`RootProps.backSwipeEventId`): the page follows the finger with the
+/// page beneath drawn under it a third of the way behind, and is taken off
+/// past half way or flung, put back otherwise. On iOS only, where Flutter's
+/// own Cupertino pages swipe back; elsewhere [child] as it is.
+class _BackSwipe extends StatefulWidget {
+  const _BackSwipe({
+    required this.renderer,
+    required this.eventId,
+    required this.beneath,
+    required this.blocked,
+    required this.child,
+  });
+  final FlutterUIRenderer renderer;
+  final String? eventId;
+  final WidgetNode? beneath;
+  final bool blocked;
+  final Widget child;
+
+  @override
+  State<_BackSwipe> createState() => _BackSwipeState();
+}
+
+class _BackSwipeState extends State<_BackSwipe>
+    with SingleTickerProviderStateMixin {
+  /// How far the page has been moved, in pixels inwards; null when no
+  /// swipe is under way.
+  double? _moved;
+
+  /// Whether a swipe let go far enough, and the page beneath is coming.
+  bool _committed = false;
+
+  /// The swipe's event, kept from its start: the tree may stop offering one
+  /// while it is under way.
+  String? _eventId;
+
+  late final AnimationController _settle = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+  );
+
+  @override
+  void didUpdateWidget(_BackSwipe oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The tree that answers the commit no longer has the page beneath beside
+    // it: that page is the screen now, so the screen comes back into place.
+    if (_committed && widget.beneath == null) {
+      _committed = false;
+      _moved = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _settle.dispose();
+    super.dispose();
+  }
+
+  void _letGo(double width, double speed) {
+    final moved = _moved;
+    final eventId = _eventId;
+    if (moved == null || eventId == null) return;
+    final leave = widget.beneath != null && (moved > width / 2 || speed > 500);
+    final from = moved;
+    final to = leave ? width : 0.0;
+    void step() => setState(() => _moved = from + (to - from) * _settle.value);
+    _settle
+      ..removeListener(step)
+      ..addListener(step);
+    _settle.forward(from: 0).whenComplete(() {
+      _settle.removeListener(step);
+      if (!mounted) return;
+      if (leave) {
+        _committed = true;
+      } else {
+        setState(() => _moved = null);
+      }
+      widget.renderer.handleEvent(eventId, {
+        'phase': leave ? 'commit' : 'cancel',
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eventId = widget.eventId;
+    final offered =
+        defaultTargetPlatform == TargetPlatform.iOS &&
+        !widget.blocked &&
+        (eventId != null || _moved != null);
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final inward = rtl ? -1.0 : 1.0;
+    final moved = _moved;
+    final beneath = widget.beneath;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        return Stack(
+          fit: StackFit.passthrough,
+          clipBehavior: Clip.none,
+          children: [
+            // The page beneath, while a swipe shows it.
+            if (moved != null && beneath != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Transform.translate(
+                    offset: Offset(-inward * (width - moved) / 3, 0),
+                    child: Material(
+                      child: widget.renderer.buildNode(beneath, context),
+                    ),
+                  ),
+                ),
+              ),
+            KeyedSubtree(
+              key: const ValueKey('page'),
+              child: Transform.translate(
+                offset: Offset(inward * (moved ?? 0), 0),
+                // Always the same shape, so the page keeps its widgets
+                // whether or not it is moving.
+                child: DecoratedBox(
+                  decoration: moved == null
+                      ? const BoxDecoration()
+                      : const BoxDecoration(
+                          boxShadow: [
+                            BoxShadow(color: Color(0x33000000), blurRadius: 8),
+                          ],
+                        ),
+                  child: widget.child,
+                ),
+              ),
+            ),
+            if (offered)
+              Positioned(
+                top: 0,
+                bottom: 0,
+                left: rtl ? null : 0,
+                right: rtl ? 0 : null,
+                width: 20,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragStart: (_) {
+                    final id = widget.eventId;
+                    if (id == null || _committed) return;
+                    _eventId = id;
+                    setState(() => _moved = 0);
+                    widget.renderer.handleEvent(id, {'phase': 'start'});
+                  },
+                  onHorizontalDragUpdate: (details) {
+                    final now = _moved;
+                    if (now == null || _settle.isAnimating) return;
+                    setState(
+                      () => _moved = (now + details.delta.dx * inward).clamp(
+                        0,
+                        width,
+                      ),
+                    );
+                  },
+                  onHorizontalDragEnd: (details) =>
+                      _letGo(width, (details.primaryVelocity ?? 0) * inward),
+                  onHorizontalDragCancel: () => _letGo(width, 0),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

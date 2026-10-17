@@ -334,6 +334,9 @@ class _ControlsGalleryAppState extends State<ControlsGalleryApp> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text('Draft saved'),
+                // Long enough for a person - or a flow driving the
+                // emulator a step a second - to reach Undo.
+                duration: const Duration(seconds: 10),
                 action: SnackBarAction(
                   label: 'Undo',
                   onPressed: () => setState(() => _status = 'Save undone'),

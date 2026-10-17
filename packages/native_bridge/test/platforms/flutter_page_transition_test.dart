@@ -89,7 +89,32 @@ void main() {
     expect(find.text('one'), findsNothing);
   });
 
-  testWidgets('the page that leaves takes no taps', (tester) async {
+  testWidgets('a reveal shows the share of the page it says', (
+    tester,
+  ) async {
+    await show(tester, page('one'));
+    await show(
+      tester,
+      UIBuilder.withPageTransition(page('two'), {
+        'kind': 'push',
+        'ms': 400,
+        'page': {
+          'reveal': 0.25,
+          'revealAxis': 'vertical',
+          'revealAlign': -1,
+        },
+      }),
+    );
+    await tester.pump();
+    final clip = tester.widget<ClipRect>(
+      find.ancestor(of: find.text('two'), matching: find.byType(ClipRect)).last,
+    );
+    final shown = clip.clipper!.getClip(const Size(100, 200));
+    expect(shown, const Rect.fromLTWH(0, 0, 100, 50));
+    await tester.pumpAndSettle();
+  });
+
+    testWidgets('the page that leaves takes no taps', (tester) async {
     final taps = <String>[];
     renderer.onEvent('old', (_) => taps.add('old'));
     await show(

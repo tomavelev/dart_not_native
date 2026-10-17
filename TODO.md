@@ -2083,9 +2083,9 @@ notice.
    out at each size it passes through and its `placeholderBuilder` stands in
    its room - seen on an iOS simulator, an Android emulator and in Chrome.
    Since 2026-10-16 an `AnimatedBuilder`, a `Transform`, a `KeyedSubtree`
-   and a `SizeTransition` are read through as well. Still open: other
-   widgets a builder wraps the page in are not read, and a `SizeTransition`
-   does not clip it. ~~A `ShellRoute` has no `pageBuilder`~~ - it has
+   and a `SizeTransition` are read through as well, and since 2026-10-17 a
+   `SizeTransition` clips the page as it reveals it, on all four renderers.
+   Still open: other widgets a builder wraps the page in are not read. ~~A `ShellRoute` has no `pageBuilder`~~ - it has
    since 2026-10-16, moving the frame as the shell is entered or left - and
    ~~the hero a flight leaves has no placeholder~~, it has its own in the
    picture of its page since the same day, seen on an iOS simulator, an
@@ -2239,8 +2239,9 @@ notice.
     (`text.dart`).
 14. ~~**Focus is text fields only.**~~ Since 2026-10-16 a `Focus` widget is
     a box that takes focus, outlined while it has it and told back to its
-    node - on the web and in the Flutter host; the native renderers leave it
-    to their controls' own keyboard focus, which is what is still open.
+    node - on the web and in the Flutter host, and since 2026-10-17 on
+    Android (seen on an emulator); iOS leaves it to its controls' own
+    keyboard focus, which is what is still open.
     ~~Every `KeyboardListener` on screen
     hears every key~~ - since 2026-10-10 the one whose `FocusNode` was asked
     for focus hears alone, and a dialog takes the keys from the page behind
@@ -2265,10 +2266,12 @@ notice.
     says whether it has. The rebuild itself is still from the root.
 17. **A swipe back is iOS's alone.** Since 2026-10-16 a page pushed on a
     `Navigator` follows the finger back from the leading edge on iOS
-    (`RootProps.backSwipeEventId`, `beneath`), seen on a simulator. The
-    Flutter host could draw it from the same props and does not yet; a page
-    a `GoRouter` pushed is not offered one; a hero does not follow it
-    ([Hero.transitionOnUserGestures]).
+    (`RootProps.backSwipeEventId`, `beneath`), seen on a simulator; since
+    2026-10-17 the Flutter host draws it on iOS too, a `GoRouter`'s pages
+    are offered it (`BackSwipeStack`) and a `Hero` with
+    `transitionOnUserGestures` flies with it on iOS - seen on a simulator.
+    Still open: a page pushed inside a `ShellRoute` is not offered it, and
+    a hero does not follow it in the Flutter host.
 18. **An image given a width inside a box that fills its row** is drawn
     three ways: the stated width at the start on iOS and the web, and the
     box's whole width with the picture scaled down in the middle of it on
@@ -2544,10 +2547,10 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2721 tests
-  (1645 in the package, 393 for the example apps and goldens, 640 in the browser,
+  contracts, the plugin system and the design system are covered by 2730 tests
+  (1653 in the package, 393 for the example apps and goldens, 641 in the browser,
   43 in the bloc package,
-  counted 2026-10-16), plus 20 integration tests that run on a real Android and
+  counted 2026-10-17), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native
   renderers drawing the whole node vocabulary and every example app. (Four of
   the eighteen - the free-form tree and the two pickers, added 2026-10-09, and

@@ -399,6 +399,22 @@ class NativeUIRenderer(
             val dy = n("dy", 0f)
             val scale = n("scale", 1f)
             val rotate = Math.toDegrees(n("rotate", 0f).toDouble()).toFloat()
+            val reveal = n("reveal", 1f).coerceIn(0f, 1f)
+            private val revealAcross = m["revealAxis"] == "horizontal"
+            private val revealAlign = n("revealAlign", 0f).coerceIn(-1f, 1f)
+
+            /** The part a page [shown] of the way revealed shows, in a [w] by [h] box. */
+            fun revealed(shown: Float, w: Int, h: Int): android.graphics.Rect? {
+                if (shown >= 1f) return null
+                val length = if (revealAcross) w else h
+                val cut = (length * (1 - shown)).toInt()
+                val before = (cut * (revealAlign + 1) / 2).toInt()
+                return if (revealAcross) {
+                    android.graphics.Rect(before, 0, before + w - cut, h)
+                } else {
+                    android.graphics.Rect(0, before, w, before + h - cut)
+                }
+            }
             // Straight through, as a route's animation runs, unless it says.
             val curve = interpolator(mapOf("curve" to (m["curve"] ?: "linear")))
         }
@@ -425,6 +441,9 @@ class NativeUIRenderer(
                     view.scaleX = lerp(arriving.scale, 1f, e)
                     view.scaleY = lerp(arriving.scale, 1f, e)
                     view.rotation = lerp(arriving.rotate, 0f, e)
+                    view.clipBounds = arriving.revealed(
+                        lerp(arriving.reveal, 1f, e), view.width, view.height,
+                    )
                 }
             }
             if (leaving != null) {
@@ -434,6 +453,9 @@ class NativeUIRenderer(
                 picture.dy = lerp(0f, leaving.dy * height, e)
                 picture.scale = lerp(1f, leaving.scale, e)
                 picture.rotate = lerp(0f, leaving.rotate, e)
+                picture.clip = leaving.revealed(
+                    lerp(1f, leaving.reveal, e), root.width, root.height,
+                )
                 picture.invalidateSelf()
             }
         }
@@ -456,6 +478,7 @@ class NativeUIRenderer(
                     it.scaleX = 1f
                     it.scaleY = 1f
                     it.rotation = 0f
+                    it.clipBounds = null
                 }
                 shot.recycle()
             }
@@ -483,6 +506,75 @@ class NativeUIRenderer(
 
     /** What flies in a hero's place (`heroShuttle`), by view. */
     private val heroShuttles = java.util.WeakHashMap<View, Map<*, *>>()
+
+    /** The event each box that is a `Focus` reports its focus by. */
+    private val focusIds = java.util.WeakHashMap<View, String>()
+
+    /** Whether focus was last reported in each, and the ask last acted on. */
+    private val focusHeld = java.util.WeakHashMap<View, Boolean>()
+    private val focusAsked = java.util.WeakHashMap<View, Number>()
+    private var watchingFocus = false
+
+    /**
+     * Makes [box] a `Focus` (`focusEventId`): focusable while it is
+     * `focusable`, saying `{focused}` when focus comes into it or leaves it
+     * altogether - a button inside it counts - and taking focus or giving it
+     * up when `focusVersion` moves on. Asked for, it can be focused under a
+     * finger too, as Flutter's can.
+     */
+    private fun applyFocus(box: BoxLayout, node: Map<*, *>) {
+        val eventId = node["focusEventId"] as? String
+        if (eventId == null) {
+            if (focusIds.remove(box) != null) box.isFocusable = false
+            return
+        }
+        focusIds[box] = eventId
+        val ready = node["focusable"] == true
+        box.isFocusable = ready
+        watchFocus()
+        val version = node["focusVersion"] as? Number
+        if (version != null && version != focusAsked[box]) {
+            focusAsked[box] = version
+            if (node["focusRequested"] == false) {
+                box.post { if (box.hasFocus()) box.findFocus()?.clearFocus() }
+            } else if (ready) {
+                box.post {
+                    box.isFocusableInTouchMode = true
+                    box.requestFocus()
+                }
+            }
+        } else if (ready && node["autofocus"] == true && !focusAsked.containsKey(box)) {
+            focusAsked[box] = 0
+            box.post {
+                box.isFocusableInTouchMode = true
+                box.requestFocus()
+            }
+        }
+    }
+
+    /** Tells each `Focus` box when focus has come into it or gone out of it. */
+    private fun watchFocus() {
+        if (watchingFocus) return
+        val root = rootContainer ?: return
+        watchingFocus = true
+        root.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
+            for ((box, eventId) in focusIds.entries.toList()) {
+                if (box == null) continue
+                var at: View? = now
+                var inside = false
+                while (at != null) {
+                    if (at === box) {
+                        inside = true
+                        break
+                    }
+                    at = at.parent as? View
+                }
+                if ((focusHeld[box] ?: false) == inside) continue
+                focusHeld[box] = inside
+                sendEvent(eventId, mapOf("focused" to inside))
+            }
+        }
+    }
 
     /** The props a box that is only a hero has. */
     private val HERO_KEYS = setOf("id", "hero", "heroArc", "heroShuttle", "heroPlaceholder")
@@ -1371,6 +1463,7 @@ class NativeUIRenderer(
         lastViewport = null
         (container.parent as? ViewGroup)?.removeView(container)
         rootContainer = null
+        watchingFocus = false
         currentTree = null
         currentRoot = null
         snackbarTimers.values.forEach(handler::removeCallbacks)
@@ -5859,6 +5952,7 @@ class NativeUIRenderer(
      * opacity or transform travels over the node's `animateMs`.
      */
     private fun configureBox(box: BoxLayout, node: Map<*, *>, animate: Boolean) {
+        applyFocus(box, node)
         val hero = node["hero"] as? String
         if (hero != null) heroViews[box] = hero else heroViews.remove(box)
         // A box that is only a hero is its child's size, as a Flutter `Hero`
@@ -7989,6 +8083,9 @@ private class MovingPicture(private val shot: android.graphics.Bitmap) :
     var dy = 0f
     var scale = 1f
     var rotate = 0f
+
+    /** The part of it a reveal shows, in its own space; all of it if null. */
+    var clip: android.graphics.Rect? = null
     private var shown = 255
     private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
 
@@ -7996,6 +8093,7 @@ private class MovingPicture(private val shot: android.graphics.Bitmap) :
         val box = bounds
         val save = canvas.save()
         canvas.translate(dx, dy)
+        clip?.let { canvas.clipRect(it) }
         canvas.rotate(rotate, box.exactCenterX(), box.exactCenterY())
         canvas.scale(scale, scale, box.exactCenterX(), box.exactCenterY())
         paint.alpha = shown

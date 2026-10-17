@@ -981,8 +981,12 @@ class _Owner {
   /// The navigator whose top page a back swipe would pop, as this build
   /// found it - the last built that has a page to go back to - and the page
   /// beneath that one, drawn while a swipe is under way.
-  NavigatorState? _backSwipe;
+  _BackSwipeable? _backSwipe;
   WidgetNode? _beneath;
+
+  /// Whether a swipe back has just taken a page off: the renderer has moved
+  /// it already, so the build that shows the page beneath says no pop.
+  bool _poppedBySwipe = false;
 
   /// Whether a scaffold inside another's body drew a floating button in this
   /// build - one no renderer knows is there.
@@ -1218,6 +1222,10 @@ class _Owner {
       _nestedFab = false;
       _nestedBar = 0;
       final tree = _buildRoot();
+      if (_poppedBySwipe) {
+        _poppedBySwipe = false;
+        if (_pageTransition?['kind'] == 'pop') _pageTransition = null;
+      }
       final root = UIBuilder.withPageTransition(
         UIBuilder.withTextDirection(tree, _screenDirection.name),
         _pageTransition,

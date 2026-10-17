@@ -189,8 +189,9 @@ class FocusScopeNode {
 /// focus and when not. It has it while anything inside it does, a button
 /// included. [autofocus] takes it on first showing.
 ///
-/// Drawn on the web and in the Flutter host. The native renderers keep
-/// their controls' own keyboard focus, and a [Focus] there is its child.
+/// Drawn on the web, in the Flutter host and on Android, which shows its
+/// focus highlight only while a keyboard moves the focus. iOS keeps its
+/// controls' own keyboard focus, and a [Focus] there is its child.
 class Focus extends Widget {
   const Focus({
     super.key,

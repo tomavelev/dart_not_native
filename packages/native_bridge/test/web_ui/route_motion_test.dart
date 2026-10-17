@@ -138,7 +138,30 @@ void main() {
       expect(root.style.zIndex, isEmpty);
     });
 
-    test('an empty one does not move at all', () async {
+    test('a reveal clips the page to the share it shows', () async {
+      await renderer.render(screen('one'));
+      await renderer.render(
+        UIBuilder.withPageTransition(screen('two'), {
+          'kind': 'push',
+          'ms': 400,
+          'page': {
+            'reveal': 0.25,
+            'revealAxis': 'vertical',
+            'revealAlign': -1,
+          },
+        }),
+      );
+      final page = root.firstElementChild!;
+      final run = page.getAnimations().toDart.single..pause();
+      run.currentTime = 0.toJS;
+      // The top quarter, as a SizeTransition aligned to the top shows it.
+      expect(
+        web.window.getComputedStyle(page).clipPath,
+        'inset(0% 0% 75%)',
+      );
+    });
+
+        test('an empty one does not move at all', () async {
       await renderer.render(screen('one'));
       await renderer.render(
         UIBuilder.withPageTransition(screen('two'), {

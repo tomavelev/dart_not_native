@@ -772,6 +772,46 @@ class NativeUIRenderer {
           for key in layer.animationKeys() ?? [] where key.hasPrefix("dnn.route.") {
             layer.removeAnimation(forKey: key)
           }
+          if layer.mask?.name == "dnn.route.reveal" { layer.mask = nil }
+        }
+      }
+      // A reveal (a SizeTransition's): the page shown only as far as it
+      // says, through a mask that grows from that part to the whole of it.
+      for (layer, motion, arriving) in moves {
+        guard let reveal = (motion["reveal"] as? NSNumber).map({ CGFloat($0.doubleValue) }),
+          reveal < 1
+        else { continue }
+        let whole = layer.bounds
+        let across = motion["revealAxis"] as? String == "horizontal"
+        let align = min(1, max(-1, (motion["revealAlign"] as? NSNumber).map {
+          CGFloat($0.doubleValue)
+        } ?? 0))
+        let length = across ? whole.width : whole.height
+        let cut = length * (1 - max(0, reveal))
+        let before = cut * (align + 1) / 2
+        let part = across
+          ? CGRect(x: before, y: 0, width: whole.width - cut, height: whole.height)
+          : CGRect(x: 0, y: before, width: whole.width, height: whole.height - cut)
+        let mask = CALayer()
+        mask.name = "dnn.route.reveal"
+        mask.backgroundColor = UIColor.black.cgColor
+        mask.frame = arriving ? whole : part
+        layer.mask = mask
+        let curve = timing(motion)
+        for (key, from, to) in [
+          ("bounds", NSValue(cgRect: CGRect(origin: .zero, size: part.size)),
+            NSValue(cgRect: CGRect(origin: .zero, size: whole.size))),
+          ("position", NSValue(cgPoint: CGPoint(x: part.midX, y: part.midY)),
+            NSValue(cgPoint: CGPoint(x: whole.midX, y: whole.midY))),
+        ] {
+          let run = CABasicAnimation(keyPath: key)
+          run.fromValue = arriving ? from : to
+          run.toValue = arriving ? to : from
+          run.duration = ms / 1000
+          run.timingFunction = curve
+          run.fillMode = .forwards
+          run.isRemovedOnCompletion = false
+          mask.add(run, forKey: "dnn.route.reveal." + key)
         }
       }
       for (layer, motion, arriving) in moves {
@@ -853,6 +893,8 @@ class NativeUIRenderer {
     view.transform = moved
     beneathView = view
     beneathTree = tree
+    // Not while the page is being taken off: the heroes are on their way.
+    if backSwiping { flyWithSwipe(container, beneath: view) }
   }
 
   /// Where the page beneath stands with the page on top [progress] of the
@@ -880,6 +922,7 @@ class NativeUIRenderer {
     case .changed:
       container.transform = CGAffineTransform(translationX: inward * moved, y: 0)
       beneathView?.transform = beneathOffset(container, progress: progress)
+      placeSwipeFlights(container, progress: progress)
     case .ended, .cancelled, .failed:
       let flung = sender.velocity(in: container.superview).x * inward > 500
       let leave = sender.state == .ended && (progress > 0.5 || flung) && beneathView != nil
@@ -893,9 +936,11 @@ class NativeUIRenderer {
             leave ? CGAffineTransform(translationX: inward * width, y: 0) : .identity
           self.beneathView?.transform =
             leave ? .identity : self.beneathOffset(container, progress: 0)
+          self.placeSwipeFlights(container, progress: leave ? 1 : 0)
         },
         completion: { [weak self] _ in
           guard let self else { return }
+          if !leave { self.landSwipeFlights() }
           if !leave {
             container.layer.shadowOpacity = 0
             self.beneathView?.removeFromSuperview()
@@ -917,6 +962,7 @@ class NativeUIRenderer {
     // beside it.
     guard backSwipeCommitted, !currentTreeHasBeneath else { return }
     backSwipeCommitted = false
+    landSwipeFlights()
     container.transform = .identity
     container.layer.shadowOpacity = 0
     beneathView?.removeFromSuperview()
@@ -926,6 +972,80 @@ class NativeUIRenderer {
 
   /// Whether the tree just drawn still came with the page beneath.
   private var currentTreeHasBeneath = false
+
+  /// The heroes that follow a swipe back (`heroGestures`).
+  private let gestureHeroes = NSHashTable<UIView>.weakObjects()
+
+  /// A hero flying with a swipe back: the picture, where it starts on the
+  /// page going and ends on the page beneath (in the container's space),
+  /// and the two heroes it stands for, out of sight meanwhile.
+  private struct SwipeFlight {
+    let picture: UIView
+    let from: CGRect
+    let to: CGRect
+    let hidden: [(UIView, CGFloat)]
+  }
+
+  private var swipeFlights: [SwipeFlight] = []
+
+  /// Sets the heroes of the page going that follow a swipe flying, each to
+  /// its counterpart on the page beneath - once that page is drawn.
+  private func flyWithSwipe(_ container: UIView, beneath: UIView) {
+    guard swipeFlights.isEmpty, let above = container.superview else { return }
+    beneath.layoutIfNeeded()
+    var flown = Set<String>()
+    for case let view as UIView in heroViews.keyEnumerator().allObjects {
+      guard gestureHeroes.contains(view), view.isDescendant(of: container),
+        let name = heroViews.object(forKey: view) as String?, !flown.contains(name),
+        view.window != nil, !view.bounds.isEmpty
+      else { continue }
+      // Its counterpart, on the page beneath.
+      let counterpart = heroViews.keyEnumerator().allObjects.compactMap { $0 as? UIView }
+        .first { other in
+          other.isDescendant(of: beneath) && heroViews.object(forKey: other) as String? == name
+            && !other.bounds.isEmpty
+        }
+      guard let counterpart,
+        let picture = view.resizableSnapshotView(
+          from: heroRoom(view), afterScreenUpdates: true, withCapInsets: .zero)
+      else { continue }
+      flown.insert(name)
+      let from = view.convert(heroRoom(view), to: container)
+      let to = counterpart.convert(heroRoom(counterpart), to: beneath)
+      picture.isUserInteractionEnabled = false
+      above.addSubview(picture)
+      let hidden = [(view, view.alpha), (counterpart, counterpart.alpha)]
+      for (hero, _) in hidden { hero.alpha = 0 }
+      swipeFlights.append(SwipeFlight(picture: picture, from: from, to: to, hidden: hidden))
+    }
+    placeSwipeFlights(container, progress: 0)
+  }
+
+  /// Each hero flying with a swipe, [progress] of the way to the page beneath.
+  private func placeSwipeFlights(_ container: UIView, progress: CGFloat) {
+    // The container's place before it was moved: the space both pages share.
+    let origin = CGPoint(
+      x: container.center.x - container.bounds.width / 2,
+      y: container.center.y - container.bounds.height / 2)
+    for flight in swipeFlights {
+      func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * progress }
+      flight.picture.frame = CGRect(
+        x: origin.x + lerp(flight.from.minX, flight.to.minX),
+        y: origin.y + lerp(flight.from.minY, flight.to.minY),
+        width: lerp(flight.from.width, flight.to.width),
+        height: lerp(flight.from.height, flight.to.height))
+    }
+  }
+
+  /// Lands the heroes flying with a swipe: their pictures go, and the heroes
+  /// are seen again.
+  private func landSwipeFlights() {
+    for flight in swipeFlights {
+      flight.picture.removeFromSuperview()
+      for (hero, alpha) in flight.hidden { hero.alpha = alpha }
+    }
+    swipeFlights.removeAll()
+  }
 
   /// The heroes that fly along a Material arc (`heroArc`).
   private let heroArcs = NSHashTable<UIView>.weakObjects()
@@ -5731,6 +5851,11 @@ class NativeUIRenderer {
       heroArcs.add(box)
     } else {
       heroArcs.remove(box)
+    }
+    if node["hero"] != nil, node["heroGestures"] as? Bool == true {
+      gestureHeroes.add(box)
+    } else {
+      gestureHeroes.remove(box)
     }
     if node["hero"] != nil, let shuttle = node["heroShuttle"] as? [String: Any] {
       heroShuttles.setObject(shuttle as NSDictionary, forKey: box)

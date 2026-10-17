@@ -158,7 +158,12 @@ with `{phase}`: `'start'`, after which each tree carries the page beneath as
 `'commit'`, which pops with no page transition of its own, or `'cancel'`. A
 drawer at the leading edge has that edge instead. Seen on an iOS simulator.
 Android has the system's own back gesture, and the browser its own; neither
-draws this, nor does the Flutter host yet.
+draws this. The Flutter host draws it too, on iOS. `BackSwipeStack` offers
+it to a router of an app's own, and `router.dart`'s `GoRouter` stacks its
+pages in one - while popping takes the whole top page off, so not for a page
+pushed inside a shell. A `Hero` with `transitionOnUserGestures` flies with
+the swipe on iOS (`heroGestures`), as far as the page has moved, to its
+counterpart on the page beneath. Seen on an iOS simulator.
 
 ### `Focus`
 
@@ -166,9 +171,9 @@ A `Focus` widget: a box that is a stop for the Tab key, outlined while it has
 focus (`:focus-visible`), that its `FocusNode`'s `requestFocus()` gives focus
 and `unfocus()` takes it from, and that tells `onFocusChange` - and the node's
 `hasFocus` - when focus comes into it and when it leaves altogether
-(`focusEventId`, `focusable`, `focusSkip`, `focusVersion`). On the web and in
-the Flutter host; the native renderers keep their controls' own keyboard
-focus, and a `Focus` there is its child.
+(`focusEventId`, `focusable`, `focusSkip`, `focusVersion`). On the web, in the
+Flutter host and on Android, seen on an Android emulator; iOS keeps its
+controls' own keyboard focus, and a `Focus` there is its child.
 
 ### `IntrinsicColumnWidth` measures
 
@@ -193,10 +198,18 @@ a joiner or a variation selector that takes no room is nothing - each was
 A route's `transitionsBuilder` is read through an `AnimatedBuilder` or a
 `ListenableBuilder` - it is built at the animation's two ends - and a
 `Transform`'s translation, scale and turn are read as the page's move; a
-`KeyedSubtree` and a `SizeTransition` are passed through rather than ending
-the reading.
+`KeyedSubtree` is passed through rather than ending the reading. A
+`SizeTransition` reveals the page (`reveal`, `revealAxis`, `revealAlign`):
+every renderer clips it to the share shown, growing from where its alignment
+says - seen on an iOS simulator and an Android emulator, and tested in the
+browser and the Flutter host.
 
 ### Fixes this round
+
+- **A gallery flow missed its snackbar.** The controls gallery's "Draft
+  saved" snackbar now stays ten seconds, long enough for a flow driving the
+  emulator to reach Undo; the agent-device flow failed two full runs in a
+  row on the default four.
 
 - **A text field's icons on iOS were the wrong way round right to left.** A
   field turned right to left shows its `leftView` on the right by itself,

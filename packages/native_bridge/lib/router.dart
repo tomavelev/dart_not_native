@@ -1309,6 +1309,10 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
   Widget _buildPages(List<_PageSpec> pages, int depth, String scope) {
     final layers = <Widget>[];
     final seen = <ShellRoute>{};
+    // Whether the layer on top would go as a whole with a pop: a page, or a
+    // frame with one page in it. A swipe back moves the whole screen, so it
+    // is offered only then.
+    var topGoesWhole = true;
     var i = 0;
     while (i < pages.length) {
       final page = pages[i];
@@ -1320,6 +1324,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
             builder: page.builder,
           ),
         );
+        topGoesWhole = true;
         i++;
         continue;
       }
@@ -1331,6 +1336,7 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
         end++;
       }
       final inside = pages.sublist(i, end);
+      topGoesWhole = inside.length == 1;
       // Keyed by the shell alone, which is what lets its State outlive the
       // pages that come and go inside it. The same shell reached a second
       // time, over something that is not in it, is a second frame.
@@ -1350,7 +1356,14 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
     }
     // Always a stack, even of one: a page must not move in the tree - and so
     // lose the State of everything keyless inside it - the first time
-    // something is pushed over it.
+    // something is pushed over it. The outermost one can be swiped back.
+    if (depth == 0) {
+      return BackSwipeStack(
+        canPop: topGoesWhole && canPop(),
+        onPop: pop,
+        children: layers,
+      );
+    }
     return IndexedStack(index: layers.length - 1, children: layers);
   }
 

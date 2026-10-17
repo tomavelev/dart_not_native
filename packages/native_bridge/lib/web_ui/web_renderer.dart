@@ -470,8 +470,13 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     Map<String, Object> moved(Map<dynamic, dynamic> motion) => {
       'opacity': _num(motion['opacity']) ?? 1,
       'transform': _routeTransform(motion),
+      'clipPath': _routeReveal(motion),
     };
-    const still = {'opacity': 1, 'transform': 'none'};
+    const still = {
+      'opacity': 1,
+      'transform': 'none',
+      'clipPath': 'inset(0% 0% 0% 0%)',
+    };
     // A page lets the body's colour through where it paints nothing, as a
     // Flutter page does not: what moves is given it, so the page beneath does
     // not show through the one above.
@@ -530,6 +535,21 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         ..oncancel = ((web.Event _) => done()).toJS;
     }
     done();
+  }
+
+  /// How much of the page a route's motion shows (`reveal`), as a CSS clip:
+  /// the rest cut away along `revealAxis`, from where `revealAlign` says.
+  static String _routeReveal(Map<dynamic, dynamic> motion) {
+    final shown = (_num(motion['reveal']) ?? 1).clamp(0, 1).toDouble();
+    final align = (_num(motion['revealAlign']) ?? 0).clamp(-1, 1).toDouble();
+    final hidden = (1 - shown) * 100;
+    // Kept from the start of the axis, and cut from its end, as the page
+    // grows from where its alignment says.
+    final before = hidden * (align + 1) / 2;
+    final after = hidden - before;
+    return motion['revealAxis'] == 'horizontal'
+        ? 'inset(0% $after% 0% $before%)'
+        : 'inset($before% 0% $after% 0%)';
   }
 
   /// A route's motion as a CSS transform: moved by parts of its own size,

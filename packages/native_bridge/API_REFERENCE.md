@@ -265,7 +265,13 @@ unless the move is a pop.
 for a swipe back from the leading edge, raised with `{phase}` - `start`,
 then `commit` or `cancel`. Between the two, each tree carries the page
 beneath as `RootProps.beneath`; after `commit` the next tree is that page,
-with no `pageTransition`. `UIBuilder.withBackSwipe` puts both on a root.
+with no `pageTransition`. `UIBuilder.withBackSwipe` puts both on a root;
+in the widget layer a `Navigator` offers it, and `BackSwipeStack` does for a
+router of an app's own. A hero's `heroGestures` flies it with the swipe.
+
+A route's motion may also carry `reveal` - the share of the page shown, a
+`SizeTransition`'s - with `revealAxis` (`vertical`, `horizontal`) and
+`revealAlign` (-1 to 1), which the renderer clips the page to.
 
 Any node may carry `layoutDirection` (`'rtl'`, `'ltr'`): it and everything
 below it are laid out that way, the platform's own controls included,
