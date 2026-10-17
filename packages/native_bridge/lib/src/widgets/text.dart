@@ -1081,6 +1081,8 @@ class Image extends Widget {
     loadAsk: loadAsk,
     width: width,
     height: height,
+    fillWidth:
+        width != null && height == null && identical(owner._tightWidth, this),
     color: color?._hex,
     blend: color == null || colorBlendMode == null
         ? null

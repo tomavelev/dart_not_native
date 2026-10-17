@@ -8,6 +8,7 @@ library;
 
 import 'dart:io';
 
+import 'package:dart_not_native/platforms/material_glyphs.dart';
 import 'package:dart_not_native/src/icons.dart';
 import 'package:dart_not_native/src/material_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -51,6 +52,22 @@ void main() {
     ]) {
       expect(materialIconCodepoint(name), isNotNull, reason: name);
     }
+  });
+
+  test('every icon is a glyph the Flutter renderer has as a constant', () {
+    // The release build keeps the glyphs of the constants it sees, so one
+    // missing here would be missing from the font the native renderers draw
+    // from as well.
+    final source = File('lib/src/icons.dart').readAsStringSync();
+    final codepoints = {
+      for (final match in RegExp(r'IconData\((0x[0-9a-f]+)').allMatches(source))
+        int.parse(match.group(1)!),
+    };
+    expect(materialGlyphCount, codepoints.length);
+    for (final codepoint in codepoints) {
+      expect(materialGlyph(codepoint)?.codePoint, codepoint);
+    }
+    expect(materialGlyph(0x41), isNull);
   });
 
   test('a name that is not an icon is null, not a guess', () {

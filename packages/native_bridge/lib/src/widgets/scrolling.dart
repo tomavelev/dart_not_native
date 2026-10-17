@@ -699,9 +699,10 @@ class ListView extends Widget {
       reverse: reverse,
       id: _idOf(key),
       content: () {
+        // A vertical list's rows are as wide as it is.
         final rows = builder == null
-            ? _renderAll(children, owner)
-            : _buildRows(owner, builder, count);
+            ? _renderAll(children, owner, tight: vertical)
+            : _buildRows(owner, builder, count, tight: vertical);
         final extent = itemExtent;
         final sized = extent == null
             ? rows
@@ -721,8 +722,9 @@ class ListView extends Widget {
   List<WidgetNode> _buildRows(
     _Owner owner,
     NullableIndexedWidgetBuilder builder,
-    int? count,
-  ) {
+    int? count, {
+    required bool tight,
+  }) {
     final separator = separatorBuilder;
     final rows = <WidgetNode>[];
     final limit = count ?? _unboundedLimit;
@@ -740,7 +742,13 @@ class ListView extends Widget {
           ),
         );
       }
-      rows.add(owner.inSlot(index, () => row._render(owner)));
+      rows.add(
+        owner._tightly(
+          row,
+          tight,
+          () => owner.inSlot(index, () => row._render(owner)),
+        ),
+      );
     }
     return rows;
   }
@@ -792,11 +800,11 @@ class ListView extends Widget {
           itemExtentBuilder: extentBuilder == null
               ? null
               : (index) => extentBuilder(index, dimensions) ?? 0,
-          itemBuilder: (index) => owner.inSlot(
-            index,
-            () => (builder(owner._context(), index) ?? const SizedBox.shrink())
-                ._render(owner),
-          ),
+          itemBuilder: (index) => owner.inSlot(index, () {
+            final row =
+                builder(owner._context(), index) ?? const SizedBox.shrink();
+            return owner._tightly(row, true, () => row._render(owner));
+          }),
           scrollOffset: position._wireOffset,
           scrollVersion: position._version,
           scrollAnimated: position._animated,

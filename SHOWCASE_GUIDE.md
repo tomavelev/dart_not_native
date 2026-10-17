@@ -10,8 +10,8 @@ platform's own views instead of the Flutter engine.
 
 | Target | Command |
 | --- | --- |
-| Native (dev entry) | `flutter run -t lib/main_native_components_showcase.dart -d <device> --no-tree-shake-icons` |
-| Native (mobile entry) | `flutter run -t lib/examples/components_showcase.dart -d <device> --no-tree-shake-icons` |
+| Native (dev entry) | `flutter run -t lib/main_native_components_showcase.dart -d <device>` |
+| Native (mobile entry) | `flutter run -t lib/examples/components_showcase.dart -d <device>` |
 | Web | Built by `maestro/web/build_examples.sh`; driven by `maestro/web/flows/components_showcase.yaml`. |
 
 The same source drives all of them — Android Views, UIKit, the DOM, and the

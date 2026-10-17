@@ -413,11 +413,15 @@ class DataRow {
 /// A table of data: a heading row, then a row for each record.
 ///
 /// One thing is different from Flutter, and it decides how a table is used:
-/// **the columns share the table's width equally.** Flutter measures every
-/// cell and makes each column as wide as its widest, which usually needs a
-/// horizontal scroll view around the table; here there is nothing to measure
-/// with, so a table is as wide as what it is in and its columns divide that.
-/// A cell too narrow for its text wraps it.
+/// **a table is as wide as what it is in, and its columns share that width
+/// by how wide their cells are.** Flutter makes each column exactly as wide
+/// as its widest cell, which usually needs a horizontal scroll view round the
+/// table. Here each column's widest cell is measured as a [Table]'s
+/// [IntrinsicColumnWidth] is - text, stated sizes, padding - and the columns
+/// divide the width in proportion to those, so a short column stays short
+/// and a long one gets the room. A column none of whose cells can be
+/// measured gets the average of the ones that can; with none, they share
+/// equally. A cell too narrow for its text wraps it.
 ///
 /// Sorting is the app's: a heading with [DataColumn.onSort] is tapped, the
 /// app sorts its rows and says so with [sortColumnIndex] and [sortAscending],
@@ -491,11 +495,53 @@ class DataTable extends StatelessWidget {
     }
   }
 
+  /// Each column's share of the width: its widest cell, measured, or the
+  /// average of the columns that could be where it cannot.
+  List<int> _shares(BuildContext context) {
+    final around = DefaultTextStyle.of(context).style;
+    final heading = around.merge(_headingStyle);
+    final data = around.merge(_dataStyle);
+    final widths = <double?>[];
+    for (final (index, column) in columns.indexed) {
+      // Flutter keeps room for the arrow in a heading that can sort.
+      final label = _intrinsicWidth(column.label, heading);
+      double? widest = label == null
+          ? null
+          : label + (column.onSort == null ? 0 : 20);
+      for (final row in rows) {
+        if (widest == null) break;
+        if (index >= row.cells.length) continue;
+        final cell = row.cells[index];
+        final width = _intrinsicWidth(cell.child, data);
+        widest = width == null
+            ? null
+            : math.max(widest, width + (cell.showEditIcon ? 22 : 0));
+      }
+      widths.add(widest);
+    }
+    final measured = widths.whereType<double>();
+    if (measured.isEmpty) return [for (final _ in columns) 1];
+    final average = measured.reduce((a, b) => a + b) / measured.length;
+    final gap = columnSpacing ?? 24;
+    // Flex is whole numbers; a pixel is fine enough.
+    return [
+      for (final width in widths) math.max(1, ((width ?? average) + gap).round()),
+    ];
+  }
+
+  TextStyle get _headingStyle => const TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w500,
+  ).merge(headingTextStyle);
+
+  TextStyle get _dataStyle => const TextStyle(fontSize: 14).merge(dataTextStyle);
+
   /// A row of the table: the checkbox, when rows can be selected, then a
   /// share of the width for each cell.
   Widget _row({
     required Widget? leading,
     required List<Widget> cells,
+    required List<int> shares,
     required double minHeight,
     Color? color,
   }) {
@@ -508,8 +554,9 @@ class DataTable extends StatelessWidget {
       child: Row(
         children: [
           if (_selectable) SizedBox(width: 48, child: leading),
-          for (final cell in cells)
+          for (final (index, cell) in cells.indexed)
             Expanded(
+              flex: index < shares.length ? shares[index] : 1,
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: gap, vertical: 8),
                 child: cell,
@@ -597,16 +644,15 @@ class DataTable extends StatelessWidget {
       thickness: dividerThickness ?? 1,
     );
     final selectable = rows.where((row) => row.onSelectChanged != null);
+    final shares = _shares(context);
     final table = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         DefaultTextStyle(
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ).merge(headingTextStyle),
+          style: _headingStyle,
           child: _row(
+            shares: shares,
             minHeight: headingRowHeight ?? 56,
             color: headingRowColor?.resolve(const {}),
             leading: Checkbox(
@@ -620,9 +666,9 @@ class DataTable extends StatelessWidget {
             ],
           ),
         ),
-        for (final (index, row) in rows.indexed) ...[
+        for (final row in rows) ...[
           divider,
-          _dataRow(context, row, index, scheme),
+          _dataRow(context, row, scheme, shares),
         ],
         if (showBottomBorder) divider,
       ],
@@ -634,14 +680,15 @@ class DataTable extends StatelessWidget {
   Widget _dataRow(
     BuildContext context,
     DataRow row,
-    int index,
     ColorScheme scheme,
+    List<int> shares,
   ) {
     final states = {if (row.selected) WidgetState.selected};
     final changed = row.onSelectChanged;
     final line = DefaultTextStyle(
-      style: const TextStyle(fontSize: 14).merge(dataTextStyle),
+      style: _dataStyle,
       child: _row(
+        shares: shares,
         minHeight: dataRowMinHeight ?? 48,
         color:
             row.color?.resolve(states) ??

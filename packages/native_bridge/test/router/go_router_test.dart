@@ -764,6 +764,38 @@ void main() {
         expect(m.text('page'), 'form /form');
         expect(m.root.props.containsKey(RootProps.beneath), isFalse);
       });
+
+      test('a page pushed inside a shell is swiped back to the one beneath '
+          'it, drawn in the same frame', () async {
+        final m = _Mounted(
+          GoRouter(
+            routes: [
+              ShellRoute(
+                builder: (context, state, child) => Column(
+                  children: [const Text('frame'), child],
+                ),
+                routes: [
+                  GoRoute(path: '/', builder: _page('a')),
+                  GoRoute(path: '/b', builder: _page('b')),
+                ],
+              ),
+            ],
+          ),
+        );
+        m.router.push('/b');
+        expect(offered(m), isA<String>());
+
+        await swipe(m, 'start');
+        final beneath = WidgetNode.fromJson(
+          (m.root.props[RootProps.beneath] as Map).cast<String, dynamic>(),
+        );
+        expect(tree.texts(beneath), ['frame', 'a /']);
+        expect(m.texts, containsAllInOrder(['frame', 'b /b']));
+
+        await swipe(m, 'commit');
+        expect(m.text('page'), 'a /');
+        expect(m.root.props.containsKey(RootProps.pageTransition), isFalse);
+      });
     });
 
     test('push puts a page on top; pop takes it off again', () {

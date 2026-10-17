@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 
 import 'package:dart_not_native/core.dart';
 import 'package:dart_not_native/platforms/flutter_renderer.dart';
+import 'package:dart_not_native/platforms/material_glyphs.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -995,9 +996,35 @@ void main() {
       expect(icons[0].size, 32);
       expect(icons[0].color, const Color(0x80ff0000));
       expect(icons[0].semanticLabel, 'Add');
-      expect(icons[1].icon!.fontFamily, 'Brands');
+      // A font of the app's own is its character in that font: an IconData
+      // made at run time would fail a release build.
+      expect(icons, hasLength(1));
+      final glyph = tester.widget<Text>(
+        find.text(String.fromCharCode(0xf101)),
+      );
+      expect(glyph.style!.fontFamily, 'Brands');
       // No colour of its own: the surrounding IconTheme's.
-      expect(icons[1].color, isNull);
+      final theme = IconTheme.of(
+        tester.element(find.text(String.fromCharCode(0xf101))),
+      );
+      expect(glyph.style!.color, theme.color);
+    });
+
+    testWidgets('a Material codepoint is one of the font\'s constants, and one '
+        'the font does not have is a dot', (tester) async {
+      await show(
+        tester,
+        UIBuilder.row(
+          children: [
+            UIBuilder.icon(codepoint: 0xe145),
+            UIBuilder.icon(codepoint: 0x41),
+          ],
+        ),
+      );
+      final icons = tester.widgetList<Icon>(find.byType(Icon)).toList();
+      expect(icons[0].icon, materialGlyph(0xe145));
+      expect(icons[0].icon!.codePoint, 0xe145);
+      expect(icons[1].icon, Icons.circle);
     });
   });
 

@@ -4,13 +4,31 @@ part of '../../widgets.dart';
 // Layout.
 // ---------------------------------------------------------------------------
 
-List<WidgetNode> _renderAll(List<Widget> children, _Owner owner) => [
+/// [tight] when each child is laid out in a width it cannot change
+/// (`_Owner._tightWidth`).
+List<WidgetNode> _renderAll(
+  List<Widget> children,
+  _Owner owner, {
+  bool tight = false,
+}) => [
   for (var i = 0; i < children.length; i++)
-    owner.inSlot(i, () => children[i]._render(owner)),
+    owner._tightly(
+      children[i],
+      tight,
+      () => owner.inSlot(i, () => children[i]._render(owner)),
+    ),
 ];
 
-WidgetNode _renderChild(_Owner owner, Widget child, [Object slot = 'child']) =>
-    owner.inSlot(slot, () => child._render(owner));
+WidgetNode _renderChild(
+  _Owner owner,
+  Widget child, [
+  Object slot = 'child',
+  bool tight = false,
+]) => owner._tightly(
+  child,
+  tight,
+  () => owner.inSlot(slot, () => child._render(owner)),
+);
 
 /// The names the protocol knows a main-axis alignment by.
 String _mainAxis(MainAxisAlignment alignment) => alignment.name;
@@ -63,8 +81,12 @@ class Column extends Widget {
   @override
   WidgetNode _render(_Owner owner) {
     final bounded = !owner._unboundedHeight;
+    // A stretched column gives each child its own width, as Flutter's does.
+    final tight =
+        crossAxisAlignment == CrossAxisAlignment.stretch &&
+        !owner._unboundedWidth;
     final nodes = owner._withLayout(
-      () => _renderAll(children, owner),
+      () => _renderAll(children, owner, tight: tight),
       unboundedHeight: true,
       flexAxis: Axis.vertical,
     );
@@ -316,7 +338,12 @@ class Padding extends Widget {
       top: insets.top,
       right: insets.right,
       bottom: insets.bottom,
-      child: _renderChild(owner, child ?? const SizedBox.shrink()),
+      child: _renderChild(
+        owner,
+        child ?? const SizedBox.shrink(),
+        'child',
+        identical(owner._tightWidth, this),
+      ),
     );
   }
 }
@@ -352,11 +379,16 @@ class Flexible extends Widget {
     // Its share has an end, which is the whole point of it.
     final vertical = owner._flexAxis == Axis.vertical;
     final horizontal = owner._flexAxis == Axis.horizontal;
+    // A row's share is the child's width; a column's is its height, and its
+    // width is whatever the column gives it.
+    final tight =
+        (horizontal && fit == FlexFit.tight) ||
+        (!horizontal && identical(owner._tightWidth, this));
     return UIBuilder.expanded(
       flex: flex,
       fit: fit.name,
       child: owner._withLayout(
-        () => _renderChild(owner, child),
+        () => _renderChild(owner, child, 'child', tight),
         unboundedHeight: vertical ? false : null,
         unboundedWidth: horizontal ? false : null,
       ),
@@ -433,7 +465,14 @@ class SizedBox extends Widget {
       child: child == null
           ? null
           : owner._withLayout(
-              () => _renderChild(owner, child),
+              () => _renderChild(
+                owner,
+                child,
+                'child',
+                width == null
+                    ? identical(owner._tightWidth, this)
+                    : width.isFinite || !owner._unboundedWidth,
+              ),
               unboundedWidth: width == null ? null : false,
               unboundedHeight: height == null ? null : false,
             ),
@@ -503,6 +542,7 @@ Map<String, dynamic>? _elevationShadow(double? elevation, [Color? color]) {
 /// decoration, a transform - becomes a `Box` node.
 WidgetNode _box(
   _Owner owner, {
+  Widget? self,
   Widget? child,
   WidgetNode? childNode,
   double? width,
@@ -568,6 +608,11 @@ WidgetNode _box(
   // An aligned box, or an empty one, takes the room that has an end - which
   // is what Flutter's Container does with both.
   final hasChild = child != null || childNode != null;
+  // Its child is as wide as it is when it has a width, of its own or one it
+  // was given, and does not align the child inside it.
+  final tightChild =
+      alignment == null &&
+      (w != null || fillsWidth || (self != null && identical(owner._tightWidth, self)));
   if (alignment != null || (fillWhenEmpty && !hasChild)) {
     if (w == null && !owner._unboundedWidth) fillsWidth = true;
     if (h == null && !owner._unboundedHeight) fillsHeight = true;
@@ -627,7 +672,7 @@ WidgetNode _box(
         (child == null
             ? null
             : owner._withLayout(
-                () => _renderChild(owner, child),
+                () => _renderChild(owner, child, 'child', tightChild),
                 unboundedWidth: w != null || fillsWidth ? false : null,
                 unboundedHeight: h != null || fillsHeight ? false : null,
               )),
@@ -747,6 +792,7 @@ class Container extends Widget {
   @override
   WidgetNode _render(_Owner owner) => _box(
     owner,
+    self: this,
     child: child,
     constraints: constraints,
     padding: padding,
@@ -777,6 +823,7 @@ class DecoratedBox extends Widget {
   @override
   WidgetNode _render(_Owner owner) => _box(
     owner,
+    self: this,
     child: child,
     decoration: position == DecorationPosition.background ? decoration : null,
     foregroundDecoration: position == DecorationPosition.foreground
@@ -796,7 +843,7 @@ class ColoredBox extends Widget {
   final Widget? child;
   @override
   WidgetNode _render(_Owner owner) =>
-      _box(owner, child: child, color: color, id: _idOf(key));
+      _box(owner, self: this, child: child, color: color, id: _idOf(key));
 }
 
 /// Bounds its child's size.
@@ -806,7 +853,13 @@ class ConstrainedBox extends Widget {
   final Widget? child;
   @override
   WidgetNode _render(_Owner owner) =>
-      _box(owner, child: child, constraints: constraints, id: _idOf(key));
+      _box(
+        owner,
+        self: this,
+        child: child,
+        constraints: constraints,
+        id: _idOf(key),
+      );
 }
 
 /// Sizes its child to a width-over-height ratio, from whichever of the two
@@ -907,6 +960,7 @@ class ClipRRect extends Widget {
   @override
   WidgetNode _render(_Owner owner) => _box(
     owner,
+    self: this,
     child: child,
     decoration: BoxDecoration(borderRadius: borderRadius),
     clip: clipBehavior != Clip.none,
@@ -922,6 +976,7 @@ class ClipRect extends Widget {
   @override
   WidgetNode _render(_Owner owner) => _box(
     owner,
+    self: this,
     child: child,
     clip: clipBehavior != Clip.none,
     id: _idOf(key),
@@ -936,6 +991,7 @@ class ClipOval extends Widget {
   @override
   WidgetNode _render(_Owner owner) => _box(
     owner,
+    self: this,
     child: child,
     decoration: const BoxDecoration(shape: BoxShape.circle),
     clip: clipBehavior != Clip.none,
@@ -950,7 +1006,7 @@ class Opacity extends Widget {
   final Widget? child;
   @override
   WidgetNode _render(_Owner owner) =>
-      _box(owner, child: child, opacity: opacity, id: _idOf(key));
+      _box(owner, self: this, child: child, opacity: opacity, id: _idOf(key));
 }
 
 /// Turns, scales or moves its child without changing the room it takes.
@@ -1078,6 +1134,7 @@ class Material extends Widget {
     );
     WidgetNode build() => _box(
       owner,
+      self: this,
       child: child,
       decoration: shaped.decoration,
       clip: clipBehavior != Clip.none,
@@ -1923,6 +1980,7 @@ class Card extends Widget {
       );
       final node = _box(
         owner,
+        self: this,
         child: child,
         decoration: shaped.decoration,
         clip: (clipBehavior ?? Clip.none) != Clip.none,

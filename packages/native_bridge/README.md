@@ -66,10 +66,6 @@ On Android and iOS, three things beyond the dependency:
 - `MainActivity` extends `FlutterFragmentActivity` - the system back gesture
   hangs off an `OnBackPressedDispatcher`, which the plain `FlutterActivity`
   does not own.
-- **`--no-tree-shake-icons` on every `flutter run` and `flutter build`.** An
-  icon crosses to the renderer as a codepoint and its `IconData` is made at
-  run time; Flutter's release build strips the icon font to the constants it
-  can see, finds non-constant ones, and fails.
 - `uses-material-design: true` in the pubspec, which bundles the icon font the
   native renderers draw from.
 

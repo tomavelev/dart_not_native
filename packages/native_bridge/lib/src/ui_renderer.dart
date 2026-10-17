@@ -902,6 +902,7 @@ class UIBuilder {
     required String alt,
     double? width,
     double? height,
+    bool fillWidth = false,
     String fit = 'cover',
     String? color,
     String? blend,
@@ -933,6 +934,10 @@ class UIBuilder {
         'alt': alt,
         if (width != null) 'width': width,
         if (height != null) 'height': height,
+        // As wide as the room it is in, whatever its own width says, and as
+        // tall as the picture is at that width: what Flutter makes of an
+        // image given a width where it is laid out in a fixed one.
+        if (fillWidth) 'fillWidth': true,
         'fit': fit,
         // A tint: the picture's shape, filled with this one colour - what an
         // icon kept as an image is drawn with.

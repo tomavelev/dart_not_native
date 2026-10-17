@@ -2099,6 +2099,7 @@ class NativeUIRenderer(
     private fun fillsWidth(node: Map<*, *>): Boolean = when (node["type"]) {
         "Row" -> node["mainAxisSize"] != "min"
         "TextField", "Wrap" -> true
+        "Image" -> node["fillWidth"] == true
         "Padding" -> firstChild(node)?.let { fillsWidth(it) } ?: false
         else -> false
     }
@@ -3496,8 +3497,11 @@ class NativeUIRenderer(
     private fun renderImage(node: Map<*, *>): View {
         val alt = node["alt"] as? String ?: ""
         val container = FrameLayout(activity)
+        // As wide as the room, where the tree says the image is laid out in
+        // a width it cannot change, as Flutter's is.
+        val fills = node["fillWidth"] == true
         container.layoutParams = LinearLayout.LayoutParams(
-            (node["width"] as? Number)?.let { dp(it.toInt()) }
+            (node["width"] as? Number)?.takeIf { !fills }?.let { dp(it.toInt()) }
                 ?: ViewGroup.LayoutParams.MATCH_PARENT,
             (node["height"] as? Number)?.let { dp(it.toInt()) }
                 ?: ViewGroup.LayoutParams.WRAP_CONTENT

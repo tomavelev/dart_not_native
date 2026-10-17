@@ -34,6 +34,7 @@ import '../src/flutter_slots.dart';
 import '../src/frame_probe.dart';
 import '../src/render_error.dart';
 import 'flutter_frame_probe.dart';
+import 'material_glyphs.dart';
 import '../src/ui_renderer.dart';
 import '../src/native_ui_app.dart';
 
@@ -1146,7 +1147,10 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   ) {
     final src = _string(p['src']);
     final alt = _string(p['alt']);
-    final width = _double(p['width']);
+    // As wide as the room, where the tree says the image is laid out in a
+    // width it cannot change: Flutter's own image then fills it.
+    final fills = p['fillWidth'] == true;
+    final width = fills ? double.infinity : _double(p['width']);
     final height = _double(p['height']);
     final fit = switch (_string(p['fit'], 'cover')) {
       'contain' => BoxFit.contain,
@@ -1251,7 +1255,15 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
             errorBuilder: onError,
           );
 
-    return Semantics(label: alt, image: true, child: image);
+    final shown = Semantics(label: alt, image: true, child: image);
+    if (!fills) return shown;
+    // Room without an end is no room to fill: the width it was given, then.
+    final own = _double(p['width']);
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.hasBoundedWidth
+          ? shown
+          : SizedBox(width: own, child: shown),
+    );
   }
 
   Widget _divider(Map<String, dynamic> p) {
@@ -2263,6 +2275,7 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
         tag: hero,
         heroes: _heroes,
         arc: p['heroArc'] == true,
+        gestures: p['heroGestures'] == true,
         shuttle: built(p['heroShuttle']),
         placeholder: built(p['heroPlaceholder']),
         child: box,
@@ -2441,16 +2454,16 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     );
   }
 
-  /// One glyph of an icon font.
+  /// One glyph of the Material Icons font.
   ///
-  /// The codepoint only exists at run time, so the [IconData] cannot be a
-  /// constant - and Flutter's release build strips an icon font down to the
-  /// constants it can see. An app that builds `Icon` nodes ships with
-  /// `--no-tree-shake-icons`; the build says so itself rather than dropping
-  /// glyphs quietly.
-  static IconData _iconData(int codepoint, [String? fontFamily]) =>
-      // ignore: non_const_argument_for_const_parameter
-      IconData(codepoint, fontFamily: fontFamily ?? 'MaterialIcons');
+  /// The codepoint only exists at run time, and Flutter's release build
+  /// keeps only the glyphs of the `IconData` constants it can see - and
+  /// fails on one made at run time. So the glyph is looked up among a
+  /// constant for every glyph of the font (`material_glyphs.dart`), which
+  /// keeps the whole font in the build with no flag to remember. A codepoint
+  /// the font does not have is a dot: visible, not absent.
+  static IconData _iconData(int codepoint) =>
+      materialGlyph(codepoint) ?? Icons.circle;
 
   /// The icon a button node asks for: the named one where the name is known,
   /// else the glyph at its codepoint, else a dot - visible, not absent.
@@ -2463,17 +2476,53 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     return name == null ? _icon(fallback) : Icons.circle;
   }
 
-  Widget _iconNode(Map<String, dynamic> p) => Icon(
-    _iconData(
-      (_double(p['codepoint']) ?? 0).toInt(),
-      _optString(p['fontFamily']),
-    ),
-    size: _double(p['size']),
+  Widget _iconNode(Map<String, dynamic> p) {
+    final codepoint = (_double(p['codepoint']) ?? 0).toInt();
+    final family = _optString(p['fontFamily']);
+    final size = _double(p['size']);
     // No colour of its own: the colour in force over a fill the app chose,
     // and otherwise the IconTheme's - an app bar's foreground, a button's.
-    color: _color(p['color']) ?? _textInForce,
-    semanticLabel: _optString(p['semanticLabel']),
-  );
+    final color = _color(p['color']) ?? _textInForce;
+    final label = _optString(p['semanticLabel']);
+    if (family == null || family == 'MaterialIcons') {
+      return Icon(
+        _iconData(codepoint),
+        size: size,
+        color: color,
+        semanticLabel: label,
+      );
+    }
+    // A font of the app's own: drawn as its character, as an Icon draws
+    // one, since an IconData made at run time would fail a release build.
+    return Builder(
+      builder: (context) {
+        final theme = IconTheme.of(context);
+        final side = size ?? theme.size ?? 24;
+        return Semantics(
+          label: label,
+          child: ExcludeSemantics(
+            child: SizedBox.square(
+              dimension: side,
+              child: Center(
+                child: Text(
+                  String.fromCharCode(codepoint),
+                  textScaler: TextScaler.noScaling,
+                  style: TextStyle(
+                    fontFamily: family,
+                    fontSize: side,
+                    height: 1,
+                    inherit: false,
+                    color: color ?? theme.color,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Widget _iconButton(Map<String, dynamic> p) => Tooltip(
     message: _string(p['tooltip']),
@@ -6054,6 +6103,12 @@ class _BackSwipeState extends State<_BackSwipe>
   /// while it is under way.
   String? _eventId;
 
+  /// The heroes flying with the swipe, from where they stand on the page
+  /// to where they stand on the one beneath; whether they have been looked
+  /// for since this swipe began.
+  List<_Flight> _flights = const [];
+  bool _flightsSought = false;
+
   late final AnimationController _settle = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 250),
@@ -6067,7 +6122,64 @@ class _BackSwipeState extends State<_BackSwipe>
     if (_committed && widget.beneath == null) {
       _committed = false;
       _moved = null;
+      _land();
     }
+  }
+
+  /// Sends each hero that flies with a swipe - one with
+  /// `transitionOnUserGestures` on both pages - from the page to the one
+  /// beneath, once that is laid out: [pageAt] and [beneathAt] are where the
+  /// two are moved to now, taken off so each flight runs between the places
+  /// the heroes have at rest.
+  void _seekFlights(Offset Function() pageAt, Offset Function() beneathAt) {
+    if (_flightsSought) return;
+    _flightsSought = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final stack = context.findRenderObject();
+      if (!mounted || _moved == null || stack == null) return;
+      final heroes = widget.renderer._heroes;
+      final flights = <_Flight>[];
+      for (final MapEntry(key: tag, value: boxes) in heroes._boxes.entries) {
+        _HeroBoxState? on(bool under) {
+          for (final box in boxes) {
+            if (box.mounted &&
+                box.widget.gestures &&
+                (box.page == _Heroes.beneath) == under) {
+              return box;
+            }
+          }
+          return null;
+        }
+
+        final from = on(false)?.rectIn(stack);
+        final box = on(true);
+        final to = box?.rectIn(stack);
+        if (from == null || box == null || to == null) continue;
+        flights.add(
+          _Flight(
+            tag,
+            from.shift(-pageAt()),
+            to.shift(-beneathAt()),
+            InheritedTheme.captureAll(
+              box.context,
+              box.widget.shuttle ?? box.widget.child,
+            ),
+            laidOut: box.widget.shuttle != null,
+          ),
+        );
+      }
+      if (flights.isEmpty) return;
+      setState(() => _flights = flights);
+      heroes.hide({for (final flight in flights) flight.tag});
+    });
+  }
+
+  /// The heroes are back on their pages.
+  void _land() {
+    _flightsSought = false;
+    if (_flights.isEmpty) return;
+    _flights = const [];
+    widget.renderer._heroes.hide(const {});
   }
 
   @override
@@ -6093,7 +6205,10 @@ class _BackSwipeState extends State<_BackSwipe>
       if (leave) {
         _committed = true;
       } else {
-        setState(() => _moved = null);
+        setState(() {
+          _moved = null;
+          _land();
+        });
       }
       widget.renderer.handleEvent(eventId, {
         'phase': leave ? 'commit' : 'cancel',
@@ -6117,6 +6232,13 @@ class _BackSwipeState extends State<_BackSwipe>
         final width = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
+        Offset pageAt() => Offset(inward * (_moved ?? 0), 0);
+        Offset beneathAt() =>
+            Offset(-inward * (width - (_moved ?? 0)) / 3, 0);
+        if (moved != null && beneath != null) {
+          _seekFlights(pageAt, beneathAt);
+        }
+        final along = width > 0 ? (moved ?? 0) / width : 0.0;
         return Stack(
           fit: StackFit.passthrough,
           clipBehavior: Clip.none,
@@ -6126,9 +6248,12 @@ class _BackSwipeState extends State<_BackSwipe>
               Positioned.fill(
                 child: IgnorePointer(
                   child: Transform.translate(
-                    offset: Offset(-inward * (width - moved) / 3, 0),
-                    child: Material(
-                      child: widget.renderer.buildNode(beneath, context),
+                    offset: beneathAt(),
+                    child: _PageOf(
+                      page: _Heroes.beneath,
+                      child: Material(
+                        child: widget.renderer.buildNode(beneath, context),
+                      ),
                     ),
                   ),
                 ),
@@ -6136,7 +6261,7 @@ class _BackSwipeState extends State<_BackSwipe>
             KeyedSubtree(
               key: const ValueKey('page'),
               child: Transform.translate(
-                offset: Offset(inward * (moved ?? 0), 0),
+                offset: pageAt(),
                 // Always the same shape, so the page keeps its widgets
                 // whether or not it is moving.
                 child: DecoratedBox(
@@ -6151,6 +6276,28 @@ class _BackSwipeState extends State<_BackSwipe>
                 ),
               ),
             ),
+            // A hero with the swipe, as far between its two places as the
+            // page has come: drawn at its size on the page beneath, and
+            // stretched to where it is.
+            if (moved != null)
+              for (final flight in _flights)
+                Positioned.fromRect(
+                  key: ValueKey<String>('hero ${flight.tag}'),
+                  rect: flight.at(along),
+                  child: IgnorePointer(
+                    child: ExcludeSemantics(
+                      child: flight.laidOut
+                          ? flight.child
+                          : FittedBox(
+                              fit: BoxFit.fill,
+                              child: SizedBox.fromSize(
+                                size: flight.to.size,
+                                child: flight.child,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
             if (offered)
               Positioned(
                 top: 0,
@@ -6264,6 +6411,9 @@ class _Heroes extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The page number the page beneath a back swipe is built as.
+  static const beneath = -1;
+
   _HeroBoxState? boxOf(String tag, {required int page}) {
     for (final box in _boxes[tag] ?? const <_HeroBoxState>[]) {
       if (box.mounted && box.page == page) return box;
@@ -6334,6 +6484,7 @@ class _HeroBox extends StatefulWidget {
     required this.heroes,
     required this.child,
     this.arc = false,
+    this.gestures = false,
     this.shuttle,
     this.placeholder,
   });
@@ -6341,9 +6492,11 @@ class _HeroBox extends StatefulWidget {
   final _Heroes heroes;
   final Widget child;
 
-  /// Whether it flies along a Material arc, what flies in its place, and
-  /// what stands in its room meanwhile.
+  /// Whether it flies along a Material arc, whether it flies with a swipe
+  /// back too, what flies in its place, and what stands in its room
+  /// meanwhile.
   final bool arc;
+  final bool gestures;
   final Widget? shuttle;
   final Widget? placeholder;
 

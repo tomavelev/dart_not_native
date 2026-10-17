@@ -79,15 +79,13 @@ over it — so every example is exercised by CI.
 **Natively (Android Views / UIKit) on a connected device or simulator:**
 
 ```bash
-flutter run -t lib/main_native_todo.dart                -d <device> --no-tree-shake-icons
-flutter run -t lib/main_native_components_showcase.dart -d <device> --no-tree-shake-icons
+flutter run -t lib/main_native_todo.dart                -d <device>
+flutter run -t lib/main_native_components_showcase.dart -d <device>
 flutter run -t lib/main_native_android.dart             -d <android>  # the counter
 flutter run -t lib/main_native_ios.dart                 -d <ios>      # the counter
 ```
 
-`--no-tree-shake-icons` is needed for a release build and harmless otherwise:
-icons are made from codepoints at run time, which Flutter's icon tree shaker
-refuses (INTEGRATION.md §5.2). On iOS, see the status in the README first -
+No build flag is needed for the icons (INTEGRATION.md §5.2). On iOS, see the status in the README first -
 the Swift renderer as it stands draws these examples on a simulator, and
 only the controls gallery has been looked at closely.
 

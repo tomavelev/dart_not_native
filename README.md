@@ -31,8 +31,8 @@ signatures and semantics that builds a serialisable tree, and a renderer per
 platform turns the tree into views.
 
 ```bash
-flutter run --no-tree-shake-icons          # Android: MaterialToolbar, TextView, EditText…
-flutter run --no-tree-shake-icons          # iOS: UIKit (see the status below)
+flutter run          # Android: MaterialToolbar, TextView, EditText…
+flutter run          # iOS: UIKit (see the status below)
 dart compile js -O2 -o build/web/main.dart.js lib/main.dart   # web: DOM + CSS, no Flutter engine
 ```
 
@@ -111,7 +111,7 @@ with them.
 
 ```bash
 flutter pub get
-flutter run -t lib/main_native_todo.dart -d <device> --no-tree-shake-icons   # native views
+flutter run -t lib/main_native_todo.dart -d <device>   # native views
 
 maestro/web/build_examples.sh todo_example                                    # the web build
 python3 -m http.server 8080 --directory build/web_examples
@@ -133,9 +133,6 @@ Write `lib/main.dart` as in the TL;DR, then:
 
 - make `MainActivity` extend `FlutterFragmentActivity` (the system back
   gesture depends on it);
-- pass `--no-tree-shake-icons` to every `flutter run` and `flutter build`
-  (icons are made from codepoints at run time, and a release build fails
-  without it);
 - for web, compile the entry with `dart compile js` and copy
   `packages/native_bridge/web_shell/` next to the output.
 
@@ -337,7 +334,7 @@ components showcase. All are written against `widgets.dart`.
 [EXAMPLES_DIRECTORY.md](EXAMPLES_DIRECTORY.md) walks through each.
 
 ```bash
-flutter run -t lib/main_native_inbox.dart -d <device> --no-tree-shake-icons
+flutter run -t lib/main_native_inbox.dart -d <device>
 ```
 
 The three migrated apps live in repositories of their own and are the larger
@@ -397,9 +394,9 @@ tool/device_check.sh ios            # needs a Mac; see the iOS status above
 ### Build for production
 
 ```bash
-flutter build apk --release --no-tree-shake-icons
-flutter build appbundle --no-tree-shake-icons
-flutter build ios --no-tree-shake-icons
+flutter build apk --release
+flutter build appbundle
+flutter build ios
 dart compile js -O2 -o build/web/main.dart.js lib/main_web.dart   # then copy web_shell/
 ```
 

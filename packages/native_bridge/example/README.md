@@ -11,9 +11,8 @@ flutter run            # Flutter paints the tree
 To render with Android Views or iOS UIViews instead, change `main()` to
 `runNativeApp(CounterApp(), nativeViews: true)`.
 
-A release build needs `--no-tree-shake-icons`
-(`flutter build apk --release --no-tree-shake-icons`): icons are made from
-codepoints at run time, which Flutter's icon tree shaker refuses.
+A release build needs no icon flag: every Material glyph is a constant the
+tree shaker can see.
 
 This example is written against the protocol (`NativeUIApp`, `UIBuilder`). An
 app is more usually written against the Flutter-shaped layer in

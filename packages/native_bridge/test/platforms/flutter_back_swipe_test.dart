@@ -17,30 +17,60 @@ void main() {
   });
   final ios = TargetPlatformVariant.only(TargetPlatform.iOS);
 
-  WidgetNode page(String name, {bool swiping = false}) {
-    final root = UIBuilder.scaffold(body: UIBuilder.text(name));
+  /// A hero that flies with a swipe, [size] square, [down] from the top.
+  WidgetNode hero(String label, {required double size, required double down}) {
+    final box = UIBuilder.box(
+      hero: 'picture',
+      width: size,
+      height: size,
+      color: '#3366ff',
+      child: UIBuilder.text(label),
+    );
+    return UIBuilder.column(
+      children: [
+        UIBuilder.sizedBox(height: down),
+        WidgetNode(
+          type: box.type,
+          props: {...box.props, 'heroGestures': true},
+          children: box.children,
+        ),
+      ],
+    );
+  }
+
+  WidgetNode page(
+    String name, {
+    bool swiping = false,
+    bool heroes = false,
+  }) {
+    final root = UIBuilder.scaffold(
+      body: heroes ? hero(name, size: 40, down: 200) : UIBuilder.text(name),
+    );
+    final beneath = heroes
+        ? hero('beneath', size: 100, down: 0)
+        : UIBuilder.text('beneath');
     return WidgetNode(
       type: root.type,
       props: {
         ...root.props,
         RootProps.backSwipeEventId: 'back',
-        if (swiping) RootProps.beneath: UIBuilder.text('beneath').toJson(),
+        if (swiping) RootProps.beneath: beneath.toJson(),
       },
       children: root.children,
     );
   }
 
-  Future<void> mount(WidgetTester tester) async {
+  Future<void> mount(WidgetTester tester, {bool heroes = false}) async {
     renderer.onEvent('back', (data) {
       final phase = '${data['phase']}';
       phases.add(phase);
       return renderer.render(switch (phase) {
-        'start' => page('top', swiping: true),
+        'start' => page('top', swiping: true, heroes: heroes),
         'commit' => UIBuilder.scaffold(body: UIBuilder.text('beneath')),
-        _ => page('top'),
+        _ => page('top', heroes: heroes),
       });
     });
-    await renderer.render(page('top'));
+    await renderer.render(page('top', heroes: heroes));
     await tester.pumpWidget(
       MaterialApp(
         home: StatefulBuilder(
@@ -84,6 +114,33 @@ void main() {
     expect(phases, ['start', 'commit']);
     expect(find.text('top'), findsNothing);
     expect(tester.getTopLeft(find.text('beneath')).dx, lessThan(60));
+  }, variant: ios);
+
+  testWidgets('a hero that flies with it goes as far as the page has', (
+    tester,
+  ) async {
+    await mount(tester, heroes: true);
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    final flight = find.byKey(const ValueKey<String>('hero picture'));
+    final from = tester.getRect(find.text('top'));
+    final finger = await tester.startGesture(const Offset(5, 300));
+    await finger.moveBy(const Offset(40, 0));
+    await tester.pump();
+    await tester.pump();
+    await finger.moveBy(Offset(width / 2 - 40, 0));
+    await tester.pump();
+
+    // Half way from the page's 40 square to the 100 square beneath.
+    expect(flight, findsOneWidget);
+    final half = tester.getRect(flight);
+    expect(half.width, closeTo(70, 1));
+    expect(half.top, closeTo(from.top / 2, 2));
+
+    await finger.up();
+    await tester.pumpAndSettle();
+    expect(phases, ['start', 'cancel']);
+    expect(flight, findsNothing);
+    expect(tester.getRect(find.text('top')), from);
   }, variant: ios);
 
   testWidgets('is not offered off iOS', (tester) async {

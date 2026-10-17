@@ -3309,9 +3309,14 @@ class NativeUIRenderer {
     }
 
     let imageView = DnnImageView()
-    // A width alone: the height follows from it in the picture's
-    // proportions, and is nothing until the picture comes, as Flutter's.
-    if node["height"] == nil, let width = number(node["width"]) {
+    // As wide as the room, where the tree says the image is laid out in a
+    // width it cannot change, as Flutter's is; the height follows.
+    let fills = node["fillWidth"] as? Bool == true
+    if fills {
+      imageView.fillsWidth = true
+    } else if node["height"] == nil, let width = number(node["width"]) {
+      // A width alone: the height follows from it in the picture's
+      // proportions, and is nothing until the picture comes, as Flutter's.
       imageView.statedWidth = width
       imageView.setContentHuggingPriority(.defaultHigh, for: .vertical)
     }
@@ -3349,7 +3354,7 @@ class NativeUIRenderer {
       imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
       imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
     ]
-    if let width = number(node["width"]) {
+    if !fills, let width = number(node["width"]) {
       constraints.append(container.widthAnchor.constraint(equalToConstant: width))
     }
     if let height = number(node["height"]) {
@@ -6932,6 +6937,8 @@ class NativeUIRenderer {
       return node["mainAxisSize"] as? String != "min"
     case "TextField", "Slider", "Wrap", "Divider":
       return true
+    case "Image":
+      return node["fillWidth"] as? Bool == true
     case "Scroll", "LazyList":
       // A scroller is as wide as it may be, whatever it holds.
       return true

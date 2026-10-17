@@ -190,6 +190,37 @@ void main() {
       expect(rows, hasLength(3));
     });
 
+    test('a column with longer cells has the larger share', () {
+      final app = AppTester.widget(
+        _app(
+          DataTable(
+            columns: const [
+              DataColumn(label: Text('Description')),
+              DataColumn(label: Text('Qty'), numeric: true),
+              DataColumn(label: CircularProgressIndicator()),
+            ],
+            rows: const [
+              DataRow(
+                cells: [
+                  DataCell(Text('A rather long line of description')),
+                  DataCell(Text('3')),
+                  DataCell(CircularProgressIndicator()),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      final shares = [
+        for (final cell in app.ofType('Row').first.children!)
+          cell.props['flex'] as int,
+      ];
+
+      expect(shares[0], greaterThan(shares[1] * 3));
+      // The one that cannot be measured has the average of the others.
+      expect(shares[2], ((shares[0] + shares[1]) / 2).round());
+    });
+
     test('a heading that sorts is tapped: ascending first, then turned round',
         () async {
       var app = AppTester.widget(table());

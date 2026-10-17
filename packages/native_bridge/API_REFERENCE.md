@@ -267,7 +267,9 @@ then `commit` or `cancel`. Between the two, each tree carries the page
 beneath as `RootProps.beneath`; after `commit` the next tree is that page,
 with no `pageTransition`. `UIBuilder.withBackSwipe` puts both on a root;
 in the widget layer a `Navigator` offers it, and `BackSwipeStack` does for a
-router of an app's own. A hero's `heroGestures` flies it with the swipe.
+router of an app's own - nested inside another page too, where `beneath` is
+the whole screen with the top page swapped for the one under it. A hero's
+`heroGestures` flies it with the swipe.
 
 A route's motion may also carry `reveal` - the share of the page shown, a
 `SizeTransition`'s - with `revealAxis` (`vertical`, `horizontal`) and
@@ -303,6 +305,7 @@ Props a node carries for the renderer to act on by itself:
 | `progress` | `Image` with `eventId` | Also sends `{state: 'loading', loaded, expected}` on the way - bytes come, and the bytes there are when the server said - a few times a second |
 | `curve` | any node that animates | One of `linear`, `ease`, `easeIn`, `easeOut`, `easeInOut`, or `cubic(a,b,c,d)` - a cubic Bézier by its control points |
 | `panScale` | `Box` with `panEventId` | Hears a second finger: while two are down, a pan update also carries `scale` (their spread over what it was when the second came down), `rotation` (how far the line between them has turned since, radians clockwise) and `pointers`, with `x`, `y`, `dx`, `dy` the point between them |
+| `fillWidth` | `Image` | As wide as the room it is in, whatever `width` says, and as tall as the picture at that width: an image laid out in a width it cannot change, as Flutter's is. `width` stays beside it for a renderer that does not know it |
 | `blend` | `Image` with `color` | How the tint meets the picture, by Flutter's `BlendMode` name; `srcIn` when absent |
 
 An event is answered by the build it was raised against: the tree travels

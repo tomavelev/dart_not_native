@@ -2178,6 +2178,19 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final image = _el('img', 'dnn-image') as web.HTMLImageElement;
     final width = _num(p['width']);
     final height = _num(p['height']);
+    // As wide as the room, where the tree says the image is laid out in a
+    // width it cannot change; as tall as the picture is at that width.
+    final fills = p['fillWidth'] == true;
+    void size(web.Element element) {
+      if (fills) {
+        _style(element, 'width', '100%');
+        _style(element, 'align-self', 'stretch');
+      } else if (width != null) {
+        _style(element, 'width', '${width}px');
+      }
+      if (height != null) _style(element, 'height', '${height}px');
+    }
+
     // An image that asked is told how its load ended - after this render,
     // since the answer is a rebuild.
     final eventId = _optStr(p['eventId']);
@@ -2202,8 +2215,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       load();
       // Doubles as the accessible name and as what shows if the load fails.
       image.alt = _str(p['alt']);
-      if (width != null) _style(image, 'width', '${width}px');
-      if (height != null) _style(image, 'height', '${height}px');
+      size(image);
       _style(image, 'object-fit', _objectFit(_str(p['fit'], 'cover')));
       _tint(image, p);
       return image;
@@ -2217,8 +2229,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       // the two is showing inside it.
       ..setAttribute('role', 'img')
       ..setAttribute('aria-label', _str(p['alt']));
-    if (width != null) _style(frame, 'width', '${width}px');
-    if (height != null) _style(frame, 'height', '${height}px');
+    size(frame);
     final fallback = _host(_el('span', 'dnn-image-frame__fallback'));
     void show(bool loaded) {
       _setHidden(image, !loaded);

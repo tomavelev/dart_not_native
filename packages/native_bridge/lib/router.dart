@@ -1356,15 +1356,14 @@ class GoRouter extends ChangeNotifier implements RouterConfig {
     }
     // Always a stack, even of one: a page must not move in the tree - and so
     // lose the State of everything keyless inside it - the first time
-    // something is pushed over it. The outermost one can be swiped back.
-    if (depth == 0) {
-      return BackSwipeStack(
-        canPop: topGoesWhole && canPop(),
-        onPop: pop,
-        children: layers,
-      );
-    }
-    return IndexedStack(index: layers.length - 1, children: layers);
+    // something is pushed over it. The one whose top layer goes as a whole
+    // with a pop is swiped back: the outermost, or the stack inside a
+    // shell's frame for a page pushed within it.
+    return BackSwipeStack(
+      canPop: topGoesWhole && canPop(),
+      onPop: pop,
+      children: layers,
+    );
   }
 
   static Widget _defaultErrorPage(BuildContext context, GoRouterState state) =>

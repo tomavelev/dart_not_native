@@ -3853,10 +3853,42 @@ func dnnBlendMode(_ name: String?) -> CGBlendMode {
 /// (`statedWidth`), it is as tall as that width makes the picture in its own
 /// proportions - and not tall at all before the picture comes - rather than
 /// as tall as the picture is in points.
+///
+/// Told it fills its width (`fillsWidth`), it is as wide as the room it is
+/// given and as tall as the picture is at that width.
 final class DnnImageView: UIImageView {
   var statedWidth: CGFloat?
 
+  var fillsWidth = false {
+    didSet { followPicture() }
+  }
+
+  override var image: UIImage? {
+    didSet { followPicture() }
+  }
+
+  /// The height the picture's proportions give the width, for one that
+  /// fills it.
+  private var proportion: NSLayoutConstraint?
+
+  private func followPicture() {
+    proportion?.isActive = false
+    proportion = nil
+    guard fillsWidth else { return }
+    let size = image?.size ?? .zero
+    let made =
+      size.width > 0
+      ? heightAnchor.constraint(equalTo: widthAnchor, multiplier: size.height / size.width)
+      : heightAnchor.constraint(equalToConstant: 0)
+    made.priority = UILayoutPriority(999)
+    made.isActive = true
+    proportion = made
+  }
+
   override var intrinsicContentSize: CGSize {
+    if fillsWidth {
+      return CGSize(width: UIView.noIntrinsicMetric, height: UIView.noIntrinsicMetric)
+    }
     guard let width = statedWidth else { return super.intrinsicContentSize }
     guard let size = image?.size, size.width > 0 else {
       return CGSize(width: UIView.noIntrinsicMetric, height: 0)

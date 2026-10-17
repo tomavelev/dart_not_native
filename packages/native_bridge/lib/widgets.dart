@@ -457,7 +457,8 @@ abstract class StatelessWidget extends Widget {
   const StatelessWidget({super.key});
   Widget build(BuildContext context);
   @override
-  WidgetNode _render(_Owner owner) => build(owner._context())._render(owner);
+  WidgetNode _render(_Owner owner) =>
+      owner._handOn(this, build(owner._context()))._render(owner);
 }
 
 /// A widget with mutable [State] that survives rebuilds.
@@ -824,6 +825,31 @@ class _Owner {
   /// an [Expanded] knows which axis it bounds.
   Axis? _flexAxis;
 
+  /// The widget about to be laid out in a width it cannot change - a
+  /// `Container`'s or a `SizedBox`'s own, a row's share, a list's - as
+  /// Flutter's tight constraints give it. An [Image] given a width there is
+  /// as wide as the room instead, as in Flutter. Only that one widget is
+  /// meant: anything that does not hand it on (`_handOn`, [_tightly]) leaves
+  /// what it builds as it would be anywhere.
+  Widget? _tightWidth;
+
+  /// Renders [child] in a width it cannot change, when [tight].
+  WidgetNode _tightly(Widget child, bool tight, WidgetNode Function() render) {
+    final was = _tightWidth;
+    _tightWidth = tight ? child : null;
+    try {
+      return render();
+    } finally {
+      _tightWidth = was;
+    }
+  }
+
+  /// What [widget] built is laid out where it is: in the width it was given.
+  Widget _handOn(Widget widget, Widget built) {
+    if (identical(_tightWidth, widget)) _tightWidth = built;
+    return built;
+  }
+
   T _withLayout<T>(
     T Function() body, {
     bool? unboundedHeight,
@@ -983,6 +1009,12 @@ class _Owner {
   /// beneath that one, drawn while a swipe is under way.
   _BackSwipeable? _backSwipe;
   WidgetNode? _beneath;
+
+  /// The node [_beneath] takes the place of: the top page of the one that
+  /// is swiping. Where that is nested - a page inside a `ShellRoute`'s
+  /// frame, or a [Navigator] inside a scaffold - the page beneath is drawn
+  /// inside everything around it, as the screen will be once it is popped.
+  WidgetNode? _beneathOver;
 
   /// Whether a swipe back has just taken a page off: the renderer has moved
   /// it already, so the build that shows the page beneath says no pop.
@@ -1208,6 +1240,32 @@ class _Owner {
     }
   }
 
+  /// The screen as it will be once the swiping page is popped: [tree] with
+  /// its top page swapped for the page beneath. Just that page where the
+  /// top one cannot be found in the tree.
+  WidgetNode? _screenBeneath(WidgetNode tree) {
+    final beneath = _beneath;
+    final over = _beneathOver;
+    if (beneath == null || over == null) return beneath;
+    WidgetNode? swap(WidgetNode node) {
+      if (identical(node, over)) return beneath;
+      final children = node.children;
+      if (children == null) return null;
+      for (final (index, child) in children.indexed) {
+        final swapped = swap(child);
+        if (swapped == null) continue;
+        return WidgetNode(
+          type: node.type,
+          props: node.props,
+          children: [...children]..[index] = swapped,
+        );
+      }
+      return null;
+    }
+
+    return swap(tree) ?? beneath;
+  }
+
   WidgetNode buildRoot() {
     _pass++;
     _building = true;
@@ -1219,6 +1277,7 @@ class _Owner {
       _pageTransition = null;
       _backSwipe = null;
       _beneath = null;
+      _beneathOver = null;
       _nestedFab = false;
       _nestedBar = 0;
       final tree = _buildRoot();
@@ -1240,7 +1299,7 @@ class _Owner {
       return UIBuilder.withBackSwipe(
         root,
         onSwipe: swipe._swiped,
-        beneath: swipe._swiping ? _beneath : null,
+        beneath: swipe._swiping ? _screenBeneath(tree) : null,
       );
     } finally {
       _current = outer;
@@ -1624,7 +1683,7 @@ class _Owner {
         key == null
             ? (id as String).substring(id.lastIndexOf('/') + 1)
             : '$key:${widget.runtimeType}',
-        () => state!.build(context)._render(this),
+        () => _handOn(widget, state!.build(context))._render(this),
       );
     } finally {
       _scope = outer;

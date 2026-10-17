@@ -1935,6 +1935,7 @@ class NavigatorState extends State<Navigator> implements _BackSwipeable {
         }
       });
     }
+    if (swipeable && _swiping) owner._beneathOver = shown;
     return shown ?? UIBuilder.sizedBox();
   });
 
@@ -2028,6 +2029,7 @@ class _BackSwipeStackState extends State<BackSwipeStack>
         owner._offstage(i, pages[i]);
       }
     }
+    if (swipeable && _swiping) owner._beneathOver = shown;
     return shown ?? UIBuilder.sizedBox();
   });
 }
