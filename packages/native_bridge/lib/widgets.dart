@@ -892,6 +892,11 @@ class _Owner {
   Set<ScrollController>? _offsetReads;
   bool _sampling = false;
 
+  /// What each place that follows a scroller built last time, with its
+  /// tables, so a report that changes nothing else reuses them.
+  final Map<String, ({String source, WidgetNode linked})> _followed = {};
+  Set<String> _followedUsed = {};
+
   void _readOffset(ScrollController controller) {
     if (_building) _offsetReads?.add(controller);
   }
@@ -1457,6 +1462,7 @@ class _Owner {
     _scrollPositionsUsed = {};
     _fieldFocusUsed = {};
     _animationsUsed = {};
+    _followedUsed = {};
     _focusOrder.clear();
     _atPath.clear();
     _slots.clear();
@@ -1545,6 +1551,7 @@ class _Owner {
       (place, _) => !_scrollPositionsUsed.contains(place),
     );
     _fieldFocus.removeWhere((place, _) => !_fieldFocusUsed.contains(place));
+    _followed.removeWhere((place, _) => !_followedUsed.contains(place));
     _animations.removeWhere((place, run) {
       if (_animationsUsed.contains(place)) return false;
       // Gone from the tree: it will not arrive anywhere.

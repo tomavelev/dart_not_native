@@ -15,8 +15,10 @@ library;
 import 'dart:io';
 
 import 'package:dart_not_native/core.dart';
+import 'package:dart_not_native/flutter_slot.dart';
 import 'package:dart_not_native/platforms/android_renderer.dart';
 import 'package:dart_not_native/platforms/ios_renderer.dart';
+import 'package:flutter/material.dart' show Directionality, TextDirection, Text, ColoredBox, Color, Center;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -443,6 +445,56 @@ void main() {
     );
     renderer = platform;
   });
+
+  testWidgets('lays a Flutter widget over a slot\'s hole', (tester) async {
+    // The layer the app runs under, which paints each registered slot's
+    // widget where the platform says its hole is.
+    await tester.pumpWidget(
+      const Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlutterSlotLayer(),
+      ),
+    );
+    final app = _EveryNodeApp(
+      () => UIBuilder.scaffold(
+        appBar: UIBuilder.appBar(title: 'A slot'),
+        body: UIBuilder.column(
+          children: [
+            UIBuilder.text('Above the slot'),
+            flutterSlotNode(
+              slotId: 'lane_slot',
+              height: 60,
+              builder: (_) => const ColoredBox(
+                color: Color(0xFF4CAF50),
+                child: Center(child: Text('Drawn by Flutter')),
+              ),
+              fallback: UIBuilder.text('Not drawn by Flutter'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final errors = <RenderError>[];
+    final subscription = app.renderErrors.listen(errors.add);
+    app.mount(renderer);
+    FlutterSlotRect? rect;
+    for (var i = 0; i < 40 && rect == null; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      rect = FlutterSlots.instance.rectOf('lane_slot');
+    }
+    await tester.pump();
+    await subscription.cancel();
+    expect(errors, isEmpty, reason: describe(errors));
+    expect(rect, isNotNull, reason: 'the renderer never said where the hole is');
+    expect(rect!.height, closeTo(60, 1));
+    expect(rect.y, greaterThan(0));
+    expect(find.text('Drawn by Flutter'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byType(ColoredBox).first).dy,
+      closeTo(rect.y, 1),
+    );
+    app.unmount();
+  }, skip: !native);
 
   testWidgets('draws one of every node type', (tester) async {
     final errors = await drawErrors(_EveryNodeApp(_screenTree));

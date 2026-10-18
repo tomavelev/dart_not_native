@@ -1,0 +1,31 @@
+# The controls gallery's second tab: a dropdown, tabs, a slider and the
+# controls that are on or off - on both platforms.
+#
+# entry: android=lib/main_native_gallery.dart ios=lib/main_native_gallery.dart
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Choose"
+    timeout: 30000
+- tapOn: "Choose"
+- extendedWaitUntil:
+    visible:
+      id: "fruit"
+    timeout: 5000
+- assertVisible: "Fruit: Apple"
+
+# Tabs move the section.
+- tapOn: "Two"
+- assertVisible: "Section: Two"
+- assertVisible: "Volume: 30"
+
+# On and off, and a choice of one.
+- tapOn:
+    id: "terms"
+- tapOn:
+    id: "alerts"
+- tapOn:
+    id: "plan_pro"
+- assertVisible: "Terms: accepted, alerts: on, plan: pro"

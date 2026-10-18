@@ -304,6 +304,7 @@ Props a node carries for the renderer to act on by itself:
 | `endEventId`, `endAsk` | `Box`, `AnimatedOpacity` | Sends `{ask}` once the move this tree asked for has finished - at once, if nothing moved - and nothing for a move a newer ask overtook. `endAsk` is a number for the change; one already answered is not answered again |
 | `animateSize` | `Box` | With `animateMs`, moves the box from the size it was to the size its child came to - in this render, or by itself between renders - the child laid out once at its new size and clipped to the box on the way when `clip` says so. `sizeEndEventId` beside it is sent `{}` when a move gets there |
 | `sticky` | `Box` in a vertical `Scroll` | Once the content has scrolled past the box, keeps it at the top of the view, over what scrolls beneath, until it scrolls back to its place |
+| `scrollFloat` | `Box` | `{source, extent, snap?}`: slid up by as far as the scroller named `source` (`scrollLinkSource`) has gone down since it last came up, up to `extent`, and back to 0 at its top - by the renderer, each frame; with `snap`, the rest of the way in or out when the scroller comes to rest |
 | `measureEventId` | `LazyList` with `extents` | Its rows say no height of their own: each is laid out at the height it comes to, one under another from `startOffset`, the list's length put right by the difference, and `{start, heights}` is sent for the rows held when any differs from `extents` - the heights the tree guessed, from the rows measured before |
 | `scrollMs`, `scrollCurve` | `Scroll`, `LazyList` with `scrollAnimated` | Travels to `scrollOffset` over that long along that curve, a frame at a time, rather than by the platform's own smooth scroll |
 | `progress` | `Image` with `eventId` | Also sends `{state: 'loading', loaded, expected}` on the way - bytes come, and the bytes there are when the server said - a few times a second |
@@ -370,6 +371,14 @@ There in name only, so that a screen compiles: `MouseRegion` (no hover).
 runs are played by the renderer, a tree at each end and at each turn of an
 `Interval` or a `TweenSequence`; a listener the app adds hears every frame,
 and one that rebuilds makes the run a tree a frame.
+
+## Text measurement
+
+`TextPainter.registerFont(family, widths:, kerning:, boldKerning:)` measures
+text set in a font of the app's own with its widths; `dart run
+dart_not_native:font_widths --family <name> --regular <file> [--bold <file>]
+[--out <file.dart>]` writes the tables and a `register<Family>()` from the
+font files.
 
 ## gen-l10n - `package:dart_not_native/gen_l10n.dart`
 

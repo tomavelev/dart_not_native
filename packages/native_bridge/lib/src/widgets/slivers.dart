@@ -170,7 +170,9 @@ class CustomScrollView extends StatelessWidget {
     // A pinned bar taller than its toolbar, first: it collapses as the view
     // scrolls, over the content rather than above it.
     final first = slivers.isEmpty ? null : slivers.first;
-    if (top && first is SliverAppBar && first.pinned && first._collapses) {
+    if (top &&
+        first is SliverAppBar &&
+        ((first.pinned && first._collapses) || (first.floating && !first.pinned))) {
       return _CollapsingScrollView(
         bar: first,
         controller: controller,
@@ -781,13 +783,23 @@ class _CollapsingScrollViewState extends State<_CollapsingScrollView> {
           top: 0,
           left: 0,
           right: 0,
-          child: AnimatedBuilder(
-            animation: controller,
-            builder: (context, _) => bar._collapsed(
-              context,
-              controller.hasClients ? controller.offset : 0,
-            ),
-          ),
+          child: bar.floating && !bar.pinned
+              // Floating: the whole bar, slid up as the list goes down and
+              // back as soon as it comes up - by the renderer, which keeps
+              // where it is from the scrolling itself.
+              ? _Floating(
+                  controller: controller,
+                  extent: bar._tall + under,
+                  snap: bar.snap,
+                  child: bar._collapsed(context, 0),
+                )
+              : AnimatedBuilder(
+                  animation: controller,
+                  builder: (context, _) => bar._collapsed(
+                    context,
+                    controller.hasClients ? controller.offset : 0,
+                  ),
+                ),
         ),
       ],
     );
@@ -806,8 +818,12 @@ class _CollapsingScrollViewState extends State<_CollapsingScrollView> {
 /// (see `ScrollController`). Pinned and no taller than its toolbar, it is
 /// held above the scroll view; pinned further down, it scrolls up to the top
 /// and stays there, under any pinned before it; not pinned, it scrolls away
-/// with the content. [floating], [snap] and [stretch] are accepted and not
-/// carried.
+/// with the content. [floating] and not pinned, first among the slivers, it
+/// floats over the content: up and away as the view scrolls down, back as
+/// soon as it scrolls up, and with [snap] the rest of the way in or out when
+/// the scrolling stops (`scrollFloat`). [stretch] makes a collapsing bar
+/// taller than its full height by as far as the view is pulled past its top,
+/// where the platform's scrolling bounces - iOS.
 class SliverAppBar extends _Sliver {
   const SliverAppBar({
     super.key,
@@ -867,7 +883,11 @@ class SliverAppBar extends _Sliver {
   Widget _collapsed(BuildContext context, double offset) {
     final scheme = Theme.of(context).colorScheme;
     final ink = foregroundColor ?? scheme.onSurface;
-    final height = (_tall - offset.clamp(0.0, _tall - _short)).toDouble();
+    // Pulled past the top, a bar that stretches is taller than its full
+    // height by as much.
+    final height = stretch && offset < 0
+        ? _tall - offset
+        : (_tall - offset.clamp(0.0, _tall - _short)).toDouble();
     final space = flexibleSpace;
     final under = bottom;
     return Container(
@@ -1036,6 +1056,43 @@ class SliverAppBar extends _Sliver {
   }
 }
 
+
+/// [child], slid up by as much as the scroller [controller] drives has gone
+/// down since it last came up, up to [extent] - a floating app bar. The
+/// renderer keeps that from the scrolling itself (`scrollFloat`); with
+/// [snap], a bar left part of the way when the scroller comes to rest goes
+/// the rest, in or out.
+class _Floating extends Widget {
+  const _Floating({
+    required this.controller,
+    required this.extent,
+    required this.snap,
+    required this.child,
+  });
+  final ScrollController controller;
+  final double extent;
+  final bool snap;
+  final Widget child;
+
+  @override
+  WidgetNode _render(_Owner owner) {
+    if (!controller._linked) {
+      // Its scroller says its name from the next build on.
+      controller._linked = true;
+      owner._requestRebuild();
+    }
+    return _withProps(
+      UIBuilder.box(expand: 'width', child: _renderChild(owner, child)),
+      {
+        'scrollFloat': {
+          'source': controller._link,
+          'extent': extent,
+          if (snap) 'snap': true,
+        },
+      },
+    );
+  }
+}
 
 /// [child], held at the top of the scroller it is in once the content has
 /// scrolled past it - see `UIBuilder.box`'s `sticky`.

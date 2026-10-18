@@ -2958,6 +2958,13 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
               _reportRange(viewport))
           .toJS,
     ).observe(viewport);
+    // Measured rows that change height by themselves - a picture arriving -
+    // are measured again.
+    web.ResizeObserver(
+      ((JSArray<web.ResizeObserverEntry> _, web.ResizeObserver _) {
+        if (state.measureId != null) _measureLazyRows(viewport, content);
+      }).toJS,
+    ).observe(content);
     return viewport;
   }
 
@@ -2975,6 +2982,19 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         before.props['id'] != node.props['id']) {
       return false;
     }
+    // Measured rows: the first one on screen stays where it is when the
+    // heights above it are put right.
+    (int, double)? anchor;
+    if (state.measureId != null) {
+      final top = viewport.getBoundingClientRect().top;
+      for (var i = 0; i < content.children.length; i++) {
+        final row = content.children.item(i)!.getBoundingClientRect();
+        if (row.bottom > top) {
+          anchor = (state.start + i, row.top - top);
+          break;
+        }
+      }
+    }
     _applyLazyListProps(state, content, node.props);
     _applyRefresh(
       viewport,
@@ -2984,6 +3004,14 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     _applyScrollAsk(viewport, node.props);
     _followScroll(viewport, node.props);
     _syncHosted(viewport, node, before.children ?? const []);
+    if (anchor case (final index, final was)) {
+      final at = index - state.start;
+      if (at >= 0 && at < content.children.length) {
+        final now = content.children.item(at)!.getBoundingClientRect().top -
+            viewport.getBoundingClientRect().top;
+        if ((now - was).abs() > 0.5) viewport.scrollTop += now - was;
+      }
+    }
     // A different row count can change which rows are visible. Reported after
     // this pass, so the app's re-render does not run inside it.
     scheduleMicrotask(() => _reportRange(viewport));
@@ -4542,7 +4570,21 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
   /// Follows [box]'s scroller, if its node says it moves with one, and puts
   /// it where that scroller is now rather than where the app last heard.
+  /// The boxes that float over each named scroller (`scrollFloat`), and how
+  /// far each is slid up and from where the scroller last was.
+  final Map<String, Set<web.Element>> _floating = {};
+  final Expando<_Float> _floats = Expando('float');
+
   void _linkToScroll(web.Element box, Map<String, dynamic> p) {
+    final float = p['scrollFloat'];
+    if (float is Map && float['source'] is String) {
+      (_floating[float['source'] as String] ??= {}).add(box);
+      _floats[box] ??= _Float();
+    } else {
+      for (final boxes in _floating.values) {
+        boxes.remove(box);
+      }
+    }
     final link = p['scrollLink'];
     if (link is! Map || link['source'] is! String) {
       for (final boxes in _linked.values) {
@@ -4574,6 +4616,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final source = p?['scrollLinkSource'];
     if (source is! String) return;
     _linkSources[source] = viewport;
+    _floatWith(source, _scrolledBy(viewport));
     final boxes = _linked[source];
     if (boxes == null || boxes.isEmpty) return;
     final offset = _scrolledBy(viewport);
@@ -4584,6 +4627,32 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
         continue;
       }
       if (box.isConnected) _applyLink(box, link, offset);
+    }
+  }
+
+  /// Slides the boxes floating over [source] by how far it moved: up as it
+  /// goes down, back as soon as it comes up, all the way back at the top.
+  void _floatWith(String source, double offset, {bool settled = false}) {
+    final boxes = _floating[source];
+    if (boxes == null) return;
+    for (final box in boxes.toList()) {
+      final float = _floats[box];
+      final props = _nodes[box]?.props['scrollFloat'];
+      if (float == null || props is! Map) continue;
+      final extent = (_num(props['extent']) ?? 0).toDouble();
+      final last = float.last ?? offset;
+      float
+        ..last = offset
+        ..hidden = offset <= 0
+            ? 0
+            : (float.hidden + offset - last).clamp(0, extent).toDouble();
+      var moving = false;
+      if (settled && props['snap'] == true && float.hidden > 0 && float.hidden < extent) {
+        float.hidden = float.hidden > extent / 2 ? extent : 0;
+        moving = true;
+      }
+      _style(box, 'transition', moving ? 'transform 200ms ease-out' : 'none');
+      _style(box, 'transform', 'translateY(${-float.hidden}px)');
     }
   }
 
@@ -5067,7 +5136,13 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       ((web.Event _) {
         _followScroll(viewport, propsOf());
         settle?.cancel();
-        settle = Timer(const Duration(milliseconds: 120), report);
+        settle = Timer(const Duration(milliseconds: 120), () {
+          report();
+          final source = propsOf()?['scrollLinkSource'];
+          if (source is String) {
+            _floatWith(source, _scrolledBy(viewport), settled: true);
+          }
+        });
         if (web.window.performance.now() - reportedAt >= 100) report();
       }).toJS,
     );
@@ -6834,6 +6909,12 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
 }
 
 /// A lazy list's current props, and the range it last reported.
+/// How far a floating box is slid up, and where its scroller was last.
+class _Float {
+  double hidden = 0;
+  double? last;
+}
+
 class _LazyListState {
   String? eventId;
   double extent = 0;

@@ -1,0 +1,59 @@
+# The controls gallery's third tab: a field that can be wrong, a dialog, a
+# snackbar and a disabled button - on both platforms.
+#
+# entry: android=lib/main_native_gallery.dart ios=lib/main_native_gallery.dart
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Feedback"
+    timeout: 30000
+- tapOn: "Feedback"
+- extendedWaitUntil:
+    visible:
+      id: "check_email"
+    timeout: 5000
+
+# An empty email is turned away, a good one taken.
+- tapOn:
+    id: "check_email"
+- assertVisible: "Enter a valid email"
+- assertVisible: "Status: Email rejected"
+- tapOn:
+    id: "email"
+- inputText: "someone@example.com"
+# Away from the field, which puts the keyboard away on both platforms
+# (Maestro's hideKeyboard does not, on an iOS simulator).
+- tapOn: "A field that can be wrong"
+- tapOn:
+    id: "check_email"
+- assertVisible: "Status: Email accepted"
+- assertNotVisible: "Enter a valid email"
+
+# A dialog, cancelled and then confirmed.
+- tapOn:
+    id: "open_dialog"
+- assertVisible: "Delete this item?"
+- tapOn:
+    id: "dialog_cancel"
+- assertVisible: "Status: Kept"
+# The first dialog gone before the second is opened, and the second there
+# before its button is pressed.
+- assertNotVisible: "Delete this item?"
+- tapOn:
+    id: "open_dialog"
+- extendedWaitUntil:
+    visible:
+      id: "dialog_delete"
+    timeout: 5000
+- tapOn:
+    id: "dialog_delete"
+- assertVisible: "Status: Deleted"
+
+# A snackbar's action.
+- tapOn:
+    id: "show_snackbar"
+- assertVisible: "Draft saved"
+- tapOn: "Undo"
+- assertVisible: "Status: Save undone"

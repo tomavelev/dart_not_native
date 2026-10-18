@@ -3533,6 +3533,10 @@ class NativeUIRenderer {
     if let host = fallback as? ImageFallbackHost {
       NSLayoutConstraint.deactivate(host.holds)
     }
+    // A row of a list that measures its rows may be another height now.
+    var above = view.superview
+    while let next = above, !(next is LazyListView) { above = next.superview }
+    (above as? LazyListView)?.remeasure()
   }
 
   /**
@@ -5089,6 +5093,7 @@ class NativeUIRenderer {
     }
     // Where it is in pixels, for a node that asks, as a scroller says it.
     list.onFollow = follower(node)
+    list.onRest = rester(node)
     if let scrolledId = node["scrollEventId"] as? String {
       list.onReport = { [weak self] offset, maxExtent, viewport in
         self?.send(
@@ -5923,6 +5928,97 @@ class NativeUIRenderer {
     return { [weak self] offset in self?.followScroll(source, Double(offset)) }
   }
 
+  /// The `focusVersion` each `Focus` box last obeyed.
+  private let boxFocusAsked = NSMapTable<DnnBoxView, NSNumber>.weakToStrongObjects()
+
+  /// A `Focus` box: one that can take focus (`focusable`), asked for it or to
+  /// give it up once per `focusVersion`, or at once for `autofocus`, and
+  /// that tells its node when focus comes and goes (`focusEventId`).
+  private func applyBoxFocus(_ box: DnnBoxView, _ node: [String: Any]) {
+    guard let eventId = node["focusEventId"] as? String else {
+      box.focusable = false
+      box.onFocus = nil
+      return
+    }
+    box.focusable = node["focusable"] as? Bool == true
+    box.focusTint = color(themePrimary, fallback: themePrimary)
+    box.onFocus = { [weak self] focused in
+      self?.send(eventId: eventId, data: ["focused": focused])
+    }
+    let version = (node["focusVersion"] as? NSNumber)?.intValue
+    let asked = boxFocusAsked.object(forKey: box)?.intValue
+    if let version, version != asked {
+      boxFocusAsked.setObject(NSNumber(value: version), forKey: box)
+      if node["focusRequested"] as? Bool == false {
+        DispatchQueue.main.async { if box.isFirstResponder { _ = box.resignFirstResponder() } }
+      } else if box.focusable {
+        DispatchQueue.main.async { _ = box.becomeFirstResponder() }
+      }
+    } else if box.focusable, node["autofocus"] as? Bool == true, asked == nil {
+      boxFocusAsked.setObject(NSNumber(value: 0), forKey: box)
+      DispatchQueue.main.async { _ = box.becomeFirstResponder() }
+    }
+  }
+
+  /// Snaps the boxes floating over a scroller (`scrollFloat`) when it rests.
+  private func rester(_ node: [String: Any]) -> (() -> Void)? {
+    guard let source = node["scrollLinkSource"] as? String else { return nil }
+    return { [weak self] in self?.settleFloating(source) }
+  }
+
+  /// How far a floating box is slid up, and where its scroller was last.
+  private final class FloatState {
+    var extent: CGFloat = 0
+    var snap = false
+    var hidden: CGFloat = 0
+    var last: CGFloat?
+  }
+
+  /// The boxes floating over each named scroller.
+  private var floatingBoxes: [String: NSMapTable<DnnBoxView, FloatState>] = [:]
+
+  private func floatOver(_ box: DnnBoxView, _ node: [String: Any]) {
+    for table in floatingBoxes.values { table.removeObject(forKey: box) }
+    guard let float = node["scrollFloat"] as? [String: Any],
+      let source = float["source"] as? String
+    else { return }
+    let table =
+      floatingBoxes[source] ?? NSMapTable<DnnBoxView, FloatState>.weakToStrongObjects()
+    floatingBoxes[source] = table
+    let state = table.object(forKey: box) ?? FloatState()
+    state.extent = number(float["extent"]) ?? 0
+    state.snap = float["snap"] as? Bool == true
+    table.setObject(state, forKey: box)
+    box.transform = CGAffineTransform(translationX: 0, y: -state.hidden)
+  }
+
+  /// Slides the boxes floating over `source`: up as it goes down, back as
+  /// soon as it comes up, all the way back at the top.
+  private func floatWith(_ source: String, _ offset: CGFloat) {
+    guard let table = floatingBoxes[source] else { return }
+    for case let box as DnnBoxView in table.keyEnumerator().allObjects {
+      guard let state = table.object(forKey: box) else { continue }
+      let last = state.last ?? offset
+      state.last = offset
+      state.hidden = offset <= 0 ? 0 : min(max(state.hidden + offset - last, 0), state.extent)
+      box.layer.removeAllAnimations()
+      box.transform = CGAffineTransform(translationX: 0, y: -state.hidden)
+    }
+  }
+
+  private func settleFloating(_ source: String) {
+    guard let table = floatingBoxes[source] else { return }
+    for case let box as DnnBoxView in table.keyEnumerator().allObjects {
+      guard let state = table.object(forKey: box), state.snap,
+        state.hidden > 0, state.hidden < state.extent
+      else { continue }
+      state.hidden = state.hidden > state.extent / 2 ? state.extent : 0
+      UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut]) {
+        box.transform = CGAffineTransform(translationX: 0, y: -state.hidden)
+      }
+    }
+  }
+
   /// The boxes that move in step with each named scroller (`scrollLink`),
   /// with their nodes, and where each scroller was last.
   private var linkedBoxes: [String: NSMapTable<DnnBoxView, NSDictionary>] = [:]
@@ -5944,6 +6040,7 @@ class NativeUIRenderer {
 
   private func followScroll(_ source: String, _ offset: Double) {
     linkOffsets[source] = offset
+    floatWith(source, CGFloat(offset))
     guard let table = linkedBoxes[source] else { return }
     for case let box as DnnBoxView in table.keyEnumerator().allObjects {
       guard box.window != nil, let node = table.object(forKey: box) as? [String: Any],
@@ -6010,6 +6107,8 @@ class NativeUIRenderer {
     }
     box.apply(boxStyle(node))
     linkToScroll(box, node)
+    floatOver(box, node)
+    applyBoxFocus(box, node)
     let sizeMs = node["animateSize"] as? Bool == true ? number(node["animateMs"]) ?? 0 : 0
     box.animatesSize = sizeMs > 0
     box.sizeSeconds = Double(sizeMs) / 1000
@@ -6306,6 +6405,7 @@ class NativeUIRenderer {
     // Set on every patch: the id is a prop like any other, and names a
     // different callback from one build to the next.
     scroll.onFollow = follower(node)
+    scroll.onRest = rester(node)
     if let scrolledId = node["scrollEventId"] as? String {
       scroll.onReport = { [weak self] offset, maxExtent, viewport in
         self?.send(
@@ -7641,6 +7741,9 @@ private class LazyListView: UIScrollView {
   var onMeasured: (([CGFloat]) -> Void)?
   private var measuredExtra: CGFloat = 0
   private var sentHeights: [CGFloat]?
+  /// The row that was first on screen before a new window, and where it was
+  /// against the top: kept there once the new window is framed.
+  private var anchor: (index: Int, top: CGFloat)?
 
   /// The offset to scroll to once laid out; nil after that. With
   /// `restoreTravels` it is scrolled to, not jumped to.
@@ -7670,6 +7773,8 @@ private class LazyListView: UIScrollView {
   var onReport: ((CGFloat, CGFloat, CGFloat) -> Void)?
   /// Told where the list is each frame it moves, for what moves in step.
   var onFollow: ((CGFloat) -> Void)?
+  /// Told when it comes to rest - for a floating box that snaps.
+  var onRest: (() -> Void)?
   private var reportedOffset: CGFloat = -1
   private var reportedAt: CFTimeInterval = 0
   private var settleWork: DispatchWorkItem?
@@ -7688,13 +7793,16 @@ private class LazyListView: UIScrollView {
   func moved() {
     if let onFollow {
       let maxOffset = max(0, contentSize.height - bounds.height)
-      onFollow(min(max(0, contentOffset.y), maxOffset))
+      onFollow(min(contentOffset.y, maxOffset))
     }
     guard onReport != nil else { return }
     settleWork?.cancel()
     if CACurrentMediaTime() - reportedAt >= 0.1 { report() }
     // Nothing for a little longer than that: it has stopped.
-    let work = DispatchWorkItem { [weak self] in self?.report() }
+    let work = DispatchWorkItem { [weak self] in
+      self?.report()
+      self?.onRest?()
+    }
     settleWork = work
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
   }
@@ -7801,6 +7909,21 @@ private class LazyListView: UIScrollView {
         heights.append(height)
       }
       measuredExtra = heights.reduce(0, +) - rowExtents.reduce(0, +)
+      if let anchor, anchor.index >= startIndex, anchor.index < startIndex + rows.count {
+        self.anchor = nil
+        let row = rows[anchor.index - startIndex]
+        let moved = row.frame.minY - contentOffset.y - anchor.top
+        if abs(moved) > 0.5 {
+          // The content's length is set after the frames; make room first.
+          let needed = contentOffset.y + moved + bounds.height
+          if contentSize.height < needed {
+            contentSize = CGSize(width: width, height: needed)
+          }
+          contentOffset.y = max(0, contentOffset.y + moved)
+        }
+      } else {
+        anchor = nil
+      }
       let differs = heights.enumerated().contains { i, h in
         i >= rowExtents.count || abs(rowExtents[i] - h) > 0.5
       }
@@ -7823,6 +7946,14 @@ private class LazyListView: UIScrollView {
     }
   }
 
+  /// Lays the rows out again at the heights they come to now - a picture in
+  /// one has arrived - when they are measured rather than given.
+  func remeasure() {
+    guard onMeasured != nil else { return }
+    framedWidth = -1
+    setNeedsLayout()
+  }
+
   /// Replaces the window a reconcile produced and forces a re-frame, since the
   /// rows and their start index changed while the width did not.
   func setWindow(
@@ -7834,6 +7965,14 @@ private class LazyListView: UIScrollView {
     startOffset: CGFloat = 0,
     totalExtent: CGFloat = 0
   ) {
+    // Measured rows: the first one on screen stays where it is when the
+    // heights above it are put right - see `frameRows`.
+    if onMeasured != nil {
+      let top = contentOffset.y - padding.top
+      if let i = rows.firstIndex(where: { $0.frame.maxY - padding.top > top }) {
+        anchor = (index: self.startIndex + i, top: rows[i].frame.minY - contentOffset.y)
+      }
+    }
     self.rows = newRows
     self.startIndex = startIndex
     self.itemCount = itemCount

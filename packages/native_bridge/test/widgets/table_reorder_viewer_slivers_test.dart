@@ -755,6 +755,29 @@ void main() {
         expect(heights.last, 56);
       });
 
+      test('a floating one floats over the content', () async {
+        final app = AppTester.widget(
+          _app(
+            const CustomScrollView(
+              slivers: [
+                SliverAppBar(title: Text('Bar'), floating: true, snap: true),
+                SliverToBoxAdapter(child: Text('Row')),
+              ],
+            ),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(scrolls(app, 'Bar'), isFalse);
+        final float = app.nodes
+            .map((n) => n.props['scrollFloat'])
+            .whereType<Map>()
+            .single;
+        expect(float['extent'], 56);
+        expect(float['snap'], isTrue);
+        final scroll = app.ofType('Scroll').single;
+        expect(scroll.props['scrollLinkSource'], float['source']);
+      });
+
       test('a header pinned straight after a pinned bar is held too', () {
         final app = AppTester.widget(
           _app(

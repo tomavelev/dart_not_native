@@ -129,6 +129,16 @@ their labels *and their states*, and that tapping one moves the state a
 screen reader would read. On iOS that state is a trait rather than a picture,
 which is the only way it can be read at all.
 
+`gallery_touch.yaml`, `gallery_choose.yaml` and `gallery_feedback.yaml`
+(2026-10-18) walk the controls gallery's three tabs - tappable and held
+boxes, layers, a dropdown, tabs, a slider, a dialog, a snackbar - which are
+the node types only the agent-device flows reached before, and on Android
+only. They find things by `id:`, the widget's `Key`, which both renderers
+expose: a resource name on Android, an accessibility identifier on iOS.
+They pass on an iOS simulator and an Android emulator. Maestro's
+`hideKeyboard` does not put the keyboard away on an iOS simulator here, so
+the feedback flow taps away from the field instead.
+
 The two platforms are deliberately not identical - Android floats a field's
 label inside the box, iOS draws it above - so a flow that has to point at a
 field is written per platform and named for it (`*_android.yaml`, `*_ios.yaml`).

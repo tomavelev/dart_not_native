@@ -218,6 +218,36 @@ void main() {
   });
 
   group('TextPainter', () {
+    double widthOf(String text, {String? family, double size = 100}) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(fontSize: size, fontFamily: family),
+        ),
+      )..layout();
+      return painter.width;
+    }
+
+    test('kerns as Roboto does: AV is narrower than A and V apart', () {
+      expect(widthOf('AV'), closeTo(widthOf('A') + widthOf('V') - 4.2, 0.01));
+      expect(widthOf('To'), lessThan(widthOf('T') + widthOf('o')));
+      expect(widthOf('HH'), widthOf('H') * 2);
+    });
+
+    test('a font of the app\'s own is measured with its widths', () {
+      TextPainter.registerFont(
+        'Square',
+        widths: [
+          (0x41, [1000, 1000], [1000, 1000]),
+        ],
+        kerning: {0x41 << 16 | 0x42: -100},
+      );
+      expect(widthOf('A', family: 'Square'), 100);
+      expect(widthOf('AB', family: 'Square'), closeTo(190, 0.01));
+      // What it has no width for is Roboto's.
+      expect(widthOf('C', family: 'Square'), widthOf('C'));
+    });
+
     test('measures Latin text with Roboto\'s own widths', () {
       // H 713, e 530, l 243, l 243, o 570 thousandths of an em.
       final latin = TextPainter(

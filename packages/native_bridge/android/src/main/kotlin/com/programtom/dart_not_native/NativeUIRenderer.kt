@@ -1805,6 +1805,7 @@ class NativeUIRenderer(
         }
         scroll.memory.onReport = scrollReport(newNode)
         scroll.memory.onFollow = scrollFollower(newNode)
+        scroll.memory.onRest = scrollRest(newNode)
         val rows = scroll.getChildAt(0) as? FrameLayout ?: return false
         if ((rows is MeasuredRowsLayout) != (newNode["measureEventId"] is String)) return false
         val oldRowNodes = childNodes(oldNode)
@@ -1842,6 +1843,7 @@ class NativeUIRenderer(
             ?.map { ((it as? Number)?.toFloat() ?: 0f) * density }
         var running = ((newNode["startOffset"] as? Number)?.toFloat() ?: 0f) * density
 
+        (rows as? MeasuredRowsLayout)?.noteAnchor()
         // Re-lay the window: detaching every row and re-adding the kept ones is a
         // re-parent, not a rebuild - no row view is created that a match covered.
         rows.removeAllViews()
@@ -5480,6 +5482,7 @@ class NativeUIRenderer(
         }
         list.memory.onReport = scrollReport(node)
         list.memory.onFollow = scrollFollower(node)
+        list.memory.onRest = scrollRest(node)
         val refresh = node["refreshEventId"] as? String ?: return list
         return refreshFrame(list, refresh, node["refreshing"] == true).apply {
             layoutParams = matchParent()
@@ -5494,6 +5497,7 @@ class NativeUIRenderer(
         val start = ((node["startOffset"] as? Number)?.toFloat() ?: 0f) * density
         val total = ((node["totalExtent"] as? Number)?.toFloat() ?: 0f) * density
         rows.startOffset = start.roundToInt()
+        rows.startIndex = (node["startIndex"] as? Number)?.toInt() ?: 0
         rows.guessed = guessed
         rows.rest = max(0, (total - start).roundToInt() - guessed.sum())
         val eventId = node["measureEventId"] as? String
@@ -6099,6 +6103,7 @@ class NativeUIRenderer(
             onDone = endAnswer(box, node),
         )
         linkToScroll(box, node)
+        floatOver(box, node)
 
         val events = boxEvents(node)
         if (events != box.events) box.events = events
@@ -6401,6 +6406,7 @@ class NativeUIRenderer(
         // different callback from one build to the next.
         memory.onReport = scrollReport(node)
         memory.onFollow = scrollFollower(node)
+        memory.onRest = scrollRest(node)
     }
 
     /**
@@ -6411,6 +6417,55 @@ class NativeUIRenderer(
         val source = node["scrollLinkSource"] as? String ?: return null
         val density = activity.resources.displayMetrics.density
         return { offset -> followScroll(source, offset / density) }
+    }
+
+    /** Snaps the boxes floating over a scroller (`scrollFloat`) when it comes to rest. */
+    private fun scrollRest(node: Map<*, *>): (() -> Unit)? {
+        val source = node["scrollLinkSource"] as? String ?: return null
+        return { settleFloating(source) }
+    }
+
+    /** How far a floating box is slid up, and where its scroller last was - logical pixels. */
+    private class FloatState(var extent: Float, var snap: Boolean) {
+        var hidden = 0f
+        var last: Float? = null
+    }
+
+    /** The boxes floating over each named scroller. */
+    private val floatingBoxes = HashMap<String, java.util.WeakHashMap<BoxLayout, FloatState>>()
+
+    private fun floatOver(box: BoxLayout, node: Map<*, *>) {
+        floatingBoxes.values.forEach { it.remove(box) }
+        val float = node["scrollFloat"] as? Map<*, *> ?: return
+        val source = float["source"] as? String ?: return
+        val table = floatingBoxes.getOrPut(source) { java.util.WeakHashMap() }
+        val state = table[box] ?: FloatState(0f, false)
+        state.extent = (float["extent"] as? Number)?.toFloat() ?: 0f
+        state.snap = float["snap"] == true
+        table[box] = state
+        box.translationY = -state.hidden * activity.resources.displayMetrics.density
+    }
+
+    /** Slides the boxes floating over [source]: up as it goes down, back as soon as it comes up. */
+    private fun floatWith(source: String, offset: Float) {
+        val density = activity.resources.displayMetrics.density
+        floatingBoxes[source]?.forEach { (box, state) ->
+            val last = state.last ?: offset
+            state.last = offset
+            state.hidden = if (offset <= 0f) 0f
+            else (state.hidden + offset - last).coerceIn(0f, state.extent)
+            box.animate().cancel()
+            box.translationY = -state.hidden * density
+        }
+    }
+
+    private fun settleFloating(source: String) {
+        val density = activity.resources.displayMetrics.density
+        floatingBoxes[source]?.forEach { (box, state) ->
+            if (!state.snap || state.hidden <= 0f || state.hidden >= state.extent) return@forEach
+            state.hidden = if (state.hidden > state.extent / 2) state.extent else 0f
+            box.animate().translationY(-state.hidden * density).setDuration(200).start()
+        }
     }
 
     /** The boxes that move in step with each named scroller (`scrollLink`), with their nodes. */
@@ -6430,6 +6485,7 @@ class NativeUIRenderer(
 
     private fun followScroll(source: String, offset: Float) {
         linkOffsets[source] = offset
+        floatWith(source, offset)
         val boxes = linkedBoxes[source] ?: return
         for ((box, node) in boxes.entries.toList()) {
             val link = node["scrollLink"] as? Map<*, *> ?: continue

@@ -230,19 +230,30 @@ void main() {
     });
   });
 
+  test('padding and a widget of the app\'s own are read through', () async {
+    await push(
+      (_, animation, _, child) => _Framed(
+        child: Padding(
+          padding: EdgeInsets.zero,
+          child: FadeTransition(opacity: animation, child: child),
+        ),
+      ),
+    );
+    expect(transition()!['page'], {'opacity': 0.0});
+  });
+
   test('something else in the way ends the reading there', () async {
     await push(
       (_, animation, _, child) => FadeTransition(
         opacity: animation,
-        child: Padding(
-          padding: EdgeInsets.zero,
-          child: SlideTransition(
+        child: Stack(
+          children: [SlideTransition(
             position: Tween(
               begin: const Offset(1, 0),
               end: Offset.zero,
             ).animate(animation),
             child: child,
-          ),
+          )],
         ),
       ),
     );
@@ -346,4 +357,11 @@ void main() {
     expect(reversed.value, 0);
     expect(reversed.status, AnimationStatus.dismissed);
   });
+}
+
+class _Framed extends StatelessWidget {
+  const _Framed({required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => SafeArea(child: child);
 }

@@ -1998,10 +1998,19 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   ValueNotifier<double> _offsetOf(String source) =>
       _scrollOffsets.putIfAbsent(source, () => ValueNotifier(0));
 
-  void _scrolled(Map<String, dynamic> props, double pixels) {
+  void _scrolled(Map<String, dynamic> props, double pixels, {bool atRest = false}) {
     final source = props['scrollLinkSource'];
-    if (source is String) _offsetOf(source).value = pixels;
+    if (source is! String) return;
+    _offsetOf(source).value = pixels;
+    if (atRest) _restsOf(source).value++;
   }
+
+  /// How many times each named scroller has come to rest, for a floating
+  /// box that snaps.
+  final Map<String, ValueNotifier<int>> _rests = {};
+
+  ValueNotifier<int> _restsOf(String source) =>
+      _rests.putIfAbsent(source, () => ValueNotifier(0));
 
   /// The value [values] has at [offset], in a straight line between the
   /// offsets [at] gives and held past either end.
@@ -2078,6 +2087,22 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     BuildContext context, {
     bool canvas = false,
   }) {
+    final float = p['scrollFloat'];
+    if (float is Map && float['source'] is String) {
+      final source = float['source'] as String;
+      return _FloatingBox(
+        offset: _offsetOf(source),
+        rests: _restsOf(source),
+        extent: _double(float['extent']) ?? 0,
+        snap: float['snap'] == true,
+        child: _box(
+          Map<String, dynamic>.of(p)..remove('scrollFloat'),
+          children,
+          context,
+          canvas: canvas,
+        ),
+      );
+    }
     final link = p['scrollLink'];
     if (link is Map && link['source'] is String) {
       // Built again each frame the scroller moves, from where it is.
@@ -4033,8 +4058,49 @@ class _NodeLazyListState extends State<_NodeLazyList> {
   @override
   void didUpdateWidget(_NodeLazyList old) {
     super.didUpdateWidget(old);
+    if (old.props['measureEventId'] is String) _noteAnchor();
     _applyScrollRequest();
     _followTree();
+  }
+
+  /// The row first on screen before a new window, and where it was against
+  /// the top: kept there after the frame, so the heights above it being put
+  /// right do not move what is being read.
+  (int, double)? _anchor;
+
+  double? _screenTopOf(int index) {
+    final row = _rowKeys[index]?.currentContext?.findRenderObject();
+    final list = context.findRenderObject();
+    if (row is! RenderBox || list is! RenderBox || !row.attached || !list.attached) {
+      return null;
+    }
+    return row.localToGlobal(Offset.zero).dy - list.localToGlobal(Offset.zero).dy;
+  }
+
+  void _noteAnchor() {
+    _anchor = null;
+    for (final index in (_rowKeys.keys.toList()..sort())) {
+      final top = _screenTopOf(index);
+      final row = _rowKeys[index]?.currentContext?.findRenderObject();
+      if (top == null || row is! RenderBox) continue;
+      if (top + row.size.height > 0) {
+        _anchor = (index, top);
+        break;
+      }
+    }
+    if (_anchor == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final anchor = _anchor;
+      _anchor = null;
+      if (!mounted || anchor == null || !_controller.hasClients) return;
+      final now = _screenTopOf(anchor.$1);
+      if (now == null) return;
+      final moved = now - anchor.$2;
+      if (moved.abs() > 0.5) {
+        final position = _controller.positions.last;
+        _controller.jumpTo(position.pixels + moved);
+      }
+    });
   }
 
   /// The list's padding: room inside the scroller, which the rows scroll
@@ -4241,9 +4307,19 @@ class _NodeLazyListState extends State<_NodeLazyList> {
       children: [
         SizedBox(height: before),
         for (var i = 0; i < rows.length; i++)
-          KeyedSubtree(
-            key: _rowKeys.putIfAbsent(start + i, GlobalKey.new),
-            child: widget.renderer.buildNode(rows[i], context),
+          // A row that changes height by itself - a picture arriving - is
+          // measured again.
+          NotificationListener<SizeChangedLayoutNotification>(
+            onNotification: (_) {
+              WidgetsBinding.instance.addPostFrameCallback(
+                (_) => _sendHeights(start, guessed),
+              );
+              return true;
+            },
+            child: SizeChangedLayoutNotifier(
+              key: _rowKeys.putIfAbsent(start + i, GlobalKey.new),
+              child: widget.renderer.buildNode(rows[i], context),
+            ),
           ),
         SizedBox(height: math.max(0, total - before - window)),
       ],
@@ -4280,7 +4356,11 @@ class _NodeLazyListState extends State<_NodeLazyList> {
   /// every 100 ms on the way.
   bool _onScrolled(ScrollNotification notification) {
     if (notification.depth != 0) return false;
-    widget.renderer._scrolled(widget.props, notification.metrics.pixels);
+    widget.renderer._scrolled(
+      widget.props,
+      notification.metrics.pixels,
+      atRest: notification is ScrollEndNotification,
+    );
     final atRest = notification is ScrollEndNotification;
     if (!atRest && notification is! ScrollUpdateNotification) return false;
     if (!atRest &&
@@ -5625,7 +5705,11 @@ class _NodeScrollState extends State<_NodeScroll> {
   bool _onScrolled(ScrollNotification notification) {
     // A scroller inside this one sends its own.
     if (notification.depth != 0) return false;
-    widget.renderer._scrolled(widget.props, notification.metrics.pixels);
+    widget.renderer._scrolled(
+      widget.props,
+      notification.metrics.pixels,
+      atRest: notification is ScrollEndNotification,
+    );
     final atRest = notification is ScrollEndNotification;
     if (!atRest && notification is! ScrollUpdateNotification) return false;
     if (!atRest &&
@@ -6849,3 +6933,83 @@ class _HeroBoxState extends State<_HeroBox> {
   );
 }
 
+/// A box floating over a scroller (`scrollFloat`): slid up as the scroller
+/// goes down, back as soon as it comes up, all the way back at the top - and,
+/// with [snap], the rest of the way in or out when it comes to rest.
+class _FloatingBox extends StatefulWidget {
+  const _FloatingBox({
+    required this.offset,
+    required this.rests,
+    required this.extent,
+    required this.snap,
+    required this.child,
+  });
+  final ValueNotifier<double> offset;
+  final ValueNotifier<int> rests;
+  final double extent;
+  final bool snap;
+  final Widget child;
+
+  @override
+  State<_FloatingBox> createState() => _FloatingBoxState();
+}
+
+class _FloatingBoxState extends State<_FloatingBox> {
+  double _hidden = 0;
+  late double _last = widget.offset.value;
+  bool _snapping = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.offset.addListener(_moved);
+    widget.rests.addListener(_rested);
+  }
+
+  @override
+  void didUpdateWidget(_FloatingBox old) {
+    super.didUpdateWidget(old);
+    if (old.offset != widget.offset) {
+      old.offset.removeListener(_moved);
+      widget.offset.addListener(_moved);
+    }
+    if (old.rests != widget.rests) {
+      old.rests.removeListener(_rested);
+      widget.rests.addListener(_rested);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.offset.removeListener(_moved);
+    widget.rests.removeListener(_rested);
+    super.dispose();
+  }
+
+  void _moved() {
+    final offset = widget.offset.value;
+    setState(() {
+      _snapping = false;
+      _hidden = offset <= 0
+          ? 0
+          : (_hidden + offset - _last).clamp(0, widget.extent).toDouble();
+      _last = offset;
+    });
+  }
+
+  void _rested() {
+    if (!widget.snap || _hidden <= 0 || _hidden >= widget.extent) return;
+    setState(() {
+      _snapping = true;
+      _hidden = _hidden > widget.extent / 2 ? widget.extent : 0;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedContainer(
+    duration: _snapping ? const Duration(milliseconds: 200) : Duration.zero,
+    curve: Curves.easeOut,
+    transform: Matrix4.translationValues(0, -_hidden, 0),
+    child: widget.child,
+  );
+}

@@ -932,7 +932,20 @@ class _CustomPaintState extends State<CustomPaint> {
 
 /// What a character is measured by: its font size, line-height multiple,
 /// whether it is bold, and the spacing after it.
-typedef _Measure = ({double size, double height, bool bold, double spacing});
+typedef _Measure = ({
+  double size,
+  double height,
+  bool bold,
+  double spacing,
+  String? family,
+});
+
+/// A font of the app's own, as `TextPainter.registerFont` was given it.
+typedef _FontTables = ({
+  List<(int, List<int>, List<int>)> widths,
+  Map<int, int> kerning,
+  Map<int, int> boldKerning,
+});
 
 /// Measures and draws text on a [Canvas] - Flutter's `TextPainter`.
 ///
@@ -945,10 +958,11 @@ typedef _Measure = ({double size, double height, bool bold, double spacing});
 /// the font files). iOS's and a browser's own fonts come out within a few
 /// per cent of it. A CJK character or a Hangul syllable is a whole em, as it
 /// is in every CJK font, an emoji 1.245 em, as in Noto Color Emoji, and
-/// anything else an estimate of 0.55 em. Kerning, ligatures and an Arabic
-/// letter's joined forms are not counted - it is measured standing alone,
-/// which most are wider than joined - and an app's own `fontFamily` is
-/// measured as these. A line is 1.2 × the font size
+/// anything else an estimate of 0.55 em. Roboto's kerning is counted between
+/// two printable ASCII characters. Ligatures and an Arabic letter's joined
+/// forms are not - it is measured standing alone, which most are wider than
+/// joined. An app's own `fontFamily` is measured with its own widths once
+/// [registerFont] has them, and as Roboto until then. A line is 1.2 × the font size
 /// tall (or the style's own `height` multiple). Lines break at `\n` and, past
 /// `maxWidth`, at the last space that fits. The default font size is 14.
 ///
@@ -1012,11 +1026,57 @@ class TextPainter {
       (text?.style?.fontSize ?? _defaultFontSize) *
       (text?.style?.height ?? 1.2);
 
+  /// The fonts of the app's own text is measured in, by family.
+  static final Map<String, _FontTables> _fonts = {};
+
+  /// Measures text set in [family] with the widths of a font of the app's
+  /// own - regular and bold runs of code points, as in `glyph_widths.dart` -
+  /// and its kerning pairs (`left << 16 | right` to thousandths of an em).
+  /// `dart run dart_not_native:font_widths` writes all three from the
+  /// font's files, and a call to this with them.
+  static void registerFont(
+    String family, {
+    required List<(int, List<int>, List<int>)> widths,
+    Map<int, int> kerning = const {},
+    Map<int, int> boldKerning = const {},
+  }) {
+    _fonts[family] = (
+      widths: widths,
+      kerning: kerning,
+      boldKerning: boldKerning,
+    );
+  }
+
+  /// How far [right] moves when it follows [left] at [fontSize].
+  static double _kern(
+    int left,
+    int right,
+    double fontSize, {
+    required bool bold,
+    String? family,
+  }) {
+    final own = family == null ? null : _fonts[family];
+    final pairs = own == null
+        ? (bold ? kernBold : kernRegular)
+        : (bold ? own.boldKerning : own.kerning);
+    final kern = pairs[left << 16 | right];
+    return kern == null ? 0 : kern * fontSize / 1000;
+  }
+
   /// How wide [codePoint] is at [fontSize]: the font's own width where the
   /// table has it, a whole em for CJK and Hangul, an emoji's width, nothing
   /// for a character that is not seen, and the estimate for the rest.
-  static double _advance(int codePoint, double fontSize, {bool bold = false}) {
-    final known = _glyphWidth(codePoint, bold: bold);
+  static double _advance(
+    int codePoint,
+    double fontSize, {
+    bool bold = false,
+    String? family,
+  }) {
+    final own = family == null ? null : _fonts[family];
+    final known = own == null
+        ? _glyphWidth(codePoint, bold: bold)
+        : _glyphWidth(codePoint, bold: bold, runs: own.widths) ??
+              _glyphWidth(codePoint, bold: bold);
     if (known != null) return known * fontSize / 1000;
     if (_isWide(codePoint)) return fontSize;
     if (_isEmoji(codePoint)) return 1.245 * fontSize;
@@ -1047,8 +1107,12 @@ class TextPainter {
 
   /// Roboto's width for [rune] in thousandths of an em, or null where the
   /// table has none.
-  static int? _glyphWidth(int rune, {required bool bold}) {
-    for (final (start, regular, heavy) in glyphWidthRuns) {
+  static int? _glyphWidth(
+    int rune, {
+    required bool bold,
+    List<(int, List<int>, List<int>)> runs = glyphWidthRuns,
+  }) {
+    for (final (start, regular, heavy) in runs) {
       final index = rune - start;
       if (index < 0 || index >= regular.length) continue;
       final width = (bold ? heavy : regular)[index];
@@ -1073,6 +1137,7 @@ class TextPainter {
           ? inherited.bold
           : style!.fontWeight!.value >= 600,
       spacing: style?.letterSpacing ?? inherited.spacing,
+      family: style?.fontFamily ?? inherited.family,
     );
     final own = span.text;
     if (own != null) {
@@ -1096,7 +1161,13 @@ class TextPainter {
     if (root != null) {
       _flatten(
         root,
-        (size: rootSize, height: rootHeight, bold: false, spacing: 0),
+        (
+          size: rootSize,
+          height: rootHeight,
+          bold: false,
+          spacing: 0,
+          family: null,
+        ),
         characters,
       );
     }
@@ -1133,7 +1204,7 @@ class TextPainter {
 
     for (var i = 0; i < characters.length; i++) {
       final (rune, measure) = characters[i];
-      final (:size, :height, :bold, :spacing) = measure;
+      final (:size, :height, :bold, :spacing, :family) = measure;
       if (rune == 0x0A) {
         longestUnwrapped = math.max(longestUnwrapped, unwrapped);
         unwrapped = 0;
@@ -1143,7 +1214,13 @@ class TextPainter {
         spaceAt = null;
         continue;
       }
-      final advance = _advance(rune, size, bold: bold) + spacing;
+      // Closer to, or further from, the character before it in the same
+      // style, as the font's kerning says.
+      final kern = i > 0 && characters[i - 1].$2 == measure
+          ? _kern(characters[i - 1].$1, rune, size, bold: bold, family: family)
+          : 0.0;
+      final advance =
+          _advance(rune, size, bold: bold, family: family) + spacing + kern;
       unwrapped += advance;
       if (hasInk && lineWidth + advance > maxWidth) {
         final cut = widthAtSpace;

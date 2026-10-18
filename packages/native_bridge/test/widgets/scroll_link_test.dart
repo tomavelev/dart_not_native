@@ -86,7 +86,9 @@ void main() {
       final shrunk = links.firstWhere((l) => l.containsKey('height'));
       expect(faded['source'], source);
       final at = (faded['at'] as List).cast<double>();
-      expect(at.first, 0);
+      // From past the top, where a bounce goes, through 0.
+      expect(at.first, lessThan(0));
+      expect(at, contains(0.0));
       final opacity = (faded['opacity'] as List).cast<double>();
       for (var i = 0; i < at.length; i++) {
         expect(opacity[i], closeTo((at[i] / 100).clamp(0, 1), 1e-9));
@@ -161,6 +163,67 @@ void main() {
     final colors = (link['color'] as List).cast<String>();
     expect(colors.first, '#ffffffff');
     expect(colors.last, '#ff000000');
+  });
+
+  test('the last tables are kept for a report that changes nothing else, '
+      'and made again for one that does', () async {
+    final controller = ScrollController();
+    final wide = ValueNotifier(false);
+    final app = AppTester.widget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              ValueListenableBuilder<bool>(
+                valueListenable: wide,
+                builder: (_, isWide, _) => AnimatedBuilder(
+                  animation: controller,
+                  builder: (_, _) => Container(
+                    height: ((isWide ? 200.0 : 120.0) -
+                            (controller.hasClients ? controller.offset : 0))
+                        .clamp(56.0, 200.0)
+                        .toDouble(),
+                    color: const Color(0xFF2196F3),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: controller,
+                  children: [for (var i = 0; i < 50; i++) Text('$i')],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    Future<void> scrollTo(double offset) async {
+      final scroll = app.nodes.firstWhere((n) => n.props['scrollEventId'] != null);
+      await app.emit(scroll.props['scrollEventId'] as String, {
+        'offset': offset,
+        'maxExtent': 2000.0,
+        'viewport': 600.0,
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    // The height the table gives at the top.
+    double atTop() {
+      final link = app.nodes
+          .map((n) => n.props['scrollLink'])
+          .whereType<Map>()
+          .firstWhere((l) => l.containsKey('height'));
+      final at = (link['at'] as List).cast<double>();
+      return (link['height'] as List).cast<double>()[at.indexOf(0)];
+    }
+    await scrollTo(10);
+    expect(atTop(), 120);
+    await scrollTo(30);
+    expect(atTop(), 120);
+    wide.value = true;
+    await scrollTo(31);
+    expect(atTop(), 200);
   });
 
   test('a page that does not read the offset carries no table', () async {

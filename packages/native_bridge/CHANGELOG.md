@@ -272,6 +272,60 @@ fades out over the last toolbar's height, and its title shrinks from
 moves each frame (`scrollLink`). Seen on an iOS simulator, an Android
 emulator and in Chrome.
 
+### A floating app bar, one that snaps, and one that stretches
+
+A `SliverAppBar(floating: true)` first among the slivers floats over the
+content: it goes up and away as the view scrolls down and comes back as soon
+as it scrolls up, each frame - kept by the renderer from the scrolling
+itself (`scrollFloat` on the bar's box, with the scroller named as for
+`scrollLink`). With `snap`, a bar left part of the way when the scrolling
+stops goes the rest, in or out. A pinned, collapsing bar with `stretch` is
+taller than its full height by as far as the view is pulled past its top -
+iOS's bounce; the tables a scroll offset is followed by start below 0 for
+it. Seen on an iOS simulator, an Android emulator and in Chrome (the
+stretch on iOS, where the scrolling bounces).
+
+### Following a scroll offset costs one build again
+
+The tables of the last report are kept and used again while the tree keeps
+its shape and every followed box shows what its table says for the offset;
+only a change of either builds the dozen and more samples again. A page of
+two hundred list tiles that rebuilds from a listener went from 22 ms a
+report to under half a millisecond.
+
+### More of a page transition read
+
+A `transitionsBuilder` that wraps the page in padding, an alignment, a size,
+a clip, a decoration, semantics, a theme, a `Builder` or a `StatelessWidget`
+of the app's own is read through them, as through an `AnimatedBuilder`; a
+`Stack` or a stateful widget in the way still ends the reading.
+
+### `Focus` on iOS
+
+A `Focus` box takes focus on iOS too - it becomes the first responder,
+which a hardware keyboard's keys go to - asked for it by `requestFocus` or
+`autofocus`, outlined while it has it, and telling its node when focus
+comes and goes. Seen on an iOS simulator.
+
+### Kerning, and an app's own font
+
+`TextPainter` counts Roboto's kerning between printable ASCII characters
+(read from the font's `GPOS` table by `tool/generate_glyph_widths.dart`), so
+"AV" and "To" measure as drawn. `TextPainter.registerFont` measures a
+`fontFamily` of the app's own with its own widths and kerning, which
+`dart run dart_not_native:font_widths --family <name> --regular <file>
+[--bold <file>]` writes from the font files, with a `register<Family>()` to
+call in `main`.
+
+### The device lane
+
+`integration_test/native_renderer_test.dart` lays a real Flutter widget
+over a `FlutterSlot`'s hole and checks it is drawn where the renderer says
+the hole is, on an iOS simulator and an Android emulator. Maestro flows for
+the controls gallery's three tabs (`gallery_touch`, `gallery_choose`,
+`gallery_feedback`) run on both platforms, where only the agent-device
+flows on Android reached those node types.
+
 ### Long lists of rows of their own heights are windowed
 
 A `ListView.builder` or `ListView.separated` of more than 60 rows that say no
@@ -285,9 +339,10 @@ worked out from those. A `CustomScrollView` whose slivers include a builder
 slivers rows of it - unless one is pinned part-way down. A list of a
 thousand rows of five heights scrolled down and back on an iOS simulator,
 an Android emulator and in Chrome, each row at its height with no gap.
-Still: a row whose height changes after it is laid out - an image that
-loads - is measured again on iOS only when its width changes, and a jump to
-a far offset lands by the guesses.
+A row whose height changes after it is laid out - a picture that arrives -
+is measured again, and when the heights above the screen are put right the
+row first on screen stays where it is, on all four renderers. A jump to a
+far offset still lands by the guesses.
 
 ### A widget in a line of text is live on iOS and Android
 
@@ -1959,13 +2014,25 @@ What they asked for that was not there:
 - The camera has never been seen showing an actual picture. The permission, the
   session and the failure reports are proven on a simulator and in a browser,
   which is not the same as a frame from a lens.
-- Most iOS screens have not been looked at on a phone. Six of the example apps
-  were driven by hand on a simulator and three on an iPad, which found and
-  fixed real layout bugs; the rest are covered only by a lane that proves the
-  Swift renderer draws every node type without reporting an error, which is not
-  the same as the screen being right. The device flows cannot close that gap -
-  Maestro cannot build its driver for a physical iOS device (see
-  `maestro/native/README.md`), so it stays a by-hand job.
+- **None of the three migrated production apps has run on iOS.** They were
+  walked screen by screen on an Android emulator, which found and fixed some
+  thirty bugs; on iOS the examples and the controls gallery have been driven
+  on a simulator (`tool/device_check.sh ios`, with the gallery's three Maestro
+  flows since 2026-10-18) and three examples on an iPad, and that is all.
+  Most iOS screens have not been looked at on a phone. The device flows cannot
+  close that gap - Maestro cannot build its driver for a physical iOS device
+  (see `maestro/native/README.md`), so it stays a by-hand job.
+- The last device runs on real hardware were on 2026-09-24; everything since
+  has run on an iOS simulator and an Android emulator.
+- A list of rows of no stated height is windowed with guessed heights for the
+  rows not yet seen: a jump to a far offset lands by the guesses, and the
+  scroll bar's length settles as rows are measured.
+- What a build makes from a scroll offset follows it each frame for a box's
+  opacity, size, movement, turn and colour; words and a tree that changes
+  shape with the offset follow the reports, at most every 100 ms.
+- Text is measured with Roboto's widths and kerning (or an app font's, once
+  registered); ligatures and Arabic's joined forms are not counted, and
+  scripts without a table are estimated.
 - Nothing has been tested with a screen reader.
 - The package is not on pub.dev. The repository is public and both pubspecs
   and the podspec point at it, so a git dependency works; `dart pub publish

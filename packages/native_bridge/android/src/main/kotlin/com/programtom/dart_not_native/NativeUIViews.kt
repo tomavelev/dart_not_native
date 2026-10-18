@@ -2352,7 +2352,13 @@ internal class ScrollMemory(private val view: ViewGroup, private val horizontal:
 
     private var reported = -1
     private var reportedAt = 0L
-    private val settled = Runnable { report() }
+    private val settled = Runnable {
+        report()
+        onRest?.invoke()
+    }
+
+    /** Told when the scroller comes to rest - for a floating box that snaps. */
+    var onRest: (() -> Unit)? = null
 
     private fun report() {
         val send = onReport ?: return
@@ -2524,6 +2530,29 @@ internal class MeasuredRowsLayout(context: Context) : FrameLayout(context) {
     var onMeasured: ((List<Int>) -> Unit)? = null
     private var sent: List<Int>? = null
 
+    /** The index of the first row held. */
+    var startIndex = 0
+
+    /**
+     * The row first on screen before a new window, and where it was against
+     * the top of the scroller: kept there once the window is laid out, so the
+     * heights above it being put right do not move what is being read.
+     */
+    var anchor: Pair<Int, Int>? = null
+
+    /** Notes [anchor] from the rows held now, before they are replaced. */
+    fun noteAnchor() {
+        val scroller = parent as? View ?: return
+        val scrolled = scroller.scrollY
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (child.bottom > scrolled) {
+                anchor = (startIndex + i) to (child.top - scrolled)
+                return
+            }
+        }
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
         val inner = max(0, width - paddingLeft - paddingRight)
@@ -2547,6 +2576,15 @@ internal class MeasuredRowsLayout(context: Context) : FrameLayout(context) {
             child.layout(paddingLeft, top, paddingLeft + child.measuredWidth, top + child.measuredHeight)
             top += child.measuredHeight
             heights += child.measuredHeight
+        }
+        anchor?.let { (index, before) ->
+            anchor = null
+            val at = index - startIndex
+            val scroller = parent as? View
+            if (scroller != null && at in 0 until childCount) {
+                val moved = getChildAt(at).top - scroller.scrollY - before
+                if (kotlin.math.abs(moved) > 1) scroller.post { scroller.scrollBy(0, moved) }
+            }
         }
         val differs = heights.indices.any {
             it >= guessed.size || kotlin.math.abs(heights[it] - guessed[it]) > 1

@@ -1,0 +1,52 @@
+# The controls gallery's first tab: boxes that take a touch, layers and a
+# long scroll - node types the other examples do not have, on both
+# platforms (e2e/agent-device has the same on Android).
+#
+# entry: android=lib/main_native_gallery.dart ios=lib/main_native_gallery.dart
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "tap_box"
+    timeout: 30000
+
+# An app bar action, named by its tooltip.
+- tapOn: "About this screen"
+- assertVisible: "About opened: 1"
+
+# A box with a tap is a button; one with a long press answers a long press.
+- tapOn:
+    id: "tap_box"
+- assertVisible: "Taps: 1"
+- longPressOn:
+    id: "hold_box"
+- assertVisible: "Holds: 1"
+
+# A tappable card with a button inside it: each is pressed on its own.
+- tapOn:
+    id: "star"
+- assertVisible: "Card opened: 0, starred: yes"
+- tapOn: "Open the card"
+- assertVisible: "Card opened: 1, starred: yes"
+
+# Under IgnorePointer nothing is pressed.
+- tapOn:
+    id: "ignored_box"
+- assertVisible: "Taps: 1"
+- assertVisible: "Ignored taps: 0"
+
+# Layers: what is on top is found, and so is what it sits over.
+- assertVisible:
+    id: "on_top"
+- assertVisible: "Underneath"
+- assertVisible:
+    id: "weather"
+
+# The page scrolls to its end.
+- scrollUntilVisible:
+    element:
+      id: "page_end"
+    direction: DOWN
+    timeout: 15000

@@ -4,22 +4,19 @@ An honest inventory, written from what the code and the test suite actually
 show. Each item says why it matters and what "done" looks like; the ordering
 inside each group is roughly the order I would do them in.
 
-The short version, as of 2026-10-03: **the web target is close to ready, the
-Flutter-hosted target is ready for internal use, the native-view target is
-proven on Android, and iOS is behind its own source.** The Android renderer is
-device-verified on a physical Android phone (Android 17, 2026-09-18): all
-seven native example apps run with events round-tripping, including every
-control (Checkbox/Radio/Toggle), overlays, the 10k-row lazy list, swipe
-actions, and typing into an event-bound field. Since then the widget layer
-grew to most of what a Material app uses and three migrated production apps
-were walked screen by screen on a Pixel 8 emulator (API 35). iOS ran the
-counter/design-system/inbox on a physical iPad and five flows on a simulator
-- for the vocabulary as it was then. **The Swift for everything added since
-compiles and, on 2026-10-09, drew the examples on a simulator with nobody
-looking and none of the three apps on it**, so the largest single risk is still
-iOS, ahead of the things nothing has built yet (map and camera on Android,
-explicit animation). §6 is the list of what is open after that work.
-
+The short version, as of 2026-10-18: **the web target and the
+Flutter-hosted target are close to ready, the native-view target is proven on
+Android, and iOS has caught up on a simulator but not on the apps.** The
+Android renderer was verified on a physical phone (Android 17, 2026-09-18) and
+three migrated production apps were walked screen by screen on an emulator,
+which found and fixed about thirty bugs. Since then the widget layer has grown
+to most of what a Material app uses - explicit animation, page and hero
+transitions, slivers that collapse and float, windowed lists of rows of any
+height, widgets in a line of text - and each round has been seen on an iOS
+simulator, an Android emulator and in Chrome, with `tool/device_check.sh`
+green on both platforms (2026-10-18). **The largest single risk is iOS on the
+apps: none of the three has run there**, followed by the absence of fresh
+runs on real hardware since 2026-09-24. §6 is the list of what is open.
 ---
 
 ## Authoring: the Flutter-shaped widget layer
@@ -2093,7 +2090,10 @@ notice.
    Since 2026-10-16 an `AnimatedBuilder`, a `Transform`, a `KeyedSubtree`
    and a `SizeTransition` are read through as well, and since 2026-10-17 a
    `SizeTransition` clips the page as it reveals it, on all four renderers.
-   Still open: other widgets a builder wraps the page in are not read. ~~A `ShellRoute` has no `pageBuilder`~~ - it has
+   ~~Other widgets a builder wraps the page in are not read~~ - since
+   2026-10-18 the ones that leave its motion alone are, and a
+   `StatelessWidget` of the app's own by what it builds; a `Stack` or a
+   stateful widget in the way still ends the reading. ~~A `ShellRoute` has no `pageBuilder`~~ - it has
    since 2026-10-16, moving the frame as the shell is entered or left - and
    ~~the hero a flight leaves has no placeholder~~, it has its own in the
    picture of its page since the same day, seen on an iOS simulator, an
@@ -2185,9 +2185,12 @@ notice.
    Roboto; on iOS SF is a few per cent wider, in Chrome its sans-serif.
    Since 2026-10-16 Hebrew, Arabic, Devanagari, Bengali, Tamil and Thai are
    measured in Android's Noto, CJK and Hangul are an em and an emoji 1.245.
-   Still open: kerning, ligatures and Arabic's joined forms are not counted,
-   other scripts are 0.55 of the font size, and a `fontFamily` of the app's
-   own is measured as these.
+   Since 2026-10-18 Roboto's kerning between printable ASCII characters is
+   counted, and a `fontFamily` of the app's own is measured with its own
+   widths and kerning once registered (`TextPainter.registerFont`, written by
+   `dart run dart_not_native:font_widths`). Still open: ligatures and
+   Arabic's joined forms are not counted, and other scripts are 0.55 of the
+   font size.
 8. ~~**`Dismissible` reveals an action rather than sliding the row away**,
    and does nothing for a vertical direction~~ Since 2026-10-11 the row
    follows the finger with `background` (or `secondaryBackground`) behind
@@ -2256,8 +2259,9 @@ notice.
 14. ~~**Focus is text fields only.**~~ Since 2026-10-16 a `Focus` widget is
     a box that takes focus, outlined while it has it and told back to its
     node - on the web and in the Flutter host, and since 2026-10-17 on
-    Android (seen on an emulator); iOS leaves it to its controls' own
-    keyboard focus, which is what is still open.
+    Android (seen on an emulator), and since 2026-10-18 on iOS too, as the
+    first responder a hardware keyboard's keys go to (seen on a
+    simulator).
     ~~Every `KeyboardListener` on screen
     hears every key~~ - since 2026-10-10 the one whose `FocusNode` was asked
     for focus hears alone, and a dialog takes the keys from the page behind
@@ -2489,10 +2493,11 @@ event, and then the same work in four renderers.
 12. ~~**The device lane's "one of every node type" is 47 of 59.**~~ Closed
     2026-10-09: `integration_test/native_renderer_test.dart` draws the twelve
     new types as well - a free-form tree and a screen under each picker -
-    green on an iOS simulator and, since 2026-10-10, on an Android emulator. What is left of
-    it: no Maestro flow touches any of them (the agent-device flows do, on
-    Android only), and the lane's `FlutterSlot` has no Flutter widget behind
-    it, so it draws the fallback.
+    green on an iOS simulator and, since 2026-10-10, on an Android emulator.
+    ~~No Maestro flow touches any of them, and the lane's `FlutterSlot` has
+    no Flutter widget behind it~~ - since 2026-10-18 the controls gallery's
+    three tabs have Maestro flows on both platforms, and the lane lays a
+    real Flutter widget over a slot's hole and checks where it is drawn.
 
 ### 6.4 What the Android emulator passes left open (2026-10-03)
 
@@ -2589,14 +2594,14 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2782 tests
-  (1704 in the package, 393 for the example apps and goldens, 642 in the browser,
+  contracts, the plugin system and the design system are covered by 2789 tests
+  (1709 in the package, 395 for the example apps and goldens, 642 in the browser,
   43 in the bloc package,
-  counted 2026-10-18), plus 20 integration tests that run on a real Android and
-  a real iOS - two of them the Flutter-hosted app, eighteen the native
-  renderers drawing the whole node vocabulary and every example app. (Four of
-  the eighteen - the free-form tree and the two pickers, added 2026-10-09, and
-  the rail, added 2026-10-10 -
+  counted 2026-10-18), plus 21 integration tests that run on a real Android and
+  a real iOS - two of them the Flutter-hosted app, nineteen the native
+  renderers drawing the whole node vocabulary and every example app. (Five of
+  the nineteen - the free-form tree and the two pickers, added 2026-10-09, the
+  rail, added 2026-10-10, and a Flutter widget over a slot, added 2026-10-18 -
   have run on an iOS simulator and an Android emulator, not on hardware.)
 - The web DOM renderer is tested in a real browser, including markup goldens
   for three style kits, reconciliation behaviour, the back button, overlays

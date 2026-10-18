@@ -394,9 +394,25 @@ WidgetNode _followingScroll(_Owner owner, WidgetNode Function() render) {
   }
   final controller = reads.length == 1 ? reads.single : null;
   if (controller == null || !controller._reported) return node;
+  final place = owner._positionId('scrollFollow');
+  owner._followedUsed.add(place);
   final real = controller._offset;
+  // The tables of the last report still say what the widgets do, when the
+  // tree has kept its shape and every box shows what its table says for
+  // where the scroller is now: one build, not a dozen.
+  final last = owner._followed[place];
+  if (last != null && last.source == controller._link) {
+    final again = _relinked(node, last.linked, real);
+    if (again != null) {
+      owner._followed[place] = (source: last.source, linked: again);
+      return again;
+    }
+  }
   final max = controller._maxExtent;
   final stops = [
+    // Past the top, where a scroller that bounces goes - for a bar that
+    // stretches there.
+    -160.0,
     for (final stop in _scrollStops)
       if (max == null || stop < max) stop,
     if (max != null && max > 0 && max < _scrollStops.last) max,
@@ -452,7 +468,11 @@ WidgetNode _followingScroll(_Owner owner, WidgetNode Function() render) {
     owner._sampling = false;
   }
   final linked = _linkedTo(node, samples, stops, controller._link);
-  if (linked == null) return node;
+  if (linked == null) {
+    owner._followed.remove(place);
+    return node;
+  }
+  owner._followed[place] = (source: controller._link, linked: linked);
   if (!controller._linked) {
     // Its scroller says its name from the next build on.
     controller._linked = true;
@@ -467,6 +487,75 @@ String? _argb(Object? color) {
   final digits = color.substring(1);
   if (digits.length == 6) return '#ff$digits';
   return digits.length == 8 ? color : null;
+}
+
+/// [node] with the tables [linked] - the same widgets as last time - carry,
+/// or null when it is not that tree any more: another shape, or a box whose
+/// followed props are not what its table says for [offset].
+WidgetNode? _relinked(WidgetNode node, WidgetNode linked, double offset) {
+  if (node.type != linked.type) return null;
+  final kids = node.children ?? const <WidgetNode>[];
+  final theirs = linked.children ?? const <WidgetNode>[];
+  if (kids.length != theirs.length) return null;
+  List<WidgetNode>? children;
+  for (var i = 0; i < kids.length; i++) {
+    final again = _relinked(kids[i], theirs[i], offset);
+    if (again == null) return null;
+    if (!identical(again, kids[i])) (children ??= List.of(kids))[i] = again;
+  }
+  final link = linked.props['scrollLink'];
+  if (link is! Map) {
+    return children == null
+        ? node
+        : WidgetNode(type: node.type, props: node.props, children: children);
+  }
+  final at = [for (final v in link['at'] as List) (v as num).toDouble()];
+  double along(List values) {
+    double value(int i) => (values[i] as num).toDouble();
+    if (offset <= at.first) return value(0);
+    for (var i = 1; i < at.length; i++) {
+      if (offset <= at[i]) {
+        final t = (offset - at[i - 1]) / (at[i] - at[i - 1]);
+        return value(i - 1) + (value(i) - value(i - 1)) * t;
+      }
+    }
+    return value(at.length - 1);
+  }
+
+  final p = node.props;
+  final moved = p['transform'] is Map ? p['transform'] as Map : null;
+  double? own(String name) => switch (name) {
+    'opacity' => (p['opacity'] as num?)?.toDouble() ?? 1,
+    'width' || 'height' => (p[name] as num?)?.toDouble(),
+    'scale' => (moved?['scale'] as num?)?.toDouble() ?? 1,
+    _ => (moved?[name] as num?)?.toDouble() ?? 0,
+  };
+  for (final name in const [
+    'opacity', 'width', 'height', 'dx', 'dy', 'scale', 'rotate',
+  ]) {
+    final values = link[name];
+    if (values is! List) continue;
+    final value = own(name);
+    // Within a pixel, or a hundredth of an opacity or a scale.
+    if (value == null || (value - along(values)).abs() > 0.6) return null;
+  }
+  final colors = link['color'];
+  if (colors is List) {
+    final now = int.tryParse(_argb(p['color'])?.substring(1) ?? '', radix: 16);
+    if (now == null) return null;
+    for (final shift in const [24, 16, 8, 0]) {
+      final channel = [
+        for (final c in colors)
+          (int.parse((c as String).substring(1), radix: 16) >> shift) & 0xff,
+      ];
+      if ((((now >> shift) & 0xff) - along(channel)).abs() > 2) return null;
+    }
+  }
+  return WidgetNode(
+    type: node.type,
+    props: {...p, 'scrollLink': link},
+    children: children ?? node.children,
+  );
 }
 
 /// The props a box's table can follow, for every box in [node] in order -

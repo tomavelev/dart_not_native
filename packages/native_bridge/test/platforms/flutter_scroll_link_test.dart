@@ -82,4 +82,42 @@ void main() {
     expect(painted, contains(const Color(0xFF0000FF)));
     await gesture.up();
   });
+
+  testWidgets('a floating box goes as the list goes down, and comes back '
+      'as soon as it comes up', (tester) async {
+    final renderer = FlutterUIRenderer();
+    final bar = WidgetNode(
+      type: 'Box',
+      props: {
+        'height': 56.0,
+        'expand': 'width',
+        'scrollFloat': {'source': 'scroll0', 'extent': 56.0},
+      },
+      children: [UIBuilder.text('bar')],
+    );
+    final list = WidgetNode(
+      type: 'Scroll',
+      props: {'scrollEventId': 'cb:list', 'scrollLinkSource': 'scroll0'},
+      children: [
+        UIBuilder.column(
+          children: [for (var i = 0; i < 60; i++) UIBuilder.text('row $i')],
+        ),
+      ],
+    );
+    await renderer.render(
+      UIBuilder.column(children: [bar, UIBuilder.expanded(child: list)]),
+    );
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: renderer.build)));
+    double top() => tester.getTopLeft(find.text('bar')).dy;
+    final start = top();
+    final gesture = await tester.startGesture(tester.getCenter(find.text('row 10')));
+    await gesture.moveBy(const Offset(0, -20));
+    await gesture.moveBy(const Offset(0, -100));
+    await tester.pump();
+    expect(top(), closeTo(start - 56, 1));
+    await gesture.moveBy(const Offset(0, 30));
+    await tester.pump();
+    expect(top(), closeTo(start - 26, 1));
+    await gesture.up();
+  });
 }

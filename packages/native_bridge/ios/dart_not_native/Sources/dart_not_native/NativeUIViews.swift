@@ -240,6 +240,44 @@ struct DnnBoxStyle {
 class DnnBoxView: UIView, DnnSingleChildHost, UIDragInteractionDelegate,
   UIDropInteractionDelegate, UIGestureRecognizerDelegate
 {
+  /// A `Focus` box: it can be the first responder - which a hardware
+  /// keyboard's keys go to - says when it becomes it and stops, and is
+  /// outlined while it is.
+  var focusable = false {
+    didSet { if !focusable && isFirstResponder { _ = resignFirstResponder() } }
+  }
+  var onFocus: ((Bool) -> Void)?
+  var focusTint: UIColor = .systemBlue
+  private lazy var focusRing: CALayer = {
+    let ring = CALayer()
+    ring.borderWidth = 2
+    ring.cornerRadius = 4
+    ring.isHidden = true
+    layer.addSublayer(ring)
+    return ring
+  }()
+
+  override var canBecomeFirstResponder: Bool { focusable }
+
+  override func becomeFirstResponder() -> Bool {
+    let became = super.becomeFirstResponder()
+    if became { showFocus(true) }
+    return became
+  }
+
+  override func resignFirstResponder() -> Bool {
+    let resigned = super.resignFirstResponder()
+    if resigned { showFocus(false) }
+    return resigned
+  }
+
+  private func showFocus(_ on: Bool) {
+    focusRing.borderColor = focusTint.cgColor
+    focusRing.frame = bounds.insetBy(dx: -2, dy: -2)
+    focusRing.isHidden = !on
+    onFocus?(on)
+  }
+
   /// A pan along one axis begins only with a movement along it; one that
   /// sets off the other way is the scroller's the box is in or holds.
   override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
@@ -2365,6 +2403,8 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
   /// Told where the view is (from the far end when reversed) each frame it
   /// moves, for what moves in step with it.
   var onFollow: ((CGFloat) -> Void)?
+  /// Told when it comes to rest - for a floating box that snaps.
+  var onRest: (() -> Void)?
   private var reportedOffset: CGFloat = -1
   private var reportedAt: CFTimeInterval = 0
   private var seenOffset: CGFloat = -1
@@ -2389,14 +2429,18 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
       let viewport = horizontal ? bounds.width : bounds.height
       let extent = horizontal ? contentSize.width : contentSize.height
       let maxOffset = max(0, extent - viewport)
-      let raw = min(max(0, horizontal ? contentOffset.x : contentOffset.y), maxOffset)
+      // Past the top, as a bounce goes, for what stretches there.
+      let raw = min(horizontal ? contentOffset.x : contentOffset.y, maxOffset)
       onFollow(reverse ? maxOffset - raw : raw)
     }
     guard onReport != nil else { return }
     settleWork?.cancel()
     if CACurrentMediaTime() - reportedAt >= 0.1 { report() }
     // Nothing for a little longer than that: it has stopped.
-    let work = DispatchWorkItem { [weak self] in self?.report() }
+    let work = DispatchWorkItem { [weak self] in
+      self?.report()
+      self?.onRest?()
+    }
     settleWork = work
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
   }

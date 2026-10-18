@@ -999,8 +999,11 @@ class _Probe extends StatelessWidget {
 /// pixels is told as a part of the screen's size), a [SizeTransition] as
 /// `reveal` - the share of the page shown along its `revealAxis`
 /// (`vertical` or `horizontal`), from where `revealAlign` (-1 to 1, the
-/// start to the end) says - and a [KeyedSubtree] is passed through. Anything
-/// else in the way ends the reading there.
+/// start to the end) says - and a [KeyedSubtree] is passed through, as are
+/// the widgets that leave the page's motion alone (padding, alignment, a
+/// size, a clip, a decoration, semantics, a theme, a [Builder]) and a
+/// [StatelessWidget] of the app's own, by what it builds. Anything else in
+/// the way - a [Stack], a stateful widget - ends the reading there.
 Map<String, Object> _pageMotion(
   BuildContext context,
   Widget built,
@@ -1078,6 +1081,45 @@ Map<String, Object> _pageMotion(
           rotate += math.atan2(m[1], m[0]);
         }
         at = moved.child;
+      // What leaves the page's motion alone - room around it, where it sits,
+      // a size, a clip, a paint behind it, what it says - is read through.
+      case final Padding w:
+        at = w.child;
+      case final Align w:
+        at = w.child;
+      case final SizedBox w:
+        at = w.child;
+      case final ConstrainedBox w:
+        at = w.child;
+      case final Container w:
+        at = w.child;
+      case final DecoratedBox w:
+        at = w.child;
+      case final ColoredBox w:
+        at = w.child;
+      case final ClipRect w:
+        at = w.child;
+      case final ClipRRect w:
+        at = w.child;
+      case final ClipOval w:
+        at = w.child;
+      case final SafeArea w:
+        at = w.child;
+      case final Semantics w:
+        at = w.child;
+      case final IgnorePointer w:
+        at = w.child;
+      case final AbsorbPointer w:
+        at = w.child;
+      case final DefaultTextStyle w:
+        at = w.child;
+      case final Theme w:
+        at = w.child;
+      case final Builder w:
+        at = w.builder(context);
+      // A widget of the app's own, by what it builds.
+      case final StatelessWidget w:
+        at = w.build(context);
       default:
         at = null;
     }
