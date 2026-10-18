@@ -203,7 +203,7 @@ Each `UIBuilder` method's doc comment is the specification; in brief:
 |---|---|
 | `UIBuilder.box` | One decorated box around at most one child. Size (`width`/`height`, min/max, `expand`, `aspectRatio`), space (`padding`, `margin`, `alignment`), paint (`color`, `gradient`, border, `borderRadius`/`borderRadii`, `shape: 'circle'`, `shadow`, `clip`, `opacity`, `transform`), touch (`onTap`, `onTapDown`/`onTapCancel`, `onDoubleTap`, `onLongPress`, `onPan` - with `panScale` a pinch too - `ripple`), drag and drop (`dragData`, `dragFeedback`, `onDrag`, `onDrop`, `onDropHover`), measuring (`onSize`), and motion (`animateMs`, `curve`, `animateSize`); `transform` is `{rotate, scale, scaleY, dx, dy}` about the middle, or `{matrix, origin}` - sixteen numbers column by column, about an alignment and a shift from it |
 | `UIBuilder.stack`, `positioned` | Children drawn over one another; a `Positioned` child is pinned to the edges it names |
-| `UIBuilder.scroll` | A scroller on either axis, with `shrinkWrap`, `reverse`, pull-to-refresh (`onRefresh`, `refreshing`), a scroll-to (`scrollOffset` + `scrollVersion`) and `onScroll`: the node carries a `scrollEventId` and the renderer sends `{offset, maxExtent, viewport}` when the scroller comes to rest and at most every 100 ms on the way |
+| `UIBuilder.scroll` | A scroller on either axis, with `shrinkWrap`, `reverse`, pull-to-refresh (`onRefresh`, `refreshing`), a scroll-to (`scrollOffset` + `scrollVersion`) and `onScroll`: the node carries a `scrollEventId` and the renderer sends `{offset, maxExtent, viewport}` when the scroller comes to rest and at most every 100 ms on the way. `linkSource` names it for the boxes that follow it each frame: a `Box` with `scrollLink: {source, at: [offsets], opacity?, width?, height?, dx?, dy?, scale?, rotate?: [values]}` is put, from the renderer's own scroll callback, where the table says for the offset, in a straight line between its stops - the widget layer writes these for what a build reads `ScrollController.offset` in |
 | `UIBuilder.icon` | One glyph of an icon font, by codepoint |
 | `UIBuilder.canvas` | A surface drawn by a command list - `rect`, `rrect`, `circle`, `oval`, `line`, `arc`, `path`, `text`, `save`/`restore`, `translate`, `rotate`, `scale`, `clipRect`, `clipRRect`, `clipPath` - against a table of paints. A `path` or `clipPath` ending in `'evenOdd'` is filled or clipped by that rule; `['saveLayer', opacity, blend?]` draws until the matching `restore` as a layer laid over the canvas; a paint may carry `blend`, a Flutter `BlendMode` name. A render that changes only the commands repaints in place |
 | `UIBuilder.dropdown` | One of a list, from the platform's own menu |
@@ -344,7 +344,7 @@ Flutter's names, signatures and semantics; pure Dart.
 | Scrolling and lists | `lib/src/widgets/scrolling.dart` | `SingleChildScrollView`, `ListView` (+ `.builder`, `.separated`), `GridView` (+ `.count`, `.builder`, `.extent`), `ScrollController`, `RefreshIndicator`, `ListTile`, `ExpansionTile`, `CheckboxListTile`, `SwitchListTile`, `RadioListTile` |
 | Navigation and chrome | `lib/src/widgets/navigation.dart` | `MaterialApp` (+ `.router`), `Navigator`/`NavigatorState`, `MaterialPageRoute`, `PageRouteBuilder`, `Scaffold`, `AppBar`, `BackButton`, `NavigationBar`, `BottomNavigationBar`, `NavigationRail`, `TabBar`/`TabBarView`/`TabController`/`DefaultTabController`, `showDialog`, `AlertDialog`, `SimpleDialog`, `showModalBottomSheet`, `ScaffoldMessenger`, `SnackBar` |
 | Gestures | `lib/src/widgets/gestures.dart` | `GestureDetector`, `Draggable`, `LongPressDraggable`, `DragTarget`, `Dismissible` |
-| Motion | `lib/src/widgets/motion.dart` | `Curves`, `AnimationController` (a run the renderer plays: the tree is built at its end, carrying its length and curve), `Tween` and its kin, `CurvedAnimation`, the transitions (`FadeTransition`, `ScaleTransition`, `RotationTransition`, `SlideTransition`, `SizeTransition`), `AnimatedOpacity`, `AnimatedContainer`, `AnimatedScale`, `AnimatedRotation`, `AnimatedSlide`, `AnimatedSwitcher` and `AnimatedCrossFade` (a fade from the old child to the new, the cross-fade's size moving with it), `AnimatedPadding`, `AnimatedAlign` and `AnimatedSize` |
+| Motion | `lib/src/widgets/motion.dart` | `Curves`, `Interval`, `AnimationController` (a run the renderer plays: the tree is built at its end, carrying its length and curve), `Tween` and its kin, `TweenSequence`, `CurvedAnimation`, the transitions (`FadeTransition`, `ScaleTransition`, `RotationTransition`, `SlideTransition`, `SizeTransition`), `AnimatedOpacity`, `AnimatedContainer`, `AnimatedScale`, `AnimatedRotation`, `AnimatedSlide`, `AnimatedSwitcher` and `AnimatedCrossFade` (a fade from the old child to the new, the cross-fade's size moving with it), `AnimatedPadding`, `AnimatedAlign` and `AnimatedSize` |
 | Drawing | `lib/src/widgets/custom_paint.dart` | `CustomPaint`, `CustomPainter`, `Canvas`, `Paint`, `Path`, `TextPainter` |
 | Platform views | `lib/src/widgets/platform_views.dart` | `SwipeActions`, `WebView`, `MapView`, `CameraPreview`, `Badge`, `Alert`, `FlutterSlot` |
 | Steppers and tables | `lib/src/widgets/data.dart` | `Stepper`, `Step`, `StepState`, `StepperType`, `ControlsDetails`, `DataTable`, `DataColumn`, `DataRow`, `DataCell`, `Table`, `TableRow`, `TableCell`, `TableBorder`, the column widths, `ReorderableListView`, `InteractiveViewer`, `TransformationController` |
@@ -363,8 +363,10 @@ the top of `CHANGELOG.md`; the ones existing code meets first:
 - `Locale('en', 'US')` is positional; a script needs `Locale.fromSubtags`.
 
 There in name only, so that a screen compiles: `MouseRegion` (no hover).
-`PopupMenuButton` opens its menu as a dialog. An `AnimationController` does
-not tick: its listeners hear a run start and end, not each frame.
+`PopupMenuButton` opens its menu as a dialog. An `AnimationController`'s
+runs are played by the renderer, a tree at each end and at each turn of an
+`Interval` or a `TweenSequence`; a listener the app adds hears every frame,
+and one that rebuilds makes the run a tree a frame.
 
 ## Router - `package:dart_not_native/router.dart`
 

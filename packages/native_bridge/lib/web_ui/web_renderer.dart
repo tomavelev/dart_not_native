@@ -2944,6 +2944,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     _applyLazyListProps(state, content, p);
     _applyRefresh(viewport, state.refresh..props = p, refreshes: _refreshes(p));
     _applyScrollAsk(viewport, p);
+    _followScroll(viewport, p);
 
     viewport.addEventListener(
       'scroll',
@@ -2981,6 +2982,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       refreshes: _refreshes(node.props),
     );
     _applyScrollAsk(viewport, node.props);
+    _followScroll(viewport, node.props);
     _syncHosted(viewport, node, before.children ?? const []);
     // A different row count can change which rows are visible. Reported after
     // this pass, so the app's re-render does not run inside it.
@@ -4486,7 +4488,105 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final ripple = p['ripple'] == true;
     if (!fresh || ripple) box.classList.toggle('dnn-box--ripple', ripple);
 
+    _linkToScroll(box, p);
     _wire(box, state);
+  }
+
+  /// The boxes that move in step with each named scroller (`scrollLink`),
+  /// and the scrollers by the names they go by (`scrollLinkSource`).
+  final Map<String, Set<web.Element>> _linked = {};
+  final Map<String, web.Element> _linkSources = {};
+
+  /// Follows [box]'s scroller, if its node says it moves with one, and puts
+  /// it where that scroller is now rather than where the app last heard.
+  void _linkToScroll(web.Element box, Map<String, dynamic> p) {
+    final link = p['scrollLink'];
+    if (link is! Map || link['source'] is! String) {
+      for (final boxes in _linked.values) {
+        boxes.remove(box);
+      }
+      return;
+    }
+    final source = link['source'] as String;
+    (_linked[source] ??= {}).add(box);
+    // Its own props are the offset Dart last heard; the table goes on from
+    // there without a transition, which would trail the finger.
+    _style(box, 'transition', 'none');
+    final scroller = _linkSources[source];
+    if (scroller != null && scroller.isConnected) {
+      _applyLink(box, link, _scrolledBy(scroller));
+    }
+  }
+
+  /// How far [viewport] is scrolled along its axis.
+  double _scrolledBy(web.Element viewport) {
+    final horizontal = _nodes[viewport]?.props['axis'] == 'horizontal';
+    return (horizontal ? viewport.scrollLeft : viewport.scrollTop)
+        .abs()
+        .toDouble();
+  }
+
+  /// Moves the boxes that follow [viewport], once a frame as it scrolls.
+  void _followScroll(web.Element viewport, Map<String, dynamic>? p) {
+    final source = p?['scrollLinkSource'];
+    if (source is! String) return;
+    _linkSources[source] = viewport;
+    final boxes = _linked[source];
+    if (boxes == null || boxes.isEmpty) return;
+    final offset = _scrolledBy(viewport);
+    for (final box in boxes.toList()) {
+      final link = _nodes[box]?.props['scrollLink'];
+      if (link is! Map || link['source'] != source) {
+        boxes.remove(box);
+        continue;
+      }
+      if (box.isConnected) _applyLink(box, link, offset);
+    }
+  }
+
+  /// The value [values] has at [offset], in a straight line between the
+  /// offsets [at] gives and held past either end.
+  static double _along(List<double> at, List<Object?> values, double offset) {
+    double value(int i) => (values[i] as num).toDouble();
+    if (offset <= at.first) return value(0);
+    for (var i = 1; i < at.length; i++) {
+      if (offset <= at[i]) {
+        final t = (offset - at[i - 1]) / (at[i] - at[i - 1]);
+        return value(i - 1) + (value(i) - value(i - 1)) * t;
+      }
+    }
+    return value(at.length - 1);
+  }
+
+  /// Puts [box] where its table ([link]) says for [offset].
+  void _applyLink(web.Element box, Map link, double offset) {
+    final at = [for (final v in link['at'] as List) (v as num).toDouble()];
+    double? valueOf(String name) {
+      final values = link[name];
+      return values is List && values.length == at.length
+          ? _along(at, values, offset)
+          : null;
+    }
+
+    final opacity = valueOf('opacity');
+    if (opacity != null) _style(box, 'opacity', '$opacity');
+    final width = valueOf('width');
+    if (width != null) _style(box, 'width', '${width}px');
+    final height = valueOf('height');
+    if (height != null) _style(box, 'height', '${height}px');
+    final dx = valueOf('dx'), dy = valueOf('dy');
+    final scale = valueOf('scale'), rotate = valueOf('rotate');
+    if (dx == null && dy == null && scale == null && rotate == null) return;
+    final own = _nodes[box]?.props['transform'];
+    double ownOf(String name, double otherwise) =>
+        own is Map ? _num(own[name]) ?? otherwise : otherwise;
+    _style(
+      box,
+      'transform',
+      'translate(${dx ?? ownOf('dx', 0)}px, ${dy ?? ownOf('dy', 0)}px) '
+          'rotate(${rotate ?? ownOf('rotate', 0)}rad) '
+          'scale(${scale ?? ownOf('scale', 1)})',
+    );
   }
 
   /// The protocol's `semanticRole` as the ARIA role that says the same.
@@ -4897,6 +4997,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     viewport.addEventListener(
       'scroll',
       ((web.Event _) {
+        _followScroll(viewport, propsOf());
         settle?.cancel();
         settle = Timer(const Duration(milliseconds: 120), report);
         if (web.window.performance.now() - reportedAt >= 100) report();
@@ -4925,6 +5026,7 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       refreshes: _refreshes(p) && !horizontal && !reverse,
     );
     _applyScrollAsk(viewport, p, horizontal: horizontal, reverse: reverse);
+    _followScroll(viewport, p);
   }
 
   /// Gives a scrolling [viewport] its pull-to-refresh spinner, or takes it

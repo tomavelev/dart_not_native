@@ -216,12 +216,11 @@ An `AnimationController` - `forward`, `reverse`, `animateTo`, `animateBack`,
 `value =`, status listeners and the `TickerFuture` each run returns - drives
 `FadeTransition`, `ScaleTransition`, `RotationTransition`, `SlideTransition`,
 `SizeTransition` and an `AnimatedBuilder`, through a `CurvedAnimation` or a
-tween's `animate` too. Nothing ticks: a run is one tree built at the value it
-ends at, carrying how long it takes and its curve, and the renderer moves the
-screen there; in an `AnimatedBuilder` every box built - an `Opacity`, a
-`Transform`, a `Container`'s colour or size - moves over the run. Listeners
-hear a run start and end, not each frame, and `value` read outside a build is
-where the run is by the clock. A run started while the screen is built, from
+tween's `animate` too. The screen does not tick: a run is one tree built at
+the value it ends at, carrying how long it takes and its curve, and the
+renderer moves the screen there; in an `AnimatedBuilder` every box built - an
+`Opacity`, a `Transform`, a `Container`'s colour or size - moves over the
+run, and `value` read outside a build is where the run is by the clock. A run started while the screen is built, from
 `initState`, is drawn at its start first, so an entrance is seen; a slide
 whose child has not been measured yet stays out of sight until it has, and
 then slides from where it starts. Each lap of `repeat` is a run of its own,
@@ -239,6 +238,66 @@ turn is no change to one (a `RotationTransition` repeating stood still); and
 the Flutter host builds a box that says `animateMs: 0` as one that moves, so
 a later tree that gives it a time moves it from where it was rather than
 building it afresh at its end.
+
+### Staggered runs, and listeners that hear every frame
+
+`Interval` and `TweenSequence` (with `TweenSequenceItem`) are there. A run
+of a controller is cut where one made from it turns - an interval's start
+and end, the hand-over between two tweens of a sequence - and each leg is a
+tree of its own, moving to the next turn over its share of the run along
+the interval's curve: a staggered entrance plays one part after another, and
+a pulse goes through every keyframe. They are found where an interval or a
+sequence is made straight from the controller (`CurvedAnimation`,
+`drive(CurveTween(...))`, `TweenSequence(...).animate`); one curved by
+another curve first is drawn at the run's ends, as before. An implicit
+animation given an `Interval` runs along its curve over the whole duration.
+
+A listener the app adds with `addListener` hears every frame of a run (16
+ms), with `value` where the run is. One that rebuilds - `setState` from the
+listener, then `value` read in `build` - makes the run drawn a frame at a
+time from then on, as in Flutter: a tree each frame, where before it saw the
+run's two ends. The framework's own listeners - the transitions', an
+`AnimatedBuilder`'s - still hear a run start and end.
+
+### What is built from a scroll offset moves with the finger
+
+A header that shrinks as the list scrolls, a title that fades in, a picture
+that moves slower than the page - whatever a build makes from
+`ScrollController.offset`, through `setState` from a listener or an
+`AnimatedBuilder` on the controller, now moves each frame where it is a
+box's opacity, size, translation, scale or turn. The widget layer builds the
+same widgets at a dozen offsets, and at the middle of any two between which
+they bend, compares the trees, and gives each box that changes a table
+(`scrollLink`); the scroller is named for it (`scrollLinkSource`), and each
+renderer puts the boxes where the table says from its own scroll callback -
+a `ScrollMemory` listener on Android, the scroll view's layout on iOS, the
+`scroll` event in the browser, a `ScrollNotification` in the Flutter host -
+without a message to Dart. The reports and the rebuilds go on as before
+underneath. What changes in other ways - words, colours, a tree of another
+shape - follows the reports. Seen on an iOS simulator, an Android emulator
+and in Chrome; tested in the Flutter host.
+
+Two fixes it needed: `ScrollController.hasClients` is true for a widget
+built above its scroller, which asked before the scroller had been built
+that time and was told no; and on Android a scroller that moves on the
+screen while the finger is on it - under a header that shrinks - holds the
+drag where the finger is, rather than reading the move as the finger's and
+scrolling back once a frame.
+
+### A `Container` with a width fills a width it cannot change
+
+A `Container`, `SizedBox` or `ConstrainedBox` given a width, or a cap on it,
+laid out where the width cannot change - a vertical list's row, a stretched
+column, a row's `Expanded`, through the widgets that hand it on - is as wide
+as that room, as in Flutter, whose constraints from above win. An empty
+`SizedBox` stays a spacer. It was its own width before, and on iOS under an
+`AnimatedOpacity` as wide as the room.
+
+### A `Stepper`'s step opens and closes
+
+A step's content opens below its heading and the one before it closes, over
+200 ms along `fastOutSlowIn`, fading as it goes - Flutter's `AnimatedCrossFade`
+between nothing and the content, as Flutter's stepper has.
 
 ### A `DataTable`'s columns follow their cells
 

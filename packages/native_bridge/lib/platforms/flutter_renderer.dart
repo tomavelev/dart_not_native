@@ -1991,12 +1991,81 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
   /// alignment and padding inside the paint, then size, then touch, and
   /// around all of it what applies to the box as a whole - opacity, transform,
   /// margin. A prop the node does not carry adds no widget.
+  /// Where each named scroller is (`scrollLinkSource`), heard every frame,
+  /// for the boxes that move in step with it (`scrollLink`).
+  final Map<String, ValueNotifier<double>> _scrollOffsets = {};
+
+  ValueNotifier<double> _offsetOf(String source) =>
+      _scrollOffsets.putIfAbsent(source, () => ValueNotifier(0));
+
+  void _scrolled(Map<String, dynamic> props, double pixels) {
+    final source = props['scrollLinkSource'];
+    if (source is String) _offsetOf(source).value = pixels;
+  }
+
+  /// The value [values] has at [offset], in a straight line between the
+  /// offsets [at] gives and held past either end.
+  static double _along(List<double> at, List<Object?> values, double offset) {
+    double value(int i) => (values[i] as num).toDouble();
+    if (offset <= at.first) return value(0);
+    for (var i = 1; i < at.length; i++) {
+      if (offset <= at[i]) {
+        final t = (offset - at[i - 1]) / (at[i] - at[i - 1]);
+        return value(i - 1) + (value(i) - value(i - 1)) * t;
+      }
+    }
+    return value(at.length - 1);
+  }
+
+  /// [p] with what its table ([link]) says for [offset] in place of its own.
+  static Map<String, dynamic> _linkedProps(
+    Map<String, dynamic> p,
+    Map link,
+    double offset,
+  ) {
+    final at = [for (final v in link['at'] as List) (v as num).toDouble()];
+    double? valueOf(String name) {
+      final values = link[name];
+      return values is List && values.length == at.length
+          ? _along(at, values, offset)
+          : null;
+    }
+
+    final out = Map<String, dynamic>.of(p)..remove('scrollLink');
+    for (final name in const ['opacity', 'width', 'height']) {
+      final value = valueOf(name);
+      if (value != null) out[name] = value;
+    }
+    final moved = {
+      for (final name in const ['dx', 'dy', 'scale', 'rotate'])
+        if (valueOf(name) case final value?) name: value,
+    };
+    if (moved.isNotEmpty) {
+      final own = p['transform'];
+      out['transform'] = {if (own is Map) ...own, ...moved};
+    }
+    return out;
+  }
+
   Widget _box(
     Map<String, dynamic> p,
     List<WidgetNode> children,
     BuildContext context, {
     bool canvas = false,
   }) {
+    final link = p['scrollLink'];
+    if (link is Map && link['source'] is String) {
+      // Built again each frame the scroller moves, from where it is.
+      return ValueListenableBuilder<double>(
+        valueListenable: _offsetOf(link['source'] as String),
+        builder: (context, offset, _) => _box(
+          _linkedProps(p, link, offset),
+          children,
+          context,
+          canvas: canvas,
+        ),
+      );
+    }
     final ms = _double(p['animateMs'])?.toInt();
     // A box that says how long it takes - nothing, for now - is built as one
     // that moves, so that when a later tree gives it a time it is the same
@@ -4127,6 +4196,7 @@ class _NodeLazyListState extends State<_NodeLazyList> {
   /// every 100 ms on the way.
   bool _onScrolled(ScrollNotification notification) {
     if (notification.depth != 0) return false;
+    widget.renderer._scrolled(widget.props, notification.metrics.pixels);
     final atRest = notification is ScrollEndNotification;
     if (!atRest && notification is! ScrollUpdateNotification) return false;
     if (!atRest &&
@@ -5471,6 +5541,7 @@ class _NodeScrollState extends State<_NodeScroll> {
   bool _onScrolled(ScrollNotification notification) {
     // A scroller inside this one sends its own.
     if (notification.depth != 0) return false;
+    widget.renderer._scrolled(widget.props, notification.metrics.pixels);
     final atRest = notification is ScrollEndNotification;
     if (!atRest && notification is! ScrollUpdateNotification) return false;
     if (!atRest &&

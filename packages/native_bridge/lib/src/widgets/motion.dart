@@ -75,6 +75,43 @@ class Cubic extends Curve {
   Curve get flipped => Cubic(1 - c, 1 - d, 1 - a, 1 - b);
 }
 
+/// [curve] squeezed into the part of a run from [begin] to [end], 0 before
+/// it and 1 after - what a staggered entrance is written with.
+///
+/// It travels as [curve]: a controller's run is cut at [begin] and [end]
+/// (see [AnimationController]), so the part between them is a run of its
+/// own along [curve]. An implicit animation given one has no start to delay,
+/// and runs along [curve] over its whole duration.
+class Interval extends Curve {
+  const Interval(this.begin, this.end, {this.curve = Curves.linear})
+    : super('');
+  final double begin;
+  final double end;
+  final Curve curve;
+
+  @override
+  String get name => curve.name;
+
+  @override
+  double transform(double t) {
+    if (t <= begin) return 0;
+    if (t >= end) return 1;
+    return curve.transform((t - begin) / (end - begin));
+  }
+
+  @override
+  Curve get flipped => Interval(1 - end, 1 - begin, curve: curve.flipped);
+
+  @override
+  bool operator ==(Object other) =>
+      other is Interval &&
+      other.begin == begin &&
+      other.end == end &&
+      other.curve == curve;
+  @override
+  int get hashCode => Object.hash(begin, end, curve);
+}
+
 /// y at x = [t] on the cubic Bézier with control points (a,b) and (c,d),
 /// found by bisecting for the parameter - the way Flutter's `Cubic` does.
 double _cubic(double a, double b, double c, double d, double t) {
@@ -209,6 +246,46 @@ Curve? _curveOfAnimatable(Animatable<Object?> animatable) =>
         _curveOfAnimatable(evaluatable) ?? _curveOfAnimatable(parent),
       _ => null,
     };
+
+/// Where [curve] turns, from 0 to 1, short of its ends.
+List<double> _breaksOfCurve(Curve curve) => switch (curve) {
+  Interval(:final begin, :final end) => [
+    if (begin > 0) begin,
+    if (end < 1) end,
+  ],
+  _ => const [],
+};
+
+/// Where [animatable] turns, from 0 to 1.
+List<double> _breaksOf(Animatable<Object?> animatable) => switch (animatable) {
+  CurveTween(:final curve) => _breaksOfCurve(curve),
+  TweenSequence() => animatable._breaks,
+  _ChainedEvaluation(:final parent, :final evaluatable) => [
+    ..._breaksOf(parent),
+    if (parent is! CurveTween || parent.curve == Curves.linear)
+      ..._breaksOf(evaluatable),
+  ],
+  _ => const [],
+};
+
+/// Tells the controller [animation] is, run straight or backwards, to stop
+/// at [breaks] - points from 0 to 1 of its range.
+void _stopAt(Animation<Object?> animation, List<double> breaks) {
+  if (breaks.isEmpty) return;
+  switch (animation) {
+    case AnimationController(:final lowerBound, :final upperBound)
+        when lowerBound.isFinite && upperBound.isFinite:
+      for (final b in breaks) {
+        animation._breaks.add(lowerBound + (upperBound - lowerBound) * b);
+      }
+    case ReverseAnimation(:final parent):
+      _stopAt(parent, [for (final b in breaks) 1 - b]);
+    case CurvedAnimation(:final parent, :final curve)
+        when curve == Curves.linear:
+      _stopAt(parent, breaks);
+    default:
+  }
+}
 
 /// How long a transition widget takes to move to the value [animation] has
 /// now - over an [AnimatedSwitcher]'s transition, or over the run of the
@@ -431,7 +508,9 @@ abstract class Animatable<T> {
 }
 
 class _AnimatedEvaluation<T> extends Animation<T> {
-  _AnimatedEvaluation(this.parent, this.animatable);
+  _AnimatedEvaluation(this.parent, this.animatable) {
+    _stopAt(parent, _breaksOf(animatable));
+  }
   final Animation<double> parent;
   final Animatable<T> animatable;
   @override
@@ -523,6 +602,55 @@ class ConstantTween<T> extends Tween<T> {
   T lerp(double t) => begin as T;
 }
 
+/// One of the tweens of a [TweenSequence], taking [weight] of the whole.
+class TweenSequenceItem<T> {
+  const TweenSequenceItem({required this.tween, required this.weight})
+    : assert(weight > 0);
+  final Animatable<T> tween;
+  final double weight;
+}
+
+/// Several tweens one after another along a run, each over its share of it -
+/// a pulse that grows and then settles, a shake.
+///
+/// A controller's run is cut where one tween hands on to the next (see
+/// [AnimationController]), so each is a run of its own and the screen goes
+/// through every keyframe.
+class TweenSequence<T> extends Animatable<T> {
+  TweenSequence(List<TweenSequenceItem<T>> items)
+    : assert(items.isNotEmpty),
+      _items = List.of(items),
+      _total = items.fold(0.0, (sum, item) => sum + item.weight);
+  final List<TweenSequenceItem<T>> _items;
+  final double _total;
+
+  /// Where each tween but the last ends, from 0 to 1.
+  List<double> get _breaks {
+    var along = 0.0;
+    return [
+      for (final item in _items.take(_items.length - 1))
+        along += item.weight / _total,
+    ];
+  }
+
+  @override
+  T transform(double t) {
+    if (t >= 1) {
+      final last = _items.last;
+      return last.tween.transform(1);
+    }
+    var start = 0.0;
+    for (final item in _items) {
+      final end = start + item.weight / _total;
+      if (t < end || identical(item, _items.last)) {
+        return item.tween.transform(((t - start) / (end - start)).clamp(0, 1));
+      }
+      start = end;
+    }
+    return _items.last.tween.transform(1);
+  }
+}
+
 /// [curve]'s value at a point, as an [Animatable].
 class CurveTween extends Animatable<double> {
   CurveTween({required this.curve});
@@ -533,7 +661,9 @@ class CurveTween extends Animatable<double> {
 
 /// [parent] along [curve], in Flutter.
 class CurvedAnimation extends Animation<double> {
-  CurvedAnimation({required this.parent, required this.curve, this.reverseCurve});
+  CurvedAnimation({required this.parent, required this.curve, this.reverseCurve}) {
+    _stopAt(parent, _breaksOfCurve(curve));
+  }
   final Animation<double> parent;
   Curve curve;
   Curve? reverseCurve;
@@ -594,6 +724,9 @@ const Animation<double> kAlwaysDismissedAnimation = _FixedAnimation(
 /// does not take together with the one before.
 const _nextTree = Duration(milliseconds: 40);
 
+/// How often a run the app listens to itself ticks.
+const _frame = Duration(milliseconds: 16);
+
 /// Whether an animation that is done takes its time, when the platform asks
 /// for less motion. Accepted; a run here always takes its time.
 enum AnimationBehavior { normal, preserve }
@@ -612,6 +745,20 @@ class _ControllerRun {
   final Stopwatch clock = Stopwatch()..start();
   final TickerFuture future = TickerFuture._();
   Timer? timer;
+
+  /// The values the run stops at on its way, a tree each, and how long it
+  /// takes to reach each from the last: where an [Interval] or a
+  /// [TweenSequence] along it turns, then [to].
+  List<({double to, Duration length})> legs = const [];
+  int leg = 0;
+
+  /// The value the leg under way ends at.
+  double get legTo => legs.isEmpty ? to : legs[leg].to;
+
+  /// Set once a listener of the app's own asks for a rebuild while it runs:
+  /// from then on it is drawn a frame at a time, as in Flutter.
+  bool framed = false;
+  Timer? ticker;
 
   double get along => duration == Duration.zero
       ? 1
@@ -635,16 +782,24 @@ class _ControllerRun {
 /// FadeTransition(opacity: _controller, child: const Text('Listening'))
 /// ```
 ///
-/// What differs: nothing here ticks. A run - [forward], [reverse],
+/// What differs: the screen does not tick. A run - [forward], [reverse],
 /// [animateTo], each lap of [repeat] - is one build at the value it ends at,
 /// carrying the run's length and curve, and the renderer moves the screen
-/// there. So listeners and status listeners hear a run start and end, not
-/// each frame; [value] read outside a build is where the run is by the clock.
-/// Inside an [AnimatedBuilder] the boxes built - an [Opacity], a
+/// there. Inside an [AnimatedBuilder] the boxes built - an [Opacity], a
 /// [Transform], a [Container]'s size or colour - move over the run; what has
 /// no box to move, a [Text]'s words or a [CustomPaint]'s picture, is drawn at
 /// the end. A run started while the screen is being built - from `initState`
 /// - is drawn at its start first, so an entrance is seen.
+///
+/// A run is cut where an [Interval] or a [TweenSequence] made from the
+/// controller turns, so a staggered entrance or a pulse of several keyframes
+/// is a build at each turn, each moving to the next.
+///
+/// A listener the app adds itself hears every frame, with [value] where the
+/// run is by the clock. If it rebuilds the screen - `setState` from
+/// `addListener` - the run is drawn a frame at a time from then on, as in
+/// Flutter: a tree each frame, which the transitions and builders do not
+/// cost.
 class AnimationController extends Animation<double> {
   AnimationController({
     double? value,
@@ -688,9 +843,19 @@ class AnimationController extends Animation<double> {
   /// Set while [repeat] goes on: the laps it has left, null for ever.
   ({double min, double max, bool reverse, Duration period, int? left})? _laps;
 
+  /// The framework's listeners - a builder's, a transition's - which hear a
+  /// run start and end; and the app's own, which hear every frame.
   final List<VoidCallback> _listeners = [];
+  final List<VoidCallback> _ownListeners = [];
   final List<void Function(AnimationStatus)> _statusListeners = [];
   bool _disposed = false;
+
+  /// Set while the framework adds a listener of its own.
+  static bool _quiet = false;
+
+  /// The values a run stops at, from the [Interval]s and [TweenSequence]s
+  /// made from this controller.
+  final Set<double> _breaks = {};
 
   /// The run under way, if any.
   _ControllerRun? get _running => _run;
@@ -702,8 +867,8 @@ class AnimationController extends Animation<double> {
     final run = _run;
     if (run == null) return _value;
     final owner = _Owner._current;
-    if (owner != null && owner._building) {
-      return run.startPass == owner._pass ? run.from : run.to;
+    if (owner != null && owner._building && !run.framed) {
+      return run.startPass == owner._pass ? run.from : run.legTo;
     }
     return run.from + (run.to - run.from) * run.curve.transform(run.along);
   }
@@ -828,13 +993,25 @@ class AnimationController extends Animation<double> {
     _laps = null;
     _disposed = true;
     _listeners.clear();
+    _ownListeners.clear();
     _statusListeners.clear();
   }
 
   @override
-  void addListener(VoidCallback listener) => _listeners.add(listener);
+  void addListener(VoidCallback listener) {
+    if (_quiet) {
+      _listeners.add(listener);
+      return;
+    }
+    _ownListeners.add(listener);
+    _tickWhileHeard();
+  }
+
   @override
-  void removeListener(VoidCallback listener) => _listeners.remove(listener);
+  void removeListener(VoidCallback listener) {
+    if (!_ownListeners.remove(listener)) _listeners.remove(listener);
+  }
+
   void addStatusListener(void Function(AnimationStatus) listener) =>
       _statusListeners.add(listener);
   void removeStatusListener(void Function(AnimationStatus) listener) =>
@@ -842,9 +1019,42 @@ class AnimationController extends Animation<double> {
 
   void _notify() {
     if (_disposed) return;
+    // The app's own first: one that rebuilds the screen makes the run one
+    // drawn a frame at a time, before that build reads the value.
+    _hearOwn();
     for (final listener in List.of(_listeners)) {
       listener();
     }
+  }
+
+  /// While a run goes and the app listens, a frame every [_frame]: the app's
+  /// listeners hear each, and the framework's too once it is [framed].
+  void _tickWhileHeard() {
+    final run = _run;
+    if (run == null || run.ticker != null || _ownListeners.isEmpty) return;
+    run.ticker = Timer.periodic(_frame, (_) {
+      if (!identical(_run, run) || _disposed) return;
+      if (run.framed) {
+        _notify();
+        return;
+      }
+      _hearOwn();
+    });
+  }
+
+  /// Calls the app's own listeners, and has the run under way drawn a frame
+  /// at a time if one of them asks for a rebuild. It is taken to be while
+  /// they run, since a rebuild asked for outside a build is made there and
+  /// then, and reads the value before they return.
+  void _hearOwn() {
+    final run = _run;
+    final was = run?.framed ?? false;
+    run?.framed = true;
+    final asked = _Owner._rebuildAsks;
+    for (final listener in List.of(_ownListeners)) {
+      listener();
+    }
+    if (run != null && _Owner._rebuildAsks == asked) run.framed = was;
   }
 
   void _setStatus(AnimationStatus status) {
@@ -869,8 +1079,64 @@ class AnimationController extends Animation<double> {
     final run = _run;
     if (run == null) return;
     run.timer?.cancel();
+    run.ticker?.cancel();
     run.future._complete();
     _run = null;
+  }
+
+  /// Where a run from [from] to [to] over [length] along [curve] stops: at
+  /// each of [_breaks] it passes, and at its end.
+  List<({double to, Duration length})> _legs(
+    double from,
+    double to,
+    Duration length,
+    Curve curve,
+  ) {
+    final up = to > from;
+    final stops = [
+      for (final b in _breaks.toList()..sort())
+        if (up ? b > from + 1e-9 && b < to - 1e-9 : b < from - 1e-9 && b > to + 1e-9)
+          b,
+    ];
+    if (!up) stops.setAll(0, stops.reversed.toList());
+    stops.add(to);
+    final legs = <({double to, Duration length})>[];
+    var before = Duration.zero;
+    for (var i = 0; i < stops.length; i++) {
+      final at = i == stops.length - 1
+          ? length
+          : length * _timeAt(curve, (stops[i] - from) / (to - from));
+      legs.add((to: stops[i], length: at - before));
+      before = at;
+    }
+    return legs;
+  }
+
+  /// The part of a run's time at which [curve] has gone [part] of the way.
+  static double _timeAt(Curve curve, double part) {
+    var low = 0.0;
+    var high = 1.0;
+    for (var i = 0; i < 30; i++) {
+      final middle = (low + high) / 2;
+      if (curve.transform(middle) < part) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    return (low + high) / 2;
+  }
+
+  /// The run's next leg, or its end.
+  void _nextLeg(_ControllerRun run, TickerFuture future) {
+    if (!identical(_run, run)) return;
+    if (run.leg >= run.legs.length - 1) {
+      _finish(run, future);
+      return;
+    }
+    run.leg++;
+    run.timer = Timer(run.legs[run.leg].length, () => _nextLeg(run, future));
+    if (!run.framed) _notify();
   }
 
   TickerFuture _animate(
@@ -907,10 +1173,15 @@ class AnimationController extends Animation<double> {
       _finish(run, done);
       return done;
     }
-    run.timer = Timer(length, () => _finish(run, done));
+    run.legs = _legs(from, to, length, curve);
+    run.timer = Timer(run.legs.first.length, () => _nextLeg(run, done));
+    _tickWhileHeard();
     if (pass != null) {
       // Started inside a build, which shows where it starts: the next one
-      // shows where it goes.
+      // shows where it goes. The app's own listeners hear it now, so that
+      // one which rebuilds has the run drawn a frame at a time before any
+      // build reads where it ends.
+      _hearOwn();
       Timer(_nextTree, _notify);
     } else {
       _notify();
@@ -1010,13 +1281,16 @@ bool _controlled(Animation<Object?> animation) => switch (animation) {
   final run = controller?._running;
   if (run == null) return null;
   // The build that shows where the run starts does not move.
+  // The build that shows where the run starts does not move, nor one of a
+  // run drawn a frame at a time.
   final owner = _Owner._current;
-  if (owner != null && owner._building && run.startPass == owner._pass) {
+  if (run.framed ||
+      (owner != null && owner._building && run.startPass == owner._pass)) {
     return (duration: Duration.zero, curve: Curves.linear);
   }
   final curve = _curveIn(animation);
   return (
-    duration: run.duration,
+    duration: run.legs.isEmpty ? run.duration : run.legs[run.leg].length,
     curve: curve ?? run.curve,
   );
 }

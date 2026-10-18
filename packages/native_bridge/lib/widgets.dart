@@ -574,7 +574,10 @@ class ListenableBuilder extends Widget {
     final listenable = this.listenable;
     owner._watch(listenable);
     if (listenable is! Animation<Object?> || !_controlled(listenable)) {
-      return builder(owner._context(), child)._render(owner);
+      return _followingScroll(
+        owner,
+        () => builder(owner._context(), child)._render(owner),
+      );
     }
     // Built at the end of a controller's run, the boxes in it moving there
     // over the run - and saying they take no time at rest, so that they are
@@ -873,6 +876,20 @@ class _Owner {
   /// built at the end of: each box built in it moves there over the run.
   ({int ms, String curve})? _boxRun;
 
+  /// How many rebuilds have been asked for, by any app: an animation
+  /// controller compares it either side of its listeners.
+  static int _rebuildAsks = 0;
+
+  /// The scroll controllers whose offset the innermost widget following them
+  /// has read in this build (`_followingScroll`), and whether a build at
+  /// another offset is under way.
+  Set<ScrollController>? _offsetReads;
+  bool _sampling = false;
+
+  void _readOffset(ScrollController controller) {
+    if (_building) _offsetReads?.add(controller);
+  }
+
   /// The [_NodeWidget] whose builder is running: the widget a `State` that
   /// ends in a node lays its child out as (`_passOn`).
   _NodeWidget? _node;
@@ -1078,7 +1095,13 @@ class _Owner {
     _watchedThisPass.add(listenable);
     if (_watched.containsKey(listenable)) return;
     void onChange() => _requestRebuild();
-    listenable.addListener(onChange);
+    // The framework's own: a controller does not tick for it.
+    AnimationController._quiet = true;
+    try {
+      listenable.addListener(onChange);
+    } finally {
+      AnimationController._quiet = false;
+    }
     _watched[listenable] = onChange;
   }
 
@@ -1741,7 +1764,10 @@ class _Owner {
         key == null
             ? (id as String).substring(id.lastIndexOf('/') + 1)
             : '$key:${widget.runtimeType}',
-        () => _handOn(widget, state!.build(context))._render(this),
+        () => _followingScroll(
+          this,
+          () => _handOn(widget, state!.build(context))._render(this),
+        ),
       );
     } finally {
       _scope = outer;
@@ -1750,6 +1776,7 @@ class _Owner {
   }
 
   void _requestRebuild() {
+    _rebuildAsks++;
     if (!_alive) return;
     if (_building) {
       _dirty = true;

@@ -1669,6 +1669,10 @@ class UIBuilder {
   ///
   /// [onRefresh] adds pull-to-refresh where the platform has the gesture; the
   /// spinner stays for as long as the tree says [refreshing].
+  ///
+  /// [linkSource] names the scroller for the nodes that move in step with it
+  /// (`scrollLink`, see [WidgetNode]): a renderer applies their props from its
+  /// own scroll callback, every frame, without asking Dart.
   static WidgetNode scroll({
     required WidgetNode child,
     String axis = 'vertical',
@@ -1684,6 +1688,7 @@ class UIBuilder {
     String? scrollCurve,
     void Function(double offset, double? maxExtent, double? viewport)?
     onScroll,
+    String? linkSource,
     String? id,
   }) {
     String? refresh;
@@ -1730,6 +1735,7 @@ class UIBuilder {
         if (scrollOffset != null && scrollAnimated && scrollCurve != null)
           'scrollCurve': scrollCurve,
         if (scrolled != null) 'scrollEventId': scrolled,
+        if (linkSource != null) 'scrollLinkSource': linkSource,
         if (id != null) 'id': id,
       },
       children: [child],
@@ -2240,6 +2246,7 @@ class UIBuilder {
     bool refreshing = false,
     void Function(double offset, double? maxExtent, double? viewport)?
     onScroll,
+    String? linkSource,
   }) {
     assert(
       (itemExtent == null) != (itemExtentBuilder == null),
@@ -2311,6 +2318,7 @@ class UIBuilder {
         if (refresh != null) 'refreshEventId': refresh,
         if (refresh != null) 'refreshing': refreshing,
         if (scrolled != null) 'scrollEventId': scrolled,
+        if (linkSource != null) 'scrollLinkSource': linkSource,
         // As on a scroll node: jump to this offset when the version is new.
         if (scrollOffset != null) 'scrollOffset': scrollOffset,
         if (scrollOffset != null) 'scrollVersion': scrollVersion ?? 0,

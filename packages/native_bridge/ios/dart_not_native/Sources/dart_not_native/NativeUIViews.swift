@@ -2362,6 +2362,9 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
   /// once a frame, and a message per frame across the channel (and a rebuild
   /// per frame, for an app that listens) is what this is here to avoid.
   var onReport: ((CGFloat, CGFloat, CGFloat) -> Void)?
+  /// Told where the view is (from the far end when reversed) each frame it
+  /// moves, for what moves in step with it.
+  var onFollow: ((CGFloat) -> Void)?
   private var reportedOffset: CGFloat = -1
   private var reportedAt: CFTimeInterval = 0
   private var seenOffset: CGFloat = -1
@@ -2382,6 +2385,13 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
   }
 
   private func moved() {
+    if let onFollow {
+      let viewport = horizontal ? bounds.width : bounds.height
+      let extent = horizontal ? contentSize.width : contentSize.height
+      let maxOffset = max(0, extent - viewport)
+      let raw = min(max(0, horizontal ? contentOffset.x : contentOffset.y), maxOffset)
+      onFollow(reverse ? maxOffset - raw : raw)
+    }
     guard onReport != nil else { return }
     settleWork?.cancel()
     if CACurrentMediaTime() - reportedAt >= 0.1 { report() }

@@ -1803,6 +1803,7 @@ class NativeUIRenderer(
             it.shown = newNode["refreshing"] == true
         }
         scroll.memory.onReport = scrollReport(newNode)
+        scroll.memory.onFollow = scrollFollower(newNode)
         val rows = scroll.getChildAt(0) as? FrameLayout ?: return false
         val oldRowNodes = childNodes(oldNode)
         val newRowNodes = childNodes(newNode)
@@ -5421,6 +5422,7 @@ class NativeUIRenderer(
             addView(rows, matchWidth())
         }
         list.memory.onReport = scrollReport(node)
+        list.memory.onFollow = scrollFollower(node)
         val refresh = node["refreshEventId"] as? String ?: return list
         return refreshFrame(list, refresh, node["refreshing"] == true).apply {
             layoutParams = matchParent()
@@ -6020,6 +6022,7 @@ class NativeUIRenderer(
             style, duration, if (duration > 0) interpolator(node) else null,
             onDone = endAnswer(box, node),
         )
+        linkToScroll(box, node)
 
         val events = boxEvents(node)
         if (events != box.events) box.events = events
@@ -6321,6 +6324,73 @@ class NativeUIRenderer(
         // Set on every patch: the id is a prop like any other, and names a
         // different callback from one build to the next.
         memory.onReport = scrollReport(node)
+        memory.onFollow = scrollFollower(node)
+    }
+
+    /**
+     * Moves the boxes that follow a scroller (`scrollLinkSource`), each frame
+     * it scrolls - with no message to Dart, which sent their tables.
+     */
+    private fun scrollFollower(node: Map<*, *>): ((Int) -> Unit)? {
+        val source = node["scrollLinkSource"] as? String ?: return null
+        val density = activity.resources.displayMetrics.density
+        return { offset -> followScroll(source, offset / density) }
+    }
+
+    /** The boxes that move in step with each named scroller (`scrollLink`), with their nodes. */
+    private val linkedBoxes = HashMap<String, java.util.WeakHashMap<BoxLayout, Map<*, *>>>()
+
+    /** Where each named scroller is, in logical pixels, as last heard from it. */
+    private val linkOffsets = HashMap<String, Float>()
+
+    /** Follows [box]'s scroller, if its node says it moves with one, from where it is now. */
+    private fun linkToScroll(box: BoxLayout, node: Map<*, *>) {
+        linkedBoxes.values.forEach { it.remove(box) }
+        val link = node["scrollLink"] as? Map<*, *> ?: return
+        val source = link["source"] as? String ?: return
+        linkedBoxes.getOrPut(source) { java.util.WeakHashMap() }[box] = node
+        linkOffsets[source]?.let { applyLink(box, node, link, it) }
+    }
+
+    private fun followScroll(source: String, offset: Float) {
+        linkOffsets[source] = offset
+        val boxes = linkedBoxes[source] ?: return
+        for ((box, node) in boxes.entries.toList()) {
+            val link = node["scrollLink"] as? Map<*, *> ?: continue
+            if (box.isAttachedToWindow) applyLink(box, node, link, offset)
+        }
+    }
+
+    /** Puts [box] where its table ([link]) says for [offset], at once. */
+    private fun applyLink(box: BoxLayout, node: Map<*, *>, link: Map<*, *>, offset: Float) {
+        val at = (link["at"] as? List<*>)?.map { (it as? Number)?.toFloat() ?: 0f } ?: return
+        fun valueOf(name: String): Float? {
+            val values = link[name] as? List<*> ?: return null
+            if (values.size != at.size || at.isEmpty()) return null
+            fun value(i: Int) = (values[i] as? Number)?.toFloat() ?: 0f
+            if (offset <= at.first()) return value(0)
+            for (i in 1 until at.size) {
+                if (offset <= at[i]) {
+                    val t = (offset - at[i - 1]) / (at[i] - at[i - 1])
+                    return value(i - 1) + (value(i) - value(i - 1)) * t
+                }
+            }
+            return value(at.size - 1)
+        }
+        val linked = HashMap<Any?, Any?>(node)
+        for (name in listOf("opacity", "width", "height")) {
+            valueOf(name)?.let { linked[name] = it }
+        }
+        val moved = listOf("dx", "dy", "scale", "rotate")
+            .mapNotNull { name -> valueOf(name)?.let { name to it } }
+        if (moved.isNotEmpty()) {
+            val own = node["transform"] as? Map<*, *>
+            linked["transform"] = HashMap<Any?, Any?>().apply {
+                own?.let { putAll(it) }
+                moved.forEach { (name, value) -> put(name, value) }
+            }
+        }
+        box.setStyle(boxStyle(linked), 0L, null, null)
     }
 
     /** What a scroller, or a windowed list, sends when its node asks where it is. */
@@ -7829,6 +7899,10 @@ class NativeUIRenderer(
 
         /** Tells the app where the list is in pixels, when its node asks - see [ScrollMemory]. */
         val memory = ScrollMemory(this, horizontal = false)
+        private val drag = SteadyDrag(this)
+
+        override fun dispatchTouchEvent(ev: MotionEvent): Boolean =
+            drag.dispatch(ev) { super.dispatchTouchEvent(it) }
 
         override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
             super.onScrollChanged(l, t, oldl, oldt)

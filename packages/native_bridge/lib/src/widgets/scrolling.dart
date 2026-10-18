@@ -59,6 +59,13 @@ class ScrollController extends ChangeNotifier {
   final bool keepScrollOffset;
   final String? debugLabel;
 
+  /// The name its scroller goes by for what moves in step with it
+  /// (`scrollLinkSource`), said once something has been built from its
+  /// offset ([_linked]).
+  late final String _link = 'scroll${_links++}';
+  static int _links = 0;
+  bool _linked = false;
+
   double _offset;
   int _version = 0;
   _Owner? _owner;
@@ -104,12 +111,22 @@ class ScrollController extends ChangeNotifier {
     _shownPass = owner._pass;
   }
 
-  /// Whether a scroller built with this controller is on screen.
-  bool get hasClients => _owner != null && _attachedPass == _owner!._pass;
+  /// Whether a scroller built with this controller is on screen: built in
+  /// this build, or in the last one by a build that has not reached it yet -
+  /// a header above the list it follows asks before the list is built.
+  bool get hasClients {
+    final owner = _owner;
+    if (owner == null) return false;
+    return _attachedPass == owner._pass ||
+        (owner._building && _attachedPass == owner._pass - 1);
+  }
 
   /// Where the scroller is: where the app last sent it, or where the
   /// renderer has since said the reader took it - see the class doc.
-  double get offset => _offset;
+  double get offset {
+    _Owner._current?._readOffset(this);
+    return _offset;
+  }
 
   ScrollPosition get position => ScrollPosition._(this);
 
@@ -176,7 +193,7 @@ class ScrollPosition {
   ScrollPosition._(this._controller);
   final ScrollController _controller;
 
-  double get pixels => _controller._offset;
+  double get pixels => _controller.offset;
   double get minScrollExtent => 0;
 
   /// The scroller's own length once the renderer has reported it; until
@@ -347,6 +364,200 @@ class ScrollEndNotification extends ScrollNotification {
   const ScrollEndNotification({required super.metrics, super.context});
 }
 
+/// The offsets a widget that follows a scroller is built at, besides the
+/// one it is at: between them a renderer goes in a straight line.
+const _scrollStops = [
+  0.0, 16.0, 32.0, 64.0, 96.0, 128.0, 192.0, 256.0, 384.0, 512.0, 768.0,
+  1024.0,
+];
+
+/// [render], and when what it built read where a scroller is - a header
+/// that shrinks, a title that fades in, a picture that moves slower than the
+/// page - the boxes in it that change with the offset, each with a table of
+/// what it is at a dozen offsets (`scrollLink`). A renderer applies the table
+/// from its own scroll callback, so they move in step with the finger;
+/// between the reports the app hears, nothing else is asked of Dart.
+///
+/// The table comes from building the same widgets at each of
+/// [_scrollStops] and comparing the trees: a box's opacity, size and
+/// movement are followed, and only while the trees keep one shape. What
+/// else changes - words, colours - follows the reports, as before.
+WidgetNode _followingScroll(_Owner owner, WidgetNode Function() render) {
+  if (owner._sampling) return render();
+  final outer = owner._offsetReads;
+  final reads = owner._offsetReads = <ScrollController>{};
+  final WidgetNode node;
+  try {
+    node = render();
+  } finally {
+    owner._offsetReads = outer;
+  }
+  final controller = reads.length == 1 ? reads.single : null;
+  if (controller == null || !controller._reported) return node;
+  final real = controller._offset;
+  final max = controller._maxExtent;
+  final stops = [
+    for (final stop in _scrollStops)
+      if (max == null || stop < max) stop,
+    if (max != null && max > 0 && max < _scrollStops.last) max,
+  ];
+  if (stops.length < 2) return node;
+  final samples = <WidgetNode>[];
+  final bindings = EventBindings.required;
+  WidgetNode at(double offset) {
+    controller._offset = offset;
+    return bindings.forgetting(render);
+  }
+
+  owner._sampling = true;
+  try {
+    for (final stop in stops) {
+      samples.add(at(stop));
+    }
+    // Where the line between two stops is not what the widgets do there - a
+    // header that stops shrinking between them - the middle is a stop too,
+    // and so on down, for a couple of dozen builds at most.
+    final values = [for (final sample in samples) _followedValues(sample)];
+    var budget = 24;
+    var i = 0;
+    while (i < stops.length - 1 && budget > 0) {
+      final low = stops[i], high = stops[i + 1];
+      if (high - low <= 4) {
+        i++;
+        continue;
+      }
+      final middle = (low + high) / 2;
+      final sample = at(middle);
+      final value = _followedValues(sample);
+      final a = values[i], b = values[i + 1];
+      var straight = value != null &&
+          a != null &&
+          b != null &&
+          value.length == a.length &&
+          a.length == b.length;
+      for (var k = 0; straight && k < value!.length; k++) {
+        if ((value[k] - (a![k] + b![k]) / 2).abs() > 0.5) straight = false;
+      }
+      if (straight) {
+        i++;
+        continue;
+      }
+      stops.insert(i + 1, middle);
+      samples.insert(i + 1, sample);
+      values.insert(i + 1, value);
+      budget--;
+    }
+  } finally {
+    controller._offset = real;
+    owner._sampling = false;
+  }
+  final linked = _linkedTo(node, samples, stops, controller._link);
+  if (linked == null) return node;
+  if (!controller._linked) {
+    // Its scroller says its name from the next build on.
+    controller._linked = true;
+    owner._requestRebuild();
+  }
+  return linked;
+}
+
+/// The props a box's table can follow, for every box in [node] in order -
+/// what the stops are compared by.
+List<double>? _followedValues(WidgetNode node) {
+  final out = <double>[];
+  void walk(WidgetNode n) {
+    if (n.type == 'Box') {
+      final p = n.props;
+      final moved = p['transform'] is Map ? p['transform'] as Map : null;
+      double number(Object? v, double otherwise) =>
+          (v as num?)?.toDouble() ?? otherwise;
+      out
+        ..add(number(p['opacity'], 1))
+        ..add(number(p['width'], -1))
+        ..add(number(p['height'], -1))
+        ..add(number(moved?['dx'], 0))
+        ..add(number(moved?['dy'], 0))
+        ..add(number(moved?['scale'], 1))
+        ..add(number(moved?['rotate'], 0));
+    }
+    for (final child in n.children ?? const <WidgetNode>[]) {
+      walk(child);
+    }
+  }
+
+  walk(node);
+  return out;
+}
+
+/// [node] with a `scrollLink` on each box whose followed props differ
+/// between [samples] - the same tree built at each of [stops] - or null when
+/// none does.
+WidgetNode? _linkedTo(
+  WidgetNode node,
+  List<WidgetNode> samples,
+  List<double> stops,
+  String source,
+) {
+  List<WidgetNode>? children;
+  final kids = node.children;
+  if (kids != null) {
+    for (var i = 0; i < kids.length; i++) {
+      final along = <WidgetNode>[];
+      for (final sample in samples) {
+        final theirs = sample.children;
+        if (theirs == null ||
+            theirs.length != kids.length ||
+            theirs[i].type != kids[i].type) {
+          break;
+        }
+        along.add(theirs[i]);
+      }
+      if (along.length != samples.length) continue;
+      final linked = _linkedTo(kids[i], along, stops, source);
+      if (linked != null) (children ??= List.of(kids))[i] = linked;
+    }
+  }
+  final table = <String, List<double>>{};
+  if (node.type == 'Box') {
+    void follow(String name, double? Function(Map<String, dynamic>) read) {
+      final values = <double>[];
+      for (final sample in samples) {
+        final value = read(sample.props);
+        if (value == null) return;
+        values.add(value);
+      }
+      if (values.any((v) => (v - values.first).abs() > 1e-6)) {
+        table[name] = values;
+      }
+    }
+
+    double? number(Object? n) => (n as num?)?.toDouble();
+    Map? moved(Map<String, dynamic> p) =>
+        p['transform'] is Map ? p['transform'] as Map : null;
+    follow('opacity', (p) => number(p['opacity']) ?? 1);
+    follow('width', (p) => number(p['width']));
+    follow('height', (p) => number(p['height']));
+    // A whole matrix is not taken apart.
+    if (!samples.any((s) => moved(s.props)?['matrix'] != null)) {
+      follow('dx', (p) => number(moved(p)?['dx']) ?? 0);
+      follow('dy', (p) => number(moved(p)?['dy']) ?? 0);
+      follow('scale', (p) => number(moved(p)?['scale']) ?? 1);
+      follow('rotate', (p) => number(moved(p)?['rotate']) ?? 0);
+    }
+  }
+  if (table.isEmpty && children == null) return null;
+  return WidgetNode(
+    type: node.type,
+    props: table.isEmpty
+        ? node.props
+        : {
+            ...node.props,
+            'scrollLink': {'source': source, 'at': stops, ...table},
+          },
+    children: children ?? kids,
+  );
+}
+
 /// What a scroller's node is given to report through: [position] is told
 /// where the scroller is, and the listeners above the scroller - the ones
 /// there when this build drew it - are told that it moved.
@@ -488,6 +699,7 @@ WidgetNode _scroller(
     scrollMs: position._travel.inMilliseconds,
     scrollCurve: position._travelCurve.name,
     onScroll: _reporting(owner, position, vertical ? Axis.vertical : Axis.horizontal),
+    linkSource: position._linked ? position._link : null,
     id: id,
   );
 }
@@ -814,6 +1026,7 @@ class ListView extends Widget {
           scrollMs: position._travel.inMilliseconds,
           scrollCurve: position._travelCurve.name,
           onScroll: _reporting(owner, position, Axis.vertical),
+          linkSource: position._linked ? position._link : null,
           // Room inside the scroller, as Flutter's is: the rows scroll under
           // the edges rather than stopping short of them.
           padding: padding?._resolved._ltrb,

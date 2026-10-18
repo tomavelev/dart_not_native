@@ -135,6 +135,22 @@ class EventBindings {
         'building a node elsewhere.',
       ));
 
+  /// Runs [build] and forgets what it bound: the event ids it took and the
+  /// handlers it gave them are the next build's to take again. For a tree
+  /// built only to be read - the same widgets at another scroll offset.
+  T forgetting<T>(T Function() build) {
+    final counter = _counter;
+    final callbacks = Map.of(_callbacks);
+    try {
+      return build();
+    } finally {
+      _counter = counter;
+      _callbacks
+        ..clear()
+        ..addAll(callbacks);
+    }
+  }
+
   /// Allocates the event id a node will carry.
   ///
   /// [key] is the node's own id when it has one, so the event id does not move

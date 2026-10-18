@@ -2338,6 +2338,9 @@ internal class ScrollMemory(private val view: ViewGroup, private val horizontal:
     /** Called with the offset - measured the same way - as it changes. */
     var onOffset: ((Int) -> Unit)? = null
 
+    /** Called with the offset each frame it changes, for what moves in step with it. */
+    var onFollow: ((Int) -> Unit)? = null
+
     /**
      * Called with the offset, how far it can go and the scroller's own length
      * on its axis, in pixels, for the app: when the scroller comes to rest and
@@ -2466,6 +2469,7 @@ internal class ScrollMemory(private val view: ViewGroup, private val horizontal:
         val range = range()
         fromEnd = range - position()
         onOffset?.invoke(if (reverse) fromEnd else position())
+        onFollow?.invoke(if (reverse) fromEnd else position())
         moved()
     }
 
@@ -2474,9 +2478,45 @@ internal class ScrollMemory(private val view: ViewGroup, private val horizontal:
     }
 }
 
+/**
+ * Keeps a drag where the finger is on the screen while the scroller itself
+ * moves on it - under a header that shrinks as the list scrolls, say. A
+ * scroller reads the finger against itself, so moving up under a still
+ * finger looked like the finger going down, and it scrolled back: a judder,
+ * once a frame. Each event after the first is given to it as though the
+ * scroller were still where it was when the finger came down.
+ */
+internal class SteadyDrag(private val view: View) {
+    private val at = IntArray(2)
+    private var downX = 0
+    private var downY = 0
+
+    fun dispatch(ev: MotionEvent, deliver: (MotionEvent) -> Boolean): Boolean {
+        view.getLocationOnScreen(at)
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            downX = at[0]
+            downY = at[1]
+        }
+        val dx = (at[0] - downX).toFloat()
+        val dy = (at[1] - downY).toFloat()
+        if (dx == 0f && dy == 0f) return deliver(ev)
+        val steady = MotionEvent.obtain(ev)
+        steady.offsetLocation(dx, dy)
+        try {
+            return deliver(steady)
+        } finally {
+            steady.recycle()
+        }
+    }
+}
+
 /** The vertical scroller behind a `Scroll`. Nested, so it works under pull-to-refresh. */
 internal class VerticalScroller(context: Context) : NestedScrollView(context) {
     val memory = ScrollMemory(this, horizontal = false)
+    private val drag = SteadyDrag(this)
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean =
+        drag.dispatch(ev) { super.dispatchTouchEvent(it) }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)
@@ -2492,6 +2532,10 @@ internal class VerticalScroller(context: Context) : NestedScrollView(context) {
 /** The horizontal scroller behind a `Scroll`. */
 internal class HorizontalScroller(context: Context) : HorizontalScrollView(context) {
     val memory = ScrollMemory(this, horizontal = true)
+    private val drag = SteadyDrag(this)
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean =
+        drag.dispatch(ev) { super.dispatchTouchEvent(it) }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)

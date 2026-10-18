@@ -295,34 +295,41 @@ class Stepper extends StatelessWidget {
             ),
           ),
           // Under the head: the line down to the next step, with the open
-          // step's content beside it.
-          if (i == currentStep || i < steps.length - 1)
-            Container(
-              margin: const EdgeInsets.only(left: 35.5),
-              padding: EdgeInsets.only(
-                left: 24,
-                right: 24,
-                bottom: i == currentStep ? 16 : 0,
+          // step's content beside it, opening and closing as Flutter's does.
+          Container(
+            margin: const EdgeInsets.only(left: 35.5),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            constraints: i < steps.length - 1
+                ? const BoxConstraints(minHeight: 16)
+                : null,
+            decoration: i < steps.length - 1
+                ? BoxDecoration(
+                    border: Border(
+                      left: BorderSide(color: line, width: thickness),
+                    ),
+                  )
+                : null,
+            child: AnimatedCrossFade(
+              firstChild: const SizedBox(width: double.infinity, height: 0),
+              secondChild: Padding(
+                padding: (margin ?? EdgeInsets.zero).add(
+                  const EdgeInsets.only(bottom: 16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [steps[i].content, _controls(context, i)],
+                ),
               ),
-              constraints: const BoxConstraints(minHeight: 16),
-              decoration: i < steps.length - 1
-                  ? BoxDecoration(
-                      border: Border(
-                        left: BorderSide(color: line, width: thickness),
-                      ),
-                    )
-                  : null,
-              child: i == currentStep
-                  ? Padding(
-                      padding: margin ?? EdgeInsets.zero,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [steps[i].content, _controls(context, i)],
-                      ),
-                    )
-                  : null,
+              firstCurve: Curves.fastOutSlowIn,
+              secondCurve: Curves.fastOutSlowIn,
+              sizeCurve: Curves.fastOutSlowIn,
+              crossFadeState: i == currentStep
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 200),
             ),
+          ),
         ],
       ],
     );

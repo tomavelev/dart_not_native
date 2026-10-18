@@ -435,8 +435,12 @@ class SizedBox extends Widget {
   @override
   WidgetNode _render(_Owner owner) {
     final child = this.child;
-    final width = this.width;
     final height = this.height;
+    // In a width it cannot change, a box with a child is that wide, as in
+    // [_box]; an empty one is a spacer either way.
+    final width = child != null && identical(owner._tightWidth, this)
+        ? (this.width == null ? null : double.infinity)
+        : this.width;
     final fillsWidth = width == double.infinity;
     final fillsHeight = height == double.infinity;
     // A spinner has a size of its own on the wire, so a box put around one to
@@ -615,14 +619,20 @@ WidgetNode _box(
   var fillsHeight = h == double.infinity;
   if (fillsWidth) w = null;
   if (fillsHeight) h = null;
+  // Laid out in a width it cannot change, a box is that wide whatever width
+  // it asks for: Flutter's constraints from above win.
+  final tightRoom = self != null && identical(owner._tightWidth, self);
+  if (tightRoom && expand == null && (w != null || minW != null || maxW != null)) {
+    w = minW = maxW = null;
+    fillsWidth = true;
+  }
   // An aligned box, or an empty one, takes the room that has an end - which
   // is what Flutter's Container does with both.
   final hasChild = child != null || childNode != null;
   // Its child is as wide as it is when it has a width, of its own or one it
   // was given, and does not align the child inside it.
   final tightChild =
-      alignment == null &&
-      (w != null || fillsWidth || (self != null && identical(owner._tightWidth, self)));
+      alignment == null && (w != null || fillsWidth || tightRoom);
   if (alignment != null || (fillWhenEmpty && !hasChild)) {
     if (w == null && !owner._unboundedWidth) fillsWidth = true;
     if (h == null && !owner._unboundedHeight) fillsHeight = true;

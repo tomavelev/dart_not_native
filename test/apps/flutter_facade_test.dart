@@ -361,21 +361,24 @@ void main() {
 
     test('a decoration becomes the box\'s paint', () {
       final tester = _mount(
+        // Centred: a scaffold's body is as wide as the screen, whatever it asks.
         (context, state) => Scaffold(
-          body: Container(
-            key: const ValueKey('card'),
-            width: 120,
-            padding: const EdgeInsets.all(8),
-            margin: const EdgeInsets.only(top: 4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey, width: 1),
-              boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2)),
-              ],
+          body: Center(
+            child: Container(
+              key: const ValueKey('card'),
+              width: 120,
+              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.only(top: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey, width: 1),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2)),
+                ],
+              ),
+              child: const Text('x'),
             ),
-            child: const Text('x'),
           ),
         ),
       );

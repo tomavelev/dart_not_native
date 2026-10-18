@@ -63,6 +63,34 @@ void main() {
       expect(heard, ['continue', 'cancel']);
     });
 
+    test('the next step opens and the last closes, each in its time', () async {
+      final current = ValueNotifier(0);
+      final app = AppTester.widget(
+        _app(
+          ValueListenableBuilder<int>(
+            valueListenable: current,
+            builder: (_, step, _) => Stepper(
+              currentStep: step,
+              steps: const [
+                Step(title: Text('Address'), content: Text('Where to')),
+                Step(title: Text('Payment'), content: Text('How to pay')),
+              ],
+            ),
+          ),
+        ),
+      );
+      final sizing = app.nodes.where((n) => n.props['animateSize'] == true);
+      expect(sizing.map((n) => n.props['animateMs']), [200, 200]);
+      current.value = 1;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      // Both are on the screen while one closes and the other opens.
+      expect(app.hasText('Where to'), isTrue);
+      expect(app.hasText('How to pay'), isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(app.hasText('Where to'), isFalse);
+      expect(app.hasText('How to pay'), isTrue);
+    });
+
     test('with nothing listening, the buttons are off', () {
       final app = AppTester.widget(stepper(listens: false));
 

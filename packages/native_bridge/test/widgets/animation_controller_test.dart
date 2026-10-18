@@ -120,18 +120,22 @@ void main() {
     expect(key.currentState!.controller.isAnimating, isFalse);
   });
 
-  test('listeners hear a run start and end; status listeners each status', () async {
+  test('the app\'s listeners hear each frame; status listeners each status',
+      () async {
     final controller = AnimationController(
       vsync: const _NoTicks(),
-      duration: const Duration(milliseconds: 40),
+      duration: const Duration(milliseconds: 100),
     );
-    var heard = 0;
+    final heard = <double>[];
     final statuses = <AnimationStatus>[];
     controller
-      ..addListener(() => heard++)
+      ..addListener(() => heard.add(controller.value))
       ..addStatusListener(statuses.add);
     await controller.forward();
-    expect(heard, 2);
+    expect(heard.length, greaterThan(3));
+    expect(heard.where((v) => v > 0.05 && v < 0.95), isNotEmpty);
+    expect(heard, orderedEquals([...heard]..sort()));
+    expect(heard.last, 1);
     expect(statuses, [AnimationStatus.forward, AnimationStatus.completed]);
     expect(controller.value, 1);
 
@@ -165,6 +169,81 @@ void main() {
     expect(box().props['animateMs'], 300);
   });
 
+  test('a run stops where an interval or a tween sequence turns', () async {
+    final key = GlobalKey<_StaggeredState>();
+    final app = AppTester.widget(_Staggered(key: key));
+    List<({double opacity, int ms, String? curve})> fades() => [
+      for (final n in app.ofType('AnimatedOpacity'))
+        (
+          opacity: (n.props['opacity'] as num).toDouble(),
+          ms: n.props['durationMs'] as int,
+          curve: n.props['curve'] as String?,
+        ),
+    ];
+    double scale() => (app.nodes
+            .firstWhere((n) => n.type == 'Box' && n.props['transform'] != null)
+            .props['transform'] as Map)['scale'] as double;
+    expect(fades().map((f) => f.opacity), [0, 0]);
+
+    key.currentState!.controller.forward();
+    // To a quarter of the way, where the sequence turns: the first fade is
+    // half done along its own curve, over that leg.
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(fades()[0].opacity, closeTo(Curves.easeOut.transform(0.5), 1e-9));
+    expect(fades()[0].ms, 50);
+    expect(fades()[0].curve, Curves.easeOut.name);
+    expect(fades()[1].opacity, 0);
+    expect(scale(), closeTo(1.5, 1e-9));
+
+    // Then to the middle: the first is in, the second not yet begun.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(fades()[0].opacity, 1);
+    expect(fades()[1].opacity, 0);
+    expect(fades()[1].ms, 50);
+
+    // Then the second, over the rest.
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(fades()[1].opacity, 1);
+    expect(fades()[1].ms, 100);
+    expect(scale(), closeTo(1, 1e-9));
+  });
+
+  test('a listener that rebuilds draws the run a frame at a time', () async {
+    final key = GlobalKey<_TickingState>();
+    final app = AppTester.widget(_Ticking(key: key));
+    final seen = <double>{};
+    key.currentState!.controller.forward();
+    for (var i = 0; i < 12; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      final box = app.nodes.firstWhere((n) => n.props['opacity'] != null);
+      seen.add((box.props['opacity'] as num).toDouble());
+      expect(box.props['animateMs'], anyOf(isNull, 0));
+    }
+    expect(seen.where((v) => v > 0.05 && v < 0.95).length, greaterThan(3));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final box = app.nodes.firstWhere((n) => n.props['opacity'] != null);
+    expect(box.props['opacity'], 1);
+  });
+
+  test('started from a tap, a listener that rebuilds never shows the end '
+      'first', () async {
+    final key = GlobalKey<_TickingState>();
+    final app = AppTester.widget(_Ticking(key: key, button: true));
+    double opacity() => (app.nodes
+            .firstWhere((n) => n.props['opacity'] != null)
+            .props['opacity'] as num)
+        .toDouble();
+    final button = app.nodes.firstWhere((n) => n.props['label'] == 'go');
+    await app.tapEvent(button.props['eventId'] as String);
+    final seen = [opacity()];
+    for (var i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      seen.add(opacity());
+    }
+    // A fifth of the way at most, in the first 50 ms of 200.
+    expect(seen.every((v) => v < 0.5), isTrue, reason: '$seen');
+  });
+
   test('half the range takes half the time; a curve travels with it', () async {
     final key = GlobalKey<_FadingState>();
     final app = AppTester.widget(
@@ -181,6 +260,68 @@ void main() {
     expect(node.props['curve'], Curves.easeIn.name);
     expect(node.props['opacity'], closeTo(Curves.easeIn.transform(0.5), 1e-9));
   });
+}
+
+class _Staggered extends StatefulWidget {
+  const _Staggered({super.key});
+  @override
+  State<_Staggered> createState() => _StaggeredState();
+}
+
+class _StaggeredState extends State<_Staggered>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+  );
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      FadeTransition(
+        opacity: CurvedAnimation(
+          parent: controller,
+          curve: const Interval(0, 0.5, curve: Curves.easeOut),
+        ),
+        child: const Text('first'),
+      ),
+      FadeTransition(
+        opacity: controller.drive(CurveTween(curve: const Interval(0.5, 1))),
+        child: const Text('second'),
+      ),
+      ScaleTransition(
+        scale: TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 1, end: 1.5), weight: 1),
+          TweenSequenceItem(tween: Tween(begin: 1.5, end: 1), weight: 3),
+        ]).animate(controller),
+        child: const Text('pulse'),
+      ),
+    ],
+  );
+}
+
+class _Ticking extends StatefulWidget {
+  const _Ticking({super.key, this.button = false});
+  final bool button;
+  @override
+  State<_Ticking> createState() => _TickingState();
+}
+
+class _TickingState extends State<_Ticking>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+  )..addListener(() => setState(() {}));
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Opacity(opacity: controller.value, child: const Text('ticking')),
+      if (widget.button)
+        TextButton(onPressed: controller.forward, child: const Text('go')),
+    ],
+  );
 }
 
 class _Curved extends _Fading {

@@ -5042,6 +5042,7 @@ class NativeUIRenderer {
     }
     list.setRefreshing(node["refreshing"] as? Bool ?? false)
     // Where it is in pixels, for a node that asks, as a scroller says it.
+    list.onFollow = follower(node)
     if let scrolledId = node["scrollEventId"] as? String {
       list.onReport = { [weak self] offset, maxExtent, viewport in
         self?.send(
@@ -5869,11 +5870,81 @@ class NativeUIRenderer {
     return style
   }
 
+  /// Moves the boxes that follow a scroller (`scrollLinkSource`) each frame
+  /// it scrolls, with no message to Dart, which sent their tables.
+  private func follower(_ node: [String: Any]) -> ((CGFloat) -> Void)? {
+    guard let source = node["scrollLinkSource"] as? String else { return nil }
+    return { [weak self] offset in self?.followScroll(source, Double(offset)) }
+  }
+
+  /// The boxes that move in step with each named scroller (`scrollLink`),
+  /// with their nodes, and where each scroller was last.
+  private var linkedBoxes: [String: NSMapTable<DnnBoxView, NSDictionary>] = [:]
+  private var linkOffsets: [String: Double] = [:]
+
+  /// Follows `box`'s scroller, if its node says it moves with one, from
+  /// where that scroller is now.
+  private func linkToScroll(_ box: DnnBoxView, _ node: [String: Any]) {
+    for table in linkedBoxes.values { table.removeObject(forKey: box) }
+    guard let link = node["scrollLink"] as? [String: Any],
+      let source = link["source"] as? String
+    else { return }
+    let table =
+      linkedBoxes[source] ?? NSMapTable<DnnBoxView, NSDictionary>.weakToStrongObjects()
+    linkedBoxes[source] = table
+    table.setObject(node as NSDictionary, forKey: box)
+    if let offset = linkOffsets[source] { applyLink(box, node, link, offset) }
+  }
+
+  private func followScroll(_ source: String, _ offset: Double) {
+    linkOffsets[source] = offset
+    guard let table = linkedBoxes[source] else { return }
+    for case let box as DnnBoxView in table.keyEnumerator().allObjects {
+      guard box.window != nil, let node = table.object(forKey: box) as? [String: Any],
+        let link = node["scrollLink"] as? [String: Any]
+      else { continue }
+      applyLink(box, node, link, offset)
+    }
+  }
+
+  /// Puts `box` where its table (`link`) says for `offset`, at once.
+  private func applyLink(
+    _ box: DnnBoxView, _ node: [String: Any], _ link: [String: Any], _ offset: Double
+  ) {
+    let at = (link["at"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+    func valueOf(_ name: String) -> Double? {
+      guard let values = link[name] as? [Any], values.count == at.count, !at.isEmpty
+      else { return nil }
+      func value(_ i: Int) -> Double { (values[i] as? NSNumber)?.doubleValue ?? 0 }
+      if offset <= at[0] { return value(0) }
+      for i in 1..<at.count where offset <= at[i] {
+        let t = (offset - at[i - 1]) / (at[i] - at[i - 1])
+        return value(i - 1) + (value(i) - value(i - 1)) * t
+      }
+      return value(at.count - 1)
+    }
+    var linked = node
+    for name in ["opacity", "width", "height"] {
+      if let value = valueOf(name) { linked[name] = value }
+    }
+    var moved = node["transform"] as? [String: Any] ?? [:]
+    var turned = false
+    for name in ["dx", "dy", "scale", "rotate"] {
+      if let value = valueOf(name) {
+        moved[name] = value
+        turned = true
+      }
+    }
+    if turned { linked["transform"] = moved }
+    UIView.performWithoutAnimation { box.apply(boxStyle(linked)) }
+  }
+
   private func configureBox(_ box: DnnBoxView, _ node: [String: Any]) {
     box.onEvent = { [weak self] eventId, data in
       self?.send(eventId: eventId, data: data)
     }
     box.apply(boxStyle(node))
+    linkToScroll(box, node)
     let sizeMs = node["animateSize"] as? Bool == true ? number(node["animateMs"]) ?? 0 : 0
     box.animatesSize = sizeMs > 0
     box.sizeSeconds = Double(sizeMs) / 1000
@@ -6169,6 +6240,7 @@ class NativeUIRenderer {
     scroll.setRefreshing(node["refreshing"] as? Bool ?? false)
     // Set on every patch: the id is a prop like any other, and names a
     // different callback from one build to the next.
+    scroll.onFollow = follower(node)
     if let scrolledId = node["scrollEventId"] as? String {
       scroll.onReport = { [weak self] offset, maxExtent, viewport in
         self?.send(
@@ -7524,6 +7596,8 @@ private class LazyListView: UIScrollView {
   /// the way - a message per frame is a rebuild per frame for an app that
   /// listens.
   var onReport: ((CGFloat, CGFloat, CGFloat) -> Void)?
+  /// Told where the list is each frame it moves, for what moves in step.
+  var onFollow: ((CGFloat) -> Void)?
   private var reportedOffset: CGFloat = -1
   private var reportedAt: CFTimeInterval = 0
   private var settleWork: DispatchWorkItem?
@@ -7540,6 +7614,10 @@ private class LazyListView: UIScrollView {
   }
 
   func moved() {
+    if let onFollow {
+      let maxOffset = max(0, contentSize.height - bounds.height)
+      onFollow(min(max(0, contentOffset.y), maxOffset))
+    }
     guard onReport != nil else { return }
     settleWork?.cancel()
     if CACurrentMediaTime() - reportedAt >= 0.1 { report() }
