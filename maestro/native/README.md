@@ -54,6 +54,11 @@ Android only, and not all of them - tried on 2026-10-04 with agent-device
 So it is a way to run three of the five, not a replacement. The flows are
 left as Maestro reads them.
 
+Again on 2026-10-18 with agent-device 0.21.24, eight flows: the same two
+still fail for the same reasons, and the other six pass - the three gallery
+flows among them - in about half Maestro's time (`TESTING.md`, "Maestro or
+agent-device").
+
 ## Why this exists
 
 `integration_test/native_renderer_test.dart` hands both renderers one of every

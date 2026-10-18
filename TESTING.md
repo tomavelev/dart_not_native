@@ -226,6 +226,68 @@ Found on this stack, with 0.21.20:
   tree, and a screen reader can activate it, but the row covers it; a flow
   swipes first (`gesture drag` from one element in the row to another).
 
+### Maestro or agent-device: a benchmark (2026-10-18)
+
+`tool/e2e_benchmark.sh android` (and `ios`) times the two against each other
+on the examples, each flow three times with the app built and installed once
+beforehand, so a time is the tool driving the app. Two comparisons:
+
+- **A - one YAML, two engines.** The Maestro flows, run by Maestro 2.5.1 and
+  by agent-device 0.21.24's Maestro engine (`agent-device test --maestro`).
+- **B - one scenario, each tool's own language.** The controls gallery's
+  three tabs as `.ad` flows and as Maestro flows, which find the same things
+  by the same ids.
+
+Android 17 emulator (Pixel 8 profile, host GPU), debug builds, the median of
+three runs:
+
+| Flow | Maestro | agent-device |
+|---|---|---|
+| A `counter.yaml` | 28.2 s | 20.6 s |
+| A `inbox.yaml` (the 10k-row list, 36 swipes) | 86.7 s | 113.4 s |
+| A `textinput_android.yaml` | 44.8 s | 20.1 s |
+| A `focus.yaml` | 33.8 s | fails: `(?i)` in a text is not understood |
+| A `a11y_android.yaml` | 40.5 s | refused: `checked:` is not supported |
+| A `gallery_touch.yaml` | 46.0 s | 36.6 s |
+| A `gallery_choose.yaml` | 37.3 s | 24.0 s |
+| A `gallery_feedback.yaml` | 64.0 s | 23.3 s |
+| B gallery touch, own flows | 46.2 s | 28.4 s |
+| B gallery choose, own flows | 35.9 s | 24.4 s |
+| B gallery feedback, own flows | 66.8 s | 21.0 s |
+
+Every run of every flow that ran passed, three of three; a first run on the
+same day was within a few seconds of these. What they say:
+
+- **agent-device is faster on almost everything here** - a third to two
+  thirds of Maestro's time, most of all where a flow types or waits for a
+  screen to settle; Maestro waits for the screen to be still after each
+  step, and the gallery's feedback tab has a spinner that never is. The one
+  flow it is slower on is the long scroll, where each of its swipes costs
+  more.
+- **Its Maestro engine runs six of the eight flows**; the two it does not
+  are the ones that use what its subset leaves out, and those checks are
+  what the flows are for.
+- **On iOS only Maestro was timed** (gallery touch 31.0 s, choose 21.0 s,
+  feedback 89.7 s on an iPhone 18 Pro simulator). The `.ad` flows are
+  written against Android's tree and stop on iOS at steps that read it
+  differently - an app bar action, a slider, a field - and agent-device's
+  Maestro engine runs Android flows only here. `--ios-agent-device` runs
+  them anyway.
+- **The two do not share an iOS simulator well.** agent-device leaves its
+  XCUITest runner running after a flow, and a Maestro run on that simulator
+  afterwards reads nothing of the app; the benchmark stops the runner after
+  each of agent-device's runs.
+- **On iOS a flow must not leave the keyboard up**: while it is, Maestro
+  reads nothing of the app, and a tap lands where a button was. The
+  gallery's feedback flow ends its typing with Enter.
+
+So: Maestro is the one suite that runs on iOS, Android and the web here, and
+the one that can say what the a11y and focus flows say; agent-device runs
+the Android flows in about half the time. Keeping both costs two places to
+change when a screen does, which is why the Maestro flows are the ones that
+gate (`tool/device_check.sh`), and agent-device is the faster way to run
+most of them on Android (`maestro/native/run.sh android --agent-device`).
+
 ## Quality lanes
 
 `quality.yml` runs on everything and takes seconds:

@@ -23,9 +23,11 @@ appId: ${APP_ID}
 - tapOn:
     id: "email"
 - inputText: "someone@example.com"
-# Away from the field, which puts the keyboard away on both platforms
-# (Maestro's hideKeyboard does not, on an iOS simulator).
-- tapOn: "A field that can be wrong"
+# Done with the field: Enter ends the editing, which puts the keyboard away
+# on both platforms. Maestro's hideKeyboard does not, on an iOS simulator,
+# and with the keyboard up it reads nothing of the app on iOS - a tap after
+# that lands where a button was.
+- pressKey: Enter
 - tapOn:
     id: "check_email"
 - assertVisible: "Status: Email accepted"
