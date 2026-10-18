@@ -130,6 +130,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -1805,6 +1806,7 @@ class NativeUIRenderer(
         scroll.memory.onReport = scrollReport(newNode)
         scroll.memory.onFollow = scrollFollower(newNode)
         val rows = scroll.getChildAt(0) as? FrameLayout ?: return false
+        if ((rows is MeasuredRowsLayout) != (newNode["measureEventId"] is String)) return false
         val oldRowNodes = childNodes(oldNode)
         val newRowNodes = childNodes(newNode)
         if (rows.childCount != oldRowNodes.size) return false
@@ -1862,6 +1864,10 @@ class NativeUIRenderer(
             (itemCount * extent).roundToInt()
         } else {
             (((newNode["totalExtent"] as? Number)?.toFloat() ?: 0f) * density).roundToInt()
+        }
+        (rows as? MeasuredRowsLayout)?.let {
+            measureRows(it, newNode)
+            it.requestLayout()
         }
         (newNode["id"] as? String)?.let { renderedLists += it }
         // A jump the app asked for since the last render: the list is live, so
@@ -2270,6 +2276,11 @@ class NativeUIRenderer(
     }
 
     private fun patchText(view: View, node: Map<*, *>): Boolean {
+        if ((view is InlineViewsText) != hasWidgetSpans(node)) return false
+        if (view is InlineViewsText) {
+            styleInlineText(view, node)
+            return true
+        }
         val label = view as? AppCompatTextView ?: return false
         // Everything a text node says is re-derived by the function that drew
         // it, so a prop added there cannot be forgotten here.
@@ -3246,9 +3257,19 @@ class NativeUIRenderer(
     // view made from an activity whose theme is not an AppCompat one logs an
     // error each time, and a screen redrawn by a timer made hundreds a second.
     // Everything the theme would have decided, styleText states.
-    private fun renderText(node: Map<*, *>): View = AppCompatTextView(materialContext).apply {
-        layoutParams = wrapContent()
-        styleText(this, node)
+    private fun renderText(node: Map<*, *>): View {
+        val label = AppCompatTextView(materialContext)
+        if (hasWidgetSpans(node)) {
+            // Widgets in the line, live: the text in a frame that holds them.
+            return InlineViewsText(activity, label).apply {
+                layoutParams = wrapContent()
+                styleInlineText(this, node)
+            }
+        }
+        return label.apply {
+            layoutParams = wrapContent()
+            styleText(this, node)
+        }
     }
 
     /**
@@ -3413,9 +3434,18 @@ class NativeUIRenderer(
             if (end == start) continue
             fun mark(what: Any) = text.setSpan(what, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 
-            // A widget in the line: a picture of it, as it first lays out.
+            // A widget in the line: room for its own view, which the text's
+            // frame lays over it - or, with nowhere to put the view, a
+            // picture of it as it first lays out.
             (span["widget"] as? Map<*, *>)?.let { widget ->
-                widgetPicture(widget)?.let { mark(it) }
+                val sink = inlineSink
+                val live = sink?.let { widgetRoom(widget) }
+                if (sink != null && live != null) {
+                    mark(live.first)
+                    sink += start to live.second
+                } else {
+                    widgetPicture(widget)?.let { mark(it) }
+                }
             }
 
             parseColorOrNull(span["color"])?.let { mark(ForegroundColorSpan(it)) }
@@ -3445,14 +3475,39 @@ class NativeUIRenderer(
         return text
     }
 
+    /** Where the widgets of the text being styled go, when they are to be live. */
+    private var inlineSink: MutableList<Pair<Int, View>>? = null
+
+    /** Room in a line of text for [widget], and the widget's own view to lay over it. */
+    private fun widgetRoom(widget: Map<*, *>): Pair<InlineRoom, View>? {
+        val view = renderWidget(normalized(widget)) ?: return null
+        measureInline(view)
+        if (view.measuredWidth <= 0 || view.measuredHeight <= 0) return null
+        return InlineRoom(view.measuredWidth, view.measuredHeight) to view
+    }
+
+    private fun hasWidgetSpans(node: Map<*, *>): Boolean =
+        (node["spans"] as? List<*>)?.any { (it as? Map<*, *>)?.get("widget") != null } == true
+
+    /** Styles [label] for [node], handing the widgets in its text to [frame]. */
+    private fun styleInlineText(frame: InlineViewsText, node: Map<*, *>) {
+        val sink = mutableListOf<Pair<Int, View>>()
+        inlineSink = sink
+        try {
+            styleText(frame.label, node)
+        } finally {
+            inlineSink = null
+        }
+        frame.inline = sink
+    }
+
     /**
      * A picture of [widget] - a node tree - to stand in a line of text, its
      * middle on the middle of the line.
      */
     private fun widgetPicture(widget: Map<*, *>): android.text.style.ReplacementSpan? {
         val view = renderWidget(normalized(widget)) ?: return null
-        val unbounded = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-        view.measure(unbounded, unbounded)
+        measureInline(view)
         val w = view.measuredWidth
         val h = view.measuredHeight
         if (w <= 0 || h <= 0) return null
@@ -5350,7 +5405,8 @@ class NativeUIRenderer(
         // The list's padding is room inside the scroller: the rows are placed
         // within it and scroll out under the edges.
         val padding = edges(node["padding"])
-        val rows = FrameLayout(activity).apply {
+        val rows = (if (node["measureEventId"] is String) MeasuredRowsLayout(activity)
+        else FrameLayout(activity)).apply {
             setPadding(padding[0], padding[1], padding[2], padding[3])
             // ScrollView measures its child unbounded, so the minimum is what
             // sizes the whole list.
@@ -5381,6 +5437,7 @@ class NativeUIRenderer(
                 height
             ).apply { topMargin = top })
         }
+        (rows as? MeasuredRowsLayout)?.let { measureRows(it, node) }
 
         // A position the app asked for, once per version: it replaces the one
         // remembered, and the restore below carries it out.
@@ -5426,6 +5483,25 @@ class NativeUIRenderer(
         val refresh = node["refreshEventId"] as? String ?: return list
         return refreshFrame(list, refresh, node["refreshing"] == true).apply {
             layoutParams = matchParent()
+        }
+    }
+
+    /** Tells [rows] where its window starts, what the tree guessed, and where to say what it measured. */
+    private fun measureRows(rows: MeasuredRowsLayout, node: Map<*, *>) {
+        val density = activity.resources.displayMetrics.density
+        val guessed = (node["extents"] as? List<*>)
+            ?.map { (((it as? Number)?.toFloat() ?: 0f) * density).roundToInt() } ?: emptyList()
+        val start = ((node["startOffset"] as? Number)?.toFloat() ?: 0f) * density
+        val total = ((node["totalExtent"] as? Number)?.toFloat() ?: 0f) * density
+        rows.startOffset = start.roundToInt()
+        rows.guessed = guessed
+        rows.rest = max(0, (total - start).roundToInt() - guessed.sum())
+        val eventId = node["measureEventId"] as? String
+        val startIndex = (node["startIndex"] as? Number)?.toInt() ?: 0
+        rows.onMeasured = { heights ->
+            eventId?.let { id ->
+                sendEvent(id, mapOf("start" to startIndex, "heights" to heights.map { it / density }))
+            }
         }
     }
 
@@ -6380,6 +6456,27 @@ class NativeUIRenderer(
         val linked = HashMap<Any?, Any?>(node)
         for (name in listOf("opacity", "width", "height")) {
             valueOf(name)?.let { linked[name] = it }
+        }
+        // A colour, mixed channel by channel between the stops either side.
+        (link["color"] as? List<*>)?.takeIf { it.size == at.size && at.isNotEmpty() }?.let { colors ->
+            fun argb(i: Int) = (colors[i] as? String)?.removePrefix("#")?.toLongOrNull(16) ?: 0L
+            fun hex(v: Long) = "#" + v.toString(16).padStart(8, '0')
+            val i = at.indexOfFirst { offset <= it }
+            linked["color"] = when {
+                i <= 0 -> hex(argb(if (i == 0) 0 else at.size - 1))
+                else -> {
+                    val t = (offset - at[i - 1]) / (at[i] - at[i - 1])
+                    val a = argb(i - 1)
+                    val b = argb(i)
+                    var mixed = 0L
+                    for (shift in intArrayOf(24, 16, 8, 0)) {
+                        val x = (a shr shift) and 0xff
+                        val y = (b shr shift) and 0xff
+                        mixed = mixed or (((x + (y - x) * t).roundToLong() and 0xff) shl shift)
+                    }
+                    hex(mixed)
+                }
+            }
         }
         val moved = listOf("dx", "dy", "scale", "rotate")
             .mapNotNull { name -> valueOf(name)?.let { name to it } }
@@ -8104,6 +8201,120 @@ private class LaidOutView(private val view: View) : android.graphics.drawable.Dr
 
     @Deprecated("Deprecated in Java")
     override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
+
+/**
+ * Measures a widget for a line of text: at the size its params give - an
+ * image says its size before it has loaded - and otherwise at its own.
+ */
+internal fun measureInline(view: View) {
+    fun spec(size: Int?) =
+        if (size != null && size > 0) View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY)
+        else View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+    view.measure(spec(view.layoutParams?.width), spec(view.layoutParams?.height))
+}
+
+/**
+ * Room in a line of text for a widget's own view, laid over it by
+ * [InlineViewsText]: as wide as the view, its middle on the middle of the
+ * font's height, the line made tall enough for it, and nothing drawn.
+ */
+internal class InlineRoom(val width: Int, val height: Int) : android.text.style.ReplacementSpan() {
+    override fun getSize(
+        paint: android.graphics.Paint,
+        text: CharSequence?,
+        start: Int,
+        end: Int,
+        fm: android.graphics.Paint.FontMetricsInt?,
+    ): Int {
+        if (fm != null) {
+            val font = paint.fontMetricsInt
+            val middle = (font.ascent + font.descent) / 2
+            val top = middle - height / 2
+            val bottom = top + height
+            fm.ascent = minOf(font.ascent, top)
+            fm.top = minOf(font.top, top)
+            fm.descent = maxOf(font.descent, bottom)
+            fm.bottom = maxOf(font.bottom, bottom)
+        }
+        return width
+    }
+
+    override fun draw(
+        canvas: android.graphics.Canvas,
+        text: CharSequence?,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: android.graphics.Paint,
+    ) = Unit
+}
+
+/**
+ * A text with widgets in it: [label], and over each [InlineRoom] in its text
+ * the widget's own view - live, where a picture would stay as it first was.
+ * Placed from the label's own layout each time it lays out.
+ */
+internal class InlineViewsText(context: Context, val label: AppCompatTextView) :
+    FrameLayout(context) {
+    init {
+        addView(label, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+    }
+
+    /** Each widget's view, by where its room is in the text. */
+    var inline: List<Pair<Int, View>> = emptyList()
+        set(value) {
+            field.forEach { (_, view) -> if (value.none { it.second === view }) removeView(view) }
+            value.forEach { (_, view) ->
+                if (view.parent !== this) {
+                    (view.parent as? android.view.ViewGroup)?.removeView(view)
+                    // Its own size, where its params say one.
+                    addView(view, LayoutParams(
+                        view.layoutParams?.width ?: LayoutParams.WRAP_CONTENT,
+                        view.layoutParams?.height ?: LayoutParams.WRAP_CONTENT,
+                    ))
+                }
+            }
+            field = value
+            requestLayout()
+        }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        label.layoutParams.width =
+            if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.EXACTLY) LayoutParams.MATCH_PARENT
+            else LayoutParams.WRAP_CONTENT
+        label.measure(widthMeasureSpec, heightMeasureSpec)
+        inline.forEach { (_, view) -> measureInline(view) }
+        setMeasuredDimension(label.measuredWidth, label.measuredHeight)
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        label.layout(0, 0, label.measuredWidth, label.measuredHeight)
+        val layout = label.layout ?: return
+        val text = label.text
+        for ((offset, view) in inline) {
+            if (offset >= text.length) {
+                view.visibility = View.GONE
+                continue
+            }
+            val line = layout.getLineForOffset(offset)
+            // Cut off by the line limit: not on the screen.
+            if (line >= label.lineCount || (label.maxLines in 1..line)) {
+                view.visibility = View.GONE
+                continue
+            }
+            view.visibility = View.VISIBLE
+            val x = label.totalPaddingLeft + layout.getPrimaryHorizontal(offset).toInt()
+            val baseline = label.totalPaddingTop + layout.getLineBaseline(line)
+            val font = label.paint.fontMetricsInt
+            val middle = baseline + (font.ascent + font.descent) / 2
+            val top = middle - view.measuredHeight / 2
+            view.layout(x, top, x + view.measuredWidth, top + view.measuredHeight)
+        }
+    }
 }
 
 /**

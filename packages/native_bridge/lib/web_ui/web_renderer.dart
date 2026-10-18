@@ -3017,7 +3017,23 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     // below it, the last ends above it, and both scroll out under the edge.
     final edges = _edges(p['padding']);
     state.padTop = edges?.$2 ?? 0;
-    _style(content, 'height', '${total + state.padTop + (edges?.$4 ?? 0)}px');
+    state
+      ..measureId = _optStr(p['measureEventId'])
+      ..start = start;
+    if (state.measureId != null) {
+      // Rows at their own heights: the window is as long as they come to,
+      // and what is after it as long as the tree guessed.
+      final window = state.rowExtents.fold(0.0, (sum, h) => sum + h);
+      _set(content, 'height', null);
+      _style(
+        content,
+        'padding-bottom',
+        '${math.max(0, total - top - window) + (edges?.$4 ?? 0)}px',
+      );
+    } else {
+      _style(content, 'height', '${total + state.padTop + (edges?.$4 ?? 0)}px');
+      _set(content, 'padding-bottom', null);
+    }
     _style(content, 'padding-top', '${top + state.padTop}px');
     _set(content, 'padding-left', edges == null ? null : '${edges.$1}px');
     _set(content, 'padding-right', edges == null ? null : '${edges.$3}px');
@@ -3032,14 +3048,41 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final state = _lazyLists[viewport];
     final extent = state?.extent ?? 0;
     final rowExtents = state?.rowExtents ?? const <double>[];
+    final measured = state?.measureId != null;
     for (var i = 0; i < content.children.length; i++) {
       final row = content.children.item(i)!;
       final height = i < rowExtents.length ? rowExtents[i] : extent;
-      _style(row, 'height', '${height}px');
+      // Measured, a row is the height it makes itself - the row is its own
+      // node's element, which may say one.
+      if (!measured) _style(row, 'height', '${height}px');
       _style(row, 'flex', '0 0 auto');
       _style(row, 'align-self', 'stretch');
       _style(row, 'box-sizing', 'border-box');
     }
+    if (measured) Timer.run(() => _measureLazyRows(viewport, content));
+  }
+
+  /// Sends the heights the rows of [viewport] came to, when any differs
+  /// from the one the tree guessed.
+  void _measureLazyRows(web.Element viewport, web.Element content) {
+    final state = _lazyLists[viewport];
+    final eventId = state?.measureId;
+    if (state == null || eventId == null || !viewport.isConnected) return;
+    final heights = <double>[];
+    var differs = false;
+    for (var i = 0; i < content.children.length; i++) {
+      final height = content.children.item(i)!.getBoundingClientRect().height;
+      heights.add(height);
+      if (i >= state.rowExtents.length ||
+          (state.rowExtents[i] - height).abs() > 0.5) {
+        differs = true;
+      }
+    }
+    if (!differs || heights.isEmpty) return;
+    final said = '${state.start}:${heights.map((h) => h.round()).join(',')}';
+    if (said == state.sentHeights) return;
+    state.sentHeights = said;
+    handleEvent(eventId, {'start': state.start, 'heights': heights});
   }
 
   /// Sends the rows now visible, when they differ from the last ones sent.
@@ -4558,6 +4601,27 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     return value(at.length - 1);
   }
 
+  /// The colour [values] (`#aarrggbb`) has at [offset], mixed channel by
+  /// channel between the stops either side, as `#aarrggbb`.
+  static String _alongColor(List<double> at, List<Object?> values, double offset) {
+    int argb(int i) => int.parse((values[i] as String).substring(1), radix: 16);
+    String hex(int v) => '#${v.toRadixString(16).padLeft(8, '0')}';
+    if (offset <= at.first) return hex(argb(0));
+    for (var i = 1; i < at.length; i++) {
+      if (offset <= at[i]) {
+        final t = (offset - at[i - 1]) / (at[i] - at[i - 1]);
+        final a = argb(i - 1), b = argb(i);
+        var mixed = 0;
+        for (final shift in const [24, 16, 8, 0]) {
+          final x = (a >> shift) & 0xff, y = (b >> shift) & 0xff;
+          mixed |= ((x + (y - x) * t).round() & 0xff) << shift;
+        }
+        return hex(mixed);
+      }
+    }
+    return hex(argb(at.length - 1));
+  }
+
   /// Puts [box] where its table ([link]) says for [offset].
   void _applyLink(web.Element box, Map link, double offset) {
     final at = [for (final v in link['at'] as List) (v as num).toDouble()];
@@ -4570,6 +4634,10 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
     final opacity = valueOf('opacity');
     if (opacity != null) _style(box, 'opacity', '$opacity');
+    final colors = link['color'];
+    if (colors is List && colors.length == at.length) {
+      _style(box, 'background-color', cssColor(_alongColor(at, colors, offset)));
+    }
     final width = valueOf('width');
     if (width != null) _style(box, 'width', '${width}px');
     final height = valueOf('height');
@@ -6784,6 +6852,12 @@ class _LazyListState {
   /// The room above the first row, which a scroll offset includes and a row
   /// index does not.
   double padTop = 0;
+
+  /// For rows that say no height of their own: where to send what they
+  /// measure, the first row held, and what was sent last.
+  String? measureId;
+  int start = 0;
+  String? sentHeights;
 
   /// What the pull-to-refresh gesture reads and remembers.
   final _NodeState refresh = _NodeState(const {});

@@ -65,6 +65,41 @@ class RowExtents {
   }
 }
 
+/// The heights a renderer measured, for a list whose rows say none of their
+/// own: a row not measured yet is as tall as the ones that have been, on
+/// average - [estimate] before any has.
+///
+/// The renderer lays the rows it holds out at their own heights, one under
+/// another, so the screen is right at once; what it sends back is for the
+/// sums here - where a scroll offset lands, how long the whole list is.
+class MeasuredRows {
+  MeasuredRows({this.estimate = 56});
+  final double estimate;
+  final Map<int, double> _heights = {};
+  double _sum = 0;
+
+  double get _average => _heights.isEmpty ? estimate : _sum / _heights.length;
+
+  /// How tall row [index] is, or is guessed to be.
+  double extentOf(int index) => _heights[index] ?? _average;
+
+  /// Takes [heights] measured for the rows from [start], and says whether
+  /// any was not already known.
+  bool take(int start, List<double> heights) {
+    var changed = false;
+    for (var i = 0; i < heights.length; i++) {
+      final height = heights[i];
+      if (!height.isFinite || height < 0) continue;
+      final before = _heights[start + i];
+      if (before != null && (before - height).abs() < 0.5) continue;
+      _sum += height - (before ?? 0);
+      _heights[start + i] = height;
+      changed = true;
+    }
+    return changed;
+  }
+}
+
 class LazyListWindow {
   LazyListWindow({int initialCount = 30}) : _end = initialCount;
 

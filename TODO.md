@@ -2148,8 +2148,12 @@ notice.
    not tried on a phone, which cannot be given two fingers from here) and `CustomScrollView` with `SliverList`,
    `SliverGrid`, `SliverToBoxAdapter`, `SliverPadding`, `SliverAppBar`,
    `SliverPersistentHeader`, `SliverFillRemaining` and a few more (a sliver
-   is the boxes it would lay out: nothing is lazy, nothing collapses and a
-   floating bar scrolls away; a bar or header pinned at the very top is held
+   is the boxes it would lay out, and a floating bar scrolls away; since
+   2026-10-18 a builder `SliverList` among them is windowed, its rows
+   measured as they come, and a pinned `SliverAppBar` taller than its
+   toolbar collapses as the view scrolls, its `FlexibleSpaceBar` drifting,
+   fading and shrinking its title, each frame - seen on an iOS simulator,
+   an Android emulator and in Chrome; a bar or header pinned at the very top is held
    above the scroller since 2026-10-13, and one pinned further down sticks at
    the top once scrolled past since 2026-10-14 - under the ones before it,
    as Flutter stacks them, since 2026-10-15). Seen on an iOS simulator, an Android emulator and in
@@ -2327,11 +2331,17 @@ notice.
       given a node that names the scroller it follows and how
       (`scrollLinked: {source, from, to, prop}`), which the renderer applies
       on its own scroll callback without asking Dart.
-    - *Lazy slivers.* A `SliverList` with a builder becoming a windowed
+    - ~~*Lazy slivers.*~~ Done on 2026-10-18 another way: a list of rows of
+      no stated height is one windowed `LazyList` whose rows the renderer
+      lays out at their own heights and measures (`measureEventId`), the
+      rows not yet measured as tall as the average of those that were; a
+      `CustomScrollView`'s slivers are the rows of one such list. The note
+      as written: A `SliverList` with a builder becoming a windowed
       `LazyList` section inside one scroller: the `LazyList` node's window
       protocol (`range` events, `itemExtent`) with a scroller-wide offset
       for each section, so the renderers lay several out in one scroll view.
-    - *A `WidgetSpan` that stays live on iOS and Android* (§6.3 item 4): the
+    - ~~*A `WidgetSpan` that stays live on iOS and Android*~~ Done on
+      2026-10-18, as written (§6.3 item 4): the
       run keeps its room in the line as now, and the widget's real view is
       laid over the text at the run's place, worked out from the layout the
       label already has (`NSLayoutManager` on iOS, `Layout` on Android) each
@@ -2385,9 +2395,12 @@ event, and then the same work in four renderers.
    in the line (a picture of it on iOS and Android, where a tap on it is a
    tap on the first thing in it that takes one), and `SelectableText.rich`
    is here with its links tappable on iOS as well - seen on an iOS
-   simulator, an Android emulator and in Chrome. Still open: a `WidgetSpan`
-   on iOS and Android is a picture taken as it first lays out, so a network
-   image in one shows nothing and a control in one does not change.
+   simulator, an Android emulator and in Chrome. ~~A `WidgetSpan` on iOS and
+   Android is a picture taken as it first lays out~~ - since 2026-10-18 it
+   is the widget's own view, laid over the room the text keeps for it each
+   time the text lays out: a network image in one loads, and a button or a
+   checkbox in one answers and changes; seen on an iOS simulator and an
+   Android emulator.
 5. ~~**Only the screen has a direction.**~~ Since 2026-10-16 a
    `Directionality` that reads the other way from what is around it puts
    `layoutDirection` on its child's node, and the platform's own controls
@@ -2558,10 +2571,11 @@ All of the above was an emulator. §6.5 item 8 is the phone.
    for every glyph (`material_glyphs.dart`), and a release APK built
    without the flag drew every icon natively on an Android emulator
    (INTEGRATION.md §5.2).
-7. **The gen-l10n bridge is written per app.** Ten lines, the same ten in
-   two of the three apps, and mobile-only because the generated code imports
-   Flutter. A documented pattern today (INTEGRATION.md §8.4); a candidate for
-   a small generator or a companion package.
+7. ~~**The gen-l10n bridge is written per app.**~~ Since 2026-10-18 it is
+   `GeneratedL10n` (`package:dart_not_native/gen_l10n.dart`): the app keeps
+   two declarations - the lookup with its fallback, and its `context.l10n`
+   - and the matching, the cache and the fallback are the library's.
+   Mobile-only still, because the generated code imports Flutter.
 8. **Run the device checks on a phone again.** The physical-device evidence
    (2026-09-24) is all from before this work. `tool/device_check.sh android`
    on the phone. An emulator ran it on 2026-10-10 (Android 17), with the
@@ -2575,8 +2589,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2770 tests
-  (1692 in the package, 393 for the example apps and goldens, 642 in the browser,
+  contracts, the plugin system and the design system are covered by 2782 tests
+  (1704 in the package, 393 for the example apps and goldens, 642 in the browser,
   43 in the bloc package,
   counted 2026-10-18), plus 20 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, eighteen the native

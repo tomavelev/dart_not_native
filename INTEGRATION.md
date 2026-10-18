@@ -740,34 +740,30 @@ generated `AppLocalizations` classes. What goes is the lookup: the generated
 `AppLocalizations.of(context)` and delegate are written against Flutter's
 `BuildContext` and `Localizations`, in a file gen-l10n owns, so their import
 cannot be changed by hand. The generated classes are plain objects, though,
-and gen-l10n emits a top-level `lookupAppLocalizations(Locale)`; a ten-line
-bridge reads the locale the framework's `MaterialApp` is showing and looks
-the strings up directly:
+and gen-l10n emits a top-level `lookupAppLocalizations(Locale)`;
+`GeneratedL10n` (`package:dart_not_native/gen_l10n.dart`) reads the locale
+the framework's `MaterialApp` is showing and looks the strings up directly -
+matched by language, script and country, each looked up once:
 
 ```dart
 // lib/l10n/l10n.dart - hand-written; gen-l10n leaves it alone
 import 'dart:ui' as ui;
 
+import 'package:dart_not_native/gen_l10n.dart';
 import 'package:dart_not_native/widgets.dart';
 
 import 'app_localizations.dart';
 
-const ui.Locale fallbackLocale = ui.Locale('en');
-final Map<String, AppLocalizations> _cache = {};
-
-/// The generated strings for [locale]; the fallback's for a language the app
-/// does not ship (`lookupAppLocalizations` throws for one).
-AppLocalizations lookupL10n(Locale locale) {
-  final code = locale.languageCode;
-  return _cache[code] ??= lookupAppLocalizations(
-    AppLocalizations.supportedLocales.any((l) => l.languageCode == code)
-        ? ui.Locale(code)
-        : fallbackLocale,
-  );
-}
+/// The generated strings, for the locale the app shows; English for a
+/// language it does not ship (`lookupAppLocalizations` throws for one).
+final appL10n = GeneratedL10n(
+  lookupAppLocalizations,
+  supportedLocales: AppLocalizations.supportedLocales,
+  fallback: const ui.Locale('en'),
+);
 
 extension AppL10n on BuildContext {
-  AppLocalizations get l10n => lookupL10n(Localizations.localeOf(this));
+  AppLocalizations get l10n => appL10n.of(this);
 }
 ```
 

@@ -259,6 +259,69 @@ time from then on, as in Flutter: a tree each frame, where before it saw the
 run's two ends. The framework's own listeners - the transitions', an
 `AnimatedBuilder`'s - still hear a run start and end.
 
+### A pinned `SliverAppBar` collapses
+
+A pinned `SliverAppBar` first among the slivers and taller than its toolbar
+- an `expandedHeight` - collapses as the view scrolls, down to its toolbar
+and `bottom`, over the content rather than above it, so the content scrolls
+under it with the finger. A `FlexibleSpaceBar` in it does what Flutter's
+does on the way (`FlexibleSpaceBarSettings`): its background drifts up a
+quarter of the way (`CollapseMode.parallax`, or with the bar for `pin`) and
+fades out over the last toolbar's height, and its title shrinks from
+`expandedTitleScale` against its start. It is built from the offset, so it
+moves each frame (`scrollLink`). Seen on an iOS simulator, an Android
+emulator and in Chrome.
+
+### Long lists of rows of their own heights are windowed
+
+A `ListView.builder` or `ListView.separated` of more than 60 rows that say no
+height of their own (no `itemExtent`) is built a window at a time, as one
+with a height has been: the renderer lays the rows it holds out at their own
+heights, one under another, and says what they came to (`measureEventId` on
+the `LazyList` node); a row not measured yet is as tall as those that have
+been, on average, and the list's length and where an offset lands are
+worked out from those. A `CustomScrollView` whose slivers include a builder
+`SliverList` (or `SliverFixedExtentList`) is one such list, the other
+slivers rows of it - unless one is pinned part-way down. A list of a
+thousand rows of five heights scrolled down and back on an iOS simulator,
+an Android emulator and in Chrome, each row at its height with no gap.
+Still: a row whose height changes after it is laid out - an image that
+loads - is measured again on iOS only when its width changes, and a jump to
+a far offset lands by the guesses.
+
+### A widget in a line of text is live on iOS and Android
+
+A `WidgetSpan` is its widget's own view, laid over the room the text keeps
+for it each time the text lays out - from `NSLayoutManager` on iOS, from
+the text's `Layout` on Android, where a text with widgets in it is a frame
+holding the text and them. A network image in one loads, and a button or a
+checkbox in one answers and changes; before, it was a picture of the widget
+as it first laid out. Seen on an iOS simulator and an Android emulator.
+
+### Intervals behind curves, and implicit animations with one
+
+An `Interval` behind another curve - `CurvedAnimation(parent:
+CurvedAnimation(...), curve: Interval(...))`, or a `CurveTween` - cuts a
+controller's run where that curve gets to the interval's ends. An implicit
+animation given an `Interval` - `AnimatedOpacity(curve: Interval(0.5, 1))` -
+holds what it shows until the interval starts, and then moves over its share
+of the duration along the interval's own curve.
+
+### A colour follows the scroll offset too
+
+A box's colour built from `ScrollController.offset` goes from stop to stop
+of its table each frame, mixed channel by channel, on every renderer -
+seen on an iOS simulator and an Android emulator, tested in the browser
+and the Flutter host.
+
+### `GeneratedL10n`
+
+`package:dart_not_native/gen_l10n.dart` looks gen-l10n's strings up for the
+locale an app shows - matched by language, script and country, each looked
+up once, a language the app does not ship given the fallback it names - so
+the bridge an app kept beside the generated file is two declarations
+(INTEGRATION.md §8.4). Mobile-only, as the generated code is.
+
 ### What is built from a scroll offset moves with the finger
 
 A header that shrinks as the list scrolls, a title that fades in, a picture

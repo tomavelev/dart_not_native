@@ -244,6 +244,43 @@ void main() {
     expect(seen.every((v) => v < 0.5), isTrue, reason: '$seen');
   });
 
+  test('an interval behind another curve is cut where that curve gets there',
+      () async {
+    final controller = AnimationController(
+      vsync: const _NoTicks(),
+      duration: const Duration(milliseconds: 200),
+    );
+    final app = AppTester.widget(
+      MaterialApp(
+        home: Builder(
+          builder: (_) => FadeTransition(
+            opacity: CurvedAnimation(
+              parent: CurvedAnimation(parent: controller, curve: Curves.easeIn),
+              curve: const Interval(0.5, 1),
+            ),
+            child: const Text('late'),
+          ),
+        ),
+      ),
+    );
+    controller.forward();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    final node = app.ofType('AnimatedOpacity').single;
+    // Not begun: the first leg is the time easeIn takes to get half way.
+    expect(node.props['opacity'], 0);
+    var low = 0.0, high = 1.0;
+    for (var i = 0; i < 30; i++) {
+      final middle = (low + high) / 2;
+      if (Curves.easeIn.transform(middle) < 0.5) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    final half = low;
+    expect(node.props['durationMs'], closeTo(200 * half, 2));
+  });
+
   test('half the range takes half the time; a curve travels with it', () async {
     final key = GlobalKey<_FadingState>();
     final app = AppTester.widget(

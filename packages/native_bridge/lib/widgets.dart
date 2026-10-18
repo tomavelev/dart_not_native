@@ -297,6 +297,12 @@ class _AnimationRun {
   /// overtaken ends nothing.
   int ask = 0;
 
+  /// The props on screen, and - while an [Interval] that starts late has
+  /// not started - the ones held there, with the timer that lets them go.
+  Map<String, dynamic>? shown;
+  Map<String, dynamic>? heldFrom;
+  Timer? hold;
+
   void end(int answered) {
     if (answered != ask || timer == null) return;
     timer!.cancel();
@@ -959,26 +965,68 @@ class _Owner {
     WidgetNode node,
     Object? target,
     Duration duration,
-    VoidCallback? onEnd,
-  ) {
+    VoidCallback? onEnd, {
+    Curve? curve,
+  }) {
     // A page only being kept alive is not animating anything.
     if (_hidden > 0) return node;
     final place = _positionId('animation');
     _animationsUsed.add(place);
     final run = _animations[place];
     if (run == null) {
-      _animations[place] = _AnimationRun(target)..onEnd = onEnd;
+      _animations[place] = _AnimationRun(target)
+        ..onEnd = onEnd
+        ..shown = node.props;
       return node;
     }
     // The callback of the build on screen, not of the one that started it.
     run.onEnd = onEnd;
+    final interval = curve is Interval ? curve : null;
     if (run.target != target) {
       run.target = target;
       run.ask++;
       run.timer?.cancel();
       final ask = run.ask;
       run.timer = Timer(duration + _endGrace, () => run.end(ask));
+      // An interval that starts late: what is on screen stays until then.
+      if (interval != null && interval.begin > 0 && run.shown != null) {
+        run.heldFrom ??= run.shown;
+        run.hold?.cancel();
+        run.hold = Timer(duration * interval.begin, () {
+          run.heldFrom = null;
+          run.hold = null;
+          _requestRebuild();
+        });
+      }
     }
+    final held = run.heldFrom;
+    if (held != null) {
+      node = WidgetNode(
+        type: node.type,
+        props: {
+          ...node.props,
+          for (final entry in held.entries)
+            if (_animatedProp(entry.key)) entry.key: entry.value,
+          for (final key in node.props.keys)
+            if (_animatedProp(key) && !held.containsKey(key)) key: null,
+        }..removeWhere((key, value) => value == null),
+        children: node.children,
+      );
+    } else if (interval != null) {
+      // Moving over its part of the duration, along its own curve.
+      final share = (interval.end - interval.begin).clamp(0.0, 1.0);
+      int? scaled(Object? ms) => ms is num ? (ms * share).round() : null;
+      node = WidgetNode(
+        type: node.type,
+        props: {
+          ...node.props,
+          if (scaled(node.props['durationMs']) case final ms?) 'durationMs': ms,
+          if (scaled(node.props['animateMs']) case final ms?) 'animateMs': ms,
+        },
+        children: node.children,
+      );
+    }
+    run.shown = node.props;
     if (run.timer == null) return node;
     final bindings = EventBindings.current;
     if (bindings == null) return node;
@@ -993,6 +1041,15 @@ class _Owner {
       children: node.children,
     );
   }
+
+  /// Whether [key] is one of a node's looks, which an animation moves -
+  /// rather than how, or what it answers to.
+  static bool _animatedProp(String key) =>
+      !key.endsWith('EventId') &&
+      !key.endsWith('Ms') &&
+      key != 'id' &&
+      key != 'curve' &&
+      key != 'endAsk';
 
   /// How long past its duration an animation is waited for before it is
   /// taken to have ended without a word from the renderer.

@@ -37,6 +37,7 @@ void main() {
           'height': [120.0, 56.0],
           'opacity': [0.0, 1.0],
           'dy': [0.0, -10.0],
+          'color': ['#ff000000', '#ff0000ff'],
         },
       },
       children: [UIBuilder.text('title')],
@@ -65,6 +66,8 @@ void main() {
     expect(box.style.getPropertyValue('height'), '88px');
     expect(box.style.getPropertyValue('opacity'), '0.5');
     expect(box.style.getPropertyValue('transform'), contains('-5px'));
+    // Half way from black to blue.
+    expect(box.style.getPropertyValue('background-color'), 'rgb(0, 0, 128)');
 
     viewport.scrollTop = 200;
     viewport.dispatchEvent(web.Event('scroll'));

@@ -2017,6 +2017,27 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     return value(at.length - 1);
   }
 
+  /// The colour [values] (`#aarrggbb`) has at [offset], mixed channel by
+  /// channel between the stops either side, as `#aarrggbb`.
+  static String _alongColor(List<double> at, List<Object?> values, double offset) {
+    int argb(int i) => int.parse((values[i] as String).substring(1), radix: 16);
+    String hex(int v) => '#${v.toRadixString(16).padLeft(8, '0')}';
+    if (offset <= at.first) return hex(argb(0));
+    for (var i = 1; i < at.length; i++) {
+      if (offset <= at[i]) {
+        final t = (offset - at[i - 1]) / (at[i] - at[i - 1]);
+        final a = argb(i - 1), b = argb(i);
+        var mixed = 0;
+        for (final shift in const [24, 16, 8, 0]) {
+          final x = (a >> shift) & 0xff, y = (b >> shift) & 0xff;
+          mixed |= ((x + (y - x) * t).round() & 0xff) << shift;
+        }
+        return hex(mixed);
+      }
+    }
+    return hex(argb(at.length - 1));
+  }
+
   /// [p] with what its table ([link]) says for [offset] in place of its own.
   static Map<String, dynamic> _linkedProps(
     Map<String, dynamic> p,
@@ -2032,6 +2053,10 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
 
     final out = Map<String, dynamic>.of(p)..remove('scrollLink');
+    final colors = link['color'];
+    if (colors is List && colors.length == at.length) {
+      out['color'] = _alongColor(at, colors, offset);
+    }
     for (final name in const ['opacity', 'width', 'height']) {
       final value = valueOf(name);
       if (value != null) out[name] = value;
@@ -4147,6 +4172,13 @@ class _NodeLazyListState extends State<_NodeLazyList> {
           // it holds placed at the offset the tree gave them. A ListView
           // cannot do this - it would have to measure the rows it does not
           // have - so the scrolling is a plain one over a sized column.
+          : widget.props['measureEventId'] is String
+          ? SingleChildScrollView(
+              controller: _controller,
+              padding: _padding,
+              physics: physics,
+              child: _measuredRows(context, rows, rowExtents, start),
+            )
           : SingleChildScrollView(
               controller: _controller,
               padding: _padding,
@@ -4187,6 +4219,58 @@ class _NodeLazyListState extends State<_NodeLazyList> {
       onRefresh: _onRefresh,
       child: reported,
     );
+  }
+
+  /// The rows of a list whose rows say no height of their own: each at its
+  /// own, one under another from where the window starts, with the rows
+  /// after it held at the heights the tree guessed. What they turn out to be
+  /// is sent back after the frame, for the ones that differ.
+  Widget _measuredRows(
+    BuildContext context,
+    List<WidgetNode> rows,
+    List<double> guessed,
+    int start,
+  ) {
+    final before = FlutterUIRenderer._double(widget.props['startOffset']) ?? 0;
+    final total = FlutterUIRenderer._double(widget.props['totalExtent']) ?? 0;
+    final window = guessed.fold(0.0, (sum, h) => sum + h);
+    _rowKeys.removeWhere((index, _) => index < start || index >= start + rows.length);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _sendHeights(start, guessed));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: before),
+        for (var i = 0; i < rows.length; i++)
+          KeyedSubtree(
+            key: _rowKeys.putIfAbsent(start + i, GlobalKey.new),
+            child: widget.renderer.buildNode(rows[i], context),
+          ),
+        SizedBox(height: math.max(0, total - before - window)),
+      ],
+    );
+  }
+
+  final Map<int, GlobalKey> _rowKeys = {};
+  String? _sentHeights;
+
+  void _sendHeights(int start, List<double> guessed) {
+    if (!mounted) return;
+    final eventId = widget.props['measureEventId'];
+    if (eventId is! String) return;
+    final heights = <double>[];
+    var differs = false;
+    for (var i = 0; ; i++) {
+      final box = _rowKeys[start + i]?.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) break;
+      final height = box.size.height;
+      heights.add(height);
+      if (i >= guessed.length || (guessed[i] - height).abs() > 0.5) differs = true;
+    }
+    if (!differs || heights.isEmpty) return;
+    final said = '$start:${heights.map((h) => h.round()).join(',')}';
+    if (said == _sentHeights) return;
+    _sentHeights = said;
+    widget.renderer.handleEvent(eventId, {'start': start, 'heights': heights});
   }
 
   final Stopwatch _sinceScrollReport = Stopwatch();

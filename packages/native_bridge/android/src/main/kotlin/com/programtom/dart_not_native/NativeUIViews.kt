@@ -2510,6 +2510,54 @@ internal class SteadyDrag(private val view: View) {
     }
 }
 
+/**
+ * The rows a windowed list holds when they say no height of their own: each
+ * laid out at its own height, one under another from [startOffset], with
+ * [rest] below them for the rows the list does not hold. What they come to,
+ * where any differs from what the tree guessed ([guessed]), goes to
+ * [onMeasured] after the layout - all in pixels.
+ */
+internal class MeasuredRowsLayout(context: Context) : FrameLayout(context) {
+    var startOffset = 0
+    var rest = 0
+    var guessed: List<Int> = emptyList()
+    var onMeasured: ((List<Int>) -> Unit)? = null
+    private var sent: List<Int>? = null
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val width = MeasureSpec.getSize(widthMeasureSpec)
+        val inner = max(0, width - paddingLeft - paddingRight)
+        var total = paddingTop + startOffset
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            child.measure(
+                MeasureSpec.makeMeasureSpec(inner, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+            )
+            total += child.measuredHeight
+        }
+        setMeasuredDimension(width, total + rest + paddingBottom)
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        var top = paddingTop + startOffset
+        val heights = ArrayList<Int>(childCount)
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            child.layout(paddingLeft, top, paddingLeft + child.measuredWidth, top + child.measuredHeight)
+            top += child.measuredHeight
+            heights += child.measuredHeight
+        }
+        val differs = heights.indices.any {
+            it >= guessed.size || kotlin.math.abs(heights[it] - guessed[it]) > 1
+        }
+        if (differs && heights.isNotEmpty() && heights != sent) {
+            sent = heights
+            post { onMeasured?.invoke(heights) }
+        }
+    }
+}
+
 /** The vertical scroller behind a `Scroll`. Nested, so it works under pull-to-refresh. */
 internal class VerticalScroller(context: Context) : NestedScrollView(context) {
     val memory = ScrollMemory(this, horizontal = false)

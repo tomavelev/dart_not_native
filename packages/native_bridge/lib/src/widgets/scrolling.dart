@@ -461,6 +461,14 @@ WidgetNode _followingScroll(_Owner owner, WidgetNode Function() render) {
   return linked;
 }
 
+/// [color] - a protocol colour, `#rrggbb` or `#aarrggbb` - as `#aarrggbb`.
+String? _argb(Object? color) {
+  if (color is! String || !color.startsWith('#')) return null;
+  final digits = color.substring(1);
+  if (digits.length == 6) return '#ff$digits';
+  return digits.length == 8 ? color : null;
+}
+
 /// The props a box's table can follow, for every box in [node] in order -
 /// what the stops are compared by.
 List<double>? _followedValues(WidgetNode node) {
@@ -479,6 +487,12 @@ List<double>? _followedValues(WidgetNode node) {
         ..add(number(moved?['dy'], 0))
         ..add(number(moved?['scale'], 1))
         ..add(number(moved?['rotate'], 0));
+      final argb = int.tryParse(_argb(p['color'])?.substring(1) ?? '', radix: 16);
+      if (argb != null) {
+        out.addAll([
+          for (final shift in const [24, 16, 8, 0]) ((argb >> shift) & 0xff).toDouble(),
+        ]);
+      }
     }
     for (final child in n.children ?? const <WidgetNode>[]) {
       walk(child);
@@ -517,7 +531,7 @@ WidgetNode? _linkedTo(
       if (linked != null) (children ??= List.of(kids))[i] = linked;
     }
   }
-  final table = <String, List<double>>{};
+  final table = <String, List<Object>>{};
   if (node.type == 'Box') {
     void follow(String name, double? Function(Map<String, dynamic>) read) {
       final values = <double>[];
@@ -535,6 +549,11 @@ WidgetNode? _linkedTo(
     Map? moved(Map<String, dynamic> p) =>
         p['transform'] is Map ? p['transform'] as Map : null;
     follow('opacity', (p) => number(p['opacity']) ?? 1);
+    // A colour goes from stop to stop too, as `#aarrggbb`.
+    final colors = [for (final sample in samples) _argb(sample.props['color'])];
+    if (!colors.contains(null) && colors.toSet().length > 1) {
+      table['color'] = [for (final c in colors) c!];
+    }
     follow('width', (p) => number(p['width']));
     follow('height', (p) => number(p['height']));
     // A whole matrix is not taken apart.
@@ -886,23 +905,40 @@ class ListView extends Widget {
 
   static const int _unboundedLimit = 500;
 
+  /// How many rows of no stated height a list has before only those near
+  /// the screen are built.
+  static const int _measuredFrom = 60;
+
   @override
   WidgetNode _render(_Owner owner) {
     final builder = itemBuilder;
     final count = itemCount;
     final vertical = scrollDirection == Axis.vertical;
+    final sized = itemExtent != null || itemExtentBuilder != null;
     final windowed =
         builder != null &&
-        separatorBuilder == null &&
         count != null &&
-        (itemExtent != null || itemExtentBuilder != null) &&
+        // Rows of no stated height are measured as they come; a short list
+        // of them is built whole, as it always was.
+        (sized ? separatorBuilder == null : count > _measuredFrom) &&
         vertical &&
         !shrinkWrap &&
         !reverse &&
         !(physics?._never ?? false) &&
         owner._scrollDepth == 0 &&
         !owner._unboundedHeight;
-    if (windowed) return _renderWindowed(owner, builder, count);
+    if (windowed) {
+      final separator = separatorBuilder;
+      if (separator == null) return _renderWindowed(owner, builder, count);
+      // A row, then a separator, and so on: twice as many, less one.
+      return _renderWindowed(
+        owner,
+        (context, index) => index.isEven
+            ? builder(context, index ~/ 2)
+            : separator(context, index ~/ 2),
+        count * 2 - 1,
+      );
+    }
 
     return _scroller(
       owner,
@@ -1015,6 +1051,7 @@ class ListView extends Widget {
           itemExtentBuilder: extentBuilder == null
               ? null
               : (index) => extentBuilder(index, dimensions) ?? 0,
+          measured: extent == null && extentBuilder == null,
           itemBuilder: (index) => owner.inSlot(index, () {
             final row =
                 builder(owner._context(), index) ?? const SizedBox.shrink();

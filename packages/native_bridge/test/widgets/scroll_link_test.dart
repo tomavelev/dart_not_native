@@ -117,6 +117,52 @@ void main() {
     });
   }
 
+  test('a colour that changes with the offset goes stop to stop', () async {
+    final controller = ScrollController();
+    final app = AppTester.widget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              AnimatedBuilder(
+                animation: controller,
+                builder: (_, _) => Container(
+                  height: 40,
+                  color: Color.lerp(
+                    const Color(0xFFFFFFFF),
+                    const Color(0xFF000000),
+                    ((controller.hasClients ? controller.offset : 0) / 100)
+                        .clamp(0.0, 1.0),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: controller,
+                  children: [for (var i = 0; i < 50; i++) Text('$i')],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final scroll = app.nodes.firstWhere((n) => n.props['scrollEventId'] != null);
+    await app.emit(scroll.props['scrollEventId'] as String, {
+      'offset': 10.0,
+      'maxExtent': 2000.0,
+      'viewport': 600.0,
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    final link = app.nodes
+        .map((n) => n.props['scrollLink'])
+        .whereType<Map>()
+        .firstWhere((l) => l.containsKey('color'));
+    final colors = (link['color'] as List).cast<String>();
+    expect(colors.first, '#ffffffff');
+    expect(colors.last, '#ff000000');
+  });
+
   test('a page that does not read the offset carries no table', () async {
     final app = AppTester.widget(
       MaterialApp(

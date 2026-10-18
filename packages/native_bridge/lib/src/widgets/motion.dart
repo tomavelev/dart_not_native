@@ -280,9 +280,18 @@ void _stopAt(Animation<Object?> animation, List<double> breaks) {
       }
     case ReverseAnimation(:final parent):
       _stopAt(parent, [for (final b in breaks) 1 - b]);
-    case CurvedAnimation(:final parent, :final curve)
-        when curve == Curves.linear:
-      _stopAt(parent, breaks);
+    // Curved first, a point of the curve's way is where the curve gets
+    // there: the inverse, found along it.
+    case CurvedAnimation(:final parent, :final curve):
+      _stopAt(parent, [
+        for (final b in breaks)
+          curve == Curves.linear ? b : AnimationController._timeAt(curve, b),
+      ]);
+    case _AnimatedEvaluation(:final parent, :final animatable)
+        when animatable is CurveTween:
+      _stopAt(parent, [
+        for (final b in breaks) AnimationController._timeAt(animatable.curve, b),
+      ]);
     default:
   }
 }
@@ -1291,7 +1300,9 @@ bool _controlled(Animation<Object?> animation) => switch (animation) {
   final curve = _curveIn(animation);
   return (
     duration: run.legs.isEmpty ? run.duration : run.legs[run.leg].length,
-    curve: curve ?? run.curve,
+    // The run is already cut at an interval's ends; each leg goes along the
+    // interval's own curve.
+    curve: (curve is Interval ? curve.curve : curve) ?? run.curve,
   );
 }
 
@@ -1340,6 +1351,7 @@ class AnimatedOpacity extends Widget {
     opacity,
     duration,
     onEnd,
+    curve: curve,
   );
 }
 
@@ -1425,7 +1437,7 @@ class AnimatedContainer extends Widget {
       id: _idOf(key),
     );
     // Everything the box was told to be, which is everything it can move to.
-    return owner._animated(node, node.props.toString(), duration, onEnd);
+    return owner._animated(node, node.props.toString(), duration, onEnd, curve: curve);
   }
 }
 
@@ -1461,6 +1473,7 @@ class AnimatedScale extends Widget {
     scale,
     duration,
     onEnd,
+    curve: curve,
   );
 }
 
@@ -1495,6 +1508,7 @@ class AnimatedRotation extends Widget {
     turns,
     duration,
     onEnd,
+    curve: curve,
   );
 }
 
@@ -1591,6 +1605,7 @@ class _AnimatedSlideState extends State<AnimatedSlide> {
       widget.offset,
       widget.duration,
       widget.onEnd,
+      curve: widget.curve,
     );
   });
 }
@@ -1626,6 +1641,7 @@ class AnimatedPadding extends Widget {
       insets.toString(),
       duration,
       onEnd,
+      curve: curve,
     );
   }
 }
@@ -1666,6 +1682,7 @@ class AnimatedAlign extends Widget {
       at.toString(),
       duration,
       onEnd,
+      curve: curve,
     );
   }
 }

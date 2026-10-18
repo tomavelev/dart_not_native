@@ -304,6 +304,7 @@ Props a node carries for the renderer to act on by itself:
 | `endEventId`, `endAsk` | `Box`, `AnimatedOpacity` | Sends `{ask}` once the move this tree asked for has finished - at once, if nothing moved - and nothing for a move a newer ask overtook. `endAsk` is a number for the change; one already answered is not answered again |
 | `animateSize` | `Box` | With `animateMs`, moves the box from the size it was to the size its child came to - in this render, or by itself between renders - the child laid out once at its new size and clipped to the box on the way when `clip` says so. `sizeEndEventId` beside it is sent `{}` when a move gets there |
 | `sticky` | `Box` in a vertical `Scroll` | Once the content has scrolled past the box, keeps it at the top of the view, over what scrolls beneath, until it scrolls back to its place |
+| `measureEventId` | `LazyList` with `extents` | Its rows say no height of their own: each is laid out at the height it comes to, one under another from `startOffset`, the list's length put right by the difference, and `{start, heights}` is sent for the rows held when any differs from `extents` - the heights the tree guessed, from the rows measured before |
 | `scrollMs`, `scrollCurve` | `Scroll`, `LazyList` with `scrollAnimated` | Travels to `scrollOffset` over that long along that curve, a frame at a time, rather than by the platform's own smooth scroll |
 | `progress` | `Image` with `eventId` | Also sends `{state: 'loading', loaded, expected}` on the way - bytes come, and the bytes there are when the server said - a few times a second |
 | `curve` | any node that animates | One of `linear`, `ease`, `easeIn`, `easeOut`, `easeInOut`, or `cubic(a,b,c,d)` - a cubic Bézier by its control points |
@@ -356,7 +357,9 @@ the top of `CHANGELOG.md`; the ones existing code meets first:
 
 - A `Scaffold`'s body does not scroll.
 - `ListView.builder(itemBuilder: (context, index) => ...)`; windowed when
-  given `itemExtent` or `itemExtentBuilder`.
+  given `itemExtent` or `itemExtentBuilder`, and - its rows measured as they
+  come - with neither once it has more than 60 rows, `ListView.separated`
+  and a `CustomScrollView`'s builder `SliverList`s too.
 - `Theme.of(context)` is a `ThemeData`; the palette is `.appTheme`.
 - `Form`, `FormField` and `TextFormField` are Flutter's; the framework's form
   model is `FormModel`, bound with `ModelTextFormField(field:)`.
@@ -367,6 +370,14 @@ There in name only, so that a screen compiles: `MouseRegion` (no hover).
 runs are played by the renderer, a tree at each end and at each turn of an
 `Interval` or a `TweenSequence`; a listener the app adds hears every frame,
 and one that rebuilds makes the run a tree a frame.
+
+## gen-l10n - `package:dart_not_native/gen_l10n.dart`
+
+`GeneratedL10n(lookupAppLocalizations, supportedLocales:, fallback:)`: the
+strings gen-l10n generated, for the locale the app shows (`of(context)`) or
+any other (`forLocale`), each looked up once, a language the app does not
+ship given `fallback`. It imports `dart:ui`, as the generated code does, so
+it is for the Android and iOS targets.
 
 ## Router - `package:dart_not_native/router.dart`
 

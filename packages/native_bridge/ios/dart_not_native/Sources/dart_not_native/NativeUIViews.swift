@@ -3269,11 +3269,71 @@ func dnnRun(
 /// It knows which of its runs a touch landed on: a UILabel has no links of
 /// its own, so the text is laid out again the way the label lays it out and
 /// the touch is looked up in that.
+/// A widget's own view in a line of text: where in the string its room is,
+/// and the room's bounds against the baseline, as its attachment has them.
+struct DnnInlineView {
+  let location: Int
+  let view: UIView
+  let bounds: CGRect
+}
+
 final class DnnLabel: UILabel {
+  /// The widgets in the text, each laid over the room kept for it - live,
+  /// rather than a picture of what they were.
+  var inline: [DnnInlineView] = [] {
+    didSet {
+      for old in oldValue where !inline.contains(where: { $0.view === old.view }) {
+        old.view.removeFromSuperview()
+      }
+      for item in inline where item.view.superview !== self {
+        item.view.translatesAutoresizingMaskIntoConstraints = true
+        addSubview(item.view)
+      }
+      isUserInteractionEnabled = !links.isEmpty || !inline.isEmpty
+      setNeedsLayout()
+    }
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    guard !inline.isEmpty, let text = attributedText, text.length > 0 else { return }
+    let storage = NSTextStorage(attributedString: text)
+    let layout = NSLayoutManager()
+    let container = NSTextContainer(size: bounds.size)
+    container.lineFragmentPadding = 0
+    container.maximumNumberOfLines = numberOfLines
+    container.lineBreakMode = lineBreakMode
+    layout.addTextContainer(container)
+    storage.addLayoutManager(layout)
+    layout.ensureLayout(for: container)
+    for item in inline where item.location < text.length {
+      let glyph = layout.glyphIndexForCharacter(at: item.location)
+      let line =
+        layout.isValidGlyphIndex(glyph)
+        ? layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil) : .zero
+      // A room cut off by the line limit has no line, and is not on the screen.
+      guard !line.isEmpty else {
+        item.view.isHidden = true
+        continue
+      }
+      let at = layout.location(forGlyphAt: glyph)
+      let height = item.bounds.height
+      // A widget the line was made tall for fills it; a smaller one sits as
+      // its attachment does, risen from the baseline.
+      let y =
+        height >= line.height - 1
+        ? line.midY - height / 2
+        : line.minY + at.y - item.bounds.maxY
+      item.view.isHidden = false
+      item.view.frame = CGRect(
+        x: line.minX + at.x, y: y, width: item.bounds.width, height: height)
+    }
+  }
+
   /// The runs that can be tapped or held.
   var links: [DnnRun] = [] {
     didSet {
-      isUserInteractionEnabled = !links.isEmpty
+      isUserInteractionEnabled = !links.isEmpty || !inline.isEmpty
       if links.isEmpty {
         accessibilityTraits.remove(.link)
       } else {
@@ -3308,8 +3368,20 @@ final class DnnLabel: UILabel {
 
   /// A touch that is on no link is not the label's: whatever is behind it -
   /// a row that can be tapped - gets it, as it would from a plain label.
+  /// A touch on a widget in the text is the widget's: the label's own tap
+  /// and hold leave it alone.
+  override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+    let point = recognizer.location(in: self)
+    if inline.contains(where: { !$0.view.isHidden && $0.view.frame.contains(point) }) {
+      return false
+    }
+    return super.gestureRecognizerShouldBegin(recognizer)
+  }
+
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-    super.point(inside: point, with: event) && link(at: point) != nil
+    super.point(inside: point, with: event)
+      && (link(at: point) != nil
+        || inline.contains { !$0.view.isHidden && $0.view.frame.contains(point) })
   }
 
   @objc private func tapped(_ recognizer: UITapGestureRecognizer) {

@@ -3155,7 +3155,9 @@ class NativeUIRenderer {
 
   /// [node]'s text with every style it states, each span inheriting from the
   /// node whatever it does not state itself.
-  private func richText(_ node: [String: Any]) -> NSAttributedString {
+  private func richText(
+    _ node: [String: Any], inline: ((Int, UIView, CGRect) -> Void)? = nil
+  ) -> NSAttributedString {
     let size = number(node["fontSize"]) ?? 14
     let weight = number(node["fontWeight"]) ?? 400
     let family = node["fontFamily"] as? String
@@ -3183,13 +3185,20 @@ class NativeUIRenderer {
       runs = [["text": node["content"] as? String ?? ""]]
     }
     for span in runs {
-      // A widget in the line: a picture of it, as it first lays out.
-      if let widget = span["widget"] as? [String: Any],
-        let picture = widgetPicture(
-          widget, font: dnnFont(size: size, weight: weight, family: family, italic: italic))
-      {
-        result.append(NSAttributedString(attachment: picture))
-        continue
+      // A widget in the line: given to `inline`, which lays the widget's own
+      // view over the room kept for it; with nowhere to put it, a picture of
+      // it as it first lays out.
+      if let widget = span["widget"] as? [String: Any] {
+        let font = dnnFont(size: size, weight: weight, family: family, italic: italic)
+        if let inline, let (room, view) = widgetRoom(widget, font: font) {
+          inline(result.length, view, room.bounds)
+          result.append(NSAttributedString(attachment: room))
+          continue
+        }
+        if let picture = widgetPicture(widget, font: font) {
+          result.append(NSAttributedString(attachment: picture))
+          continue
+        }
       }
       var attributes = base
       attributes[.font] = dnnFont(
@@ -3214,8 +3223,17 @@ class NativeUIRenderer {
   /// Everything a Text node says, on a label - at build time and on a patch.
   private func applyText(_ label: UILabel, _ node: [String: Any]) {
     if isRichText(node) {
-      label.attributedText = richText(node)
+      if let linked = label as? DnnLabel {
+        var views: [DnnInlineView] = []
+        label.attributedText = richText(node) { location, view, bounds in
+          views.append(DnnInlineView(location: location, view: view, bounds: bounds))
+        }
+        linked.inline = views
+      } else {
+        label.attributedText = richText(node)
+      }
     } else {
+      (label as? DnnLabel)?.inline = []
       label.attributedText = nil
       label.textColor = textColor(node)
       label.font = dnnFont(
@@ -3250,6 +3268,24 @@ class NativeUIRenderer {
       at += length
     }
     return runs
+  }
+
+  /// Room in a line of text set in [font] for [widget] - a blank attachment
+  /// its size, its middle on the middle of the font's height - and the
+  /// widget's own view to lay over it.
+  private func widgetRoom(_ widget: [String: Any], font: UIFont) -> (NSTextAttachment, UIView)? {
+    guard let view = renderWidget(normalized(widget)) else { return nil }
+    let size = view.systemLayoutSizeFitting(
+      UIScreen.main.bounds.size,
+      withHorizontalFittingPriority: .fittingSizeLevel,
+      verticalFittingPriority: .fittingSizeLevel)
+    guard size.width > 0, size.height > 0 else { return nil }
+    let room = NSTextAttachment()
+    room.image = UIGraphicsImageRenderer(size: size).image { _ in }
+    let middle = (font.ascender + font.descender) / 2
+    room.bounds = CGRect(
+      x: 0, y: middle - size.height / 2, width: size.width, height: size.height)
+    return (room, view)
   }
 
   /// A picture of [widget] - a node tree - to stand in a line of text set in
@@ -5041,6 +5077,16 @@ class NativeUIRenderer {
       self?.send(eventId: refreshId, data: [:])
     }
     list.setRefreshing(node["refreshing"] as? Bool ?? false)
+    if let measureId = node["measureEventId"] as? String {
+      list.onMeasured = { [weak self, weak list] heights in
+        guard let list else { return }
+        self?.send(
+          eventId: measureId,
+          data: ["start": list.startIndex, "heights": heights.map { Double($0) }])
+      }
+    } else {
+      list.onMeasured = nil
+    }
     // Where it is in pixels, for a node that asks, as a scroller says it.
     list.onFollow = follower(node)
     if let scrolledId = node["scrollEventId"] as? String {
@@ -5926,6 +5972,25 @@ class NativeUIRenderer {
     var linked = node
     for name in ["opacity", "width", "height"] {
       if let value = valueOf(name) { linked[name] = value }
+    }
+    // A colour, mixed channel by channel between the stops either side.
+    if let colors = link["color"] as? [Any], colors.count == at.count, !at.isEmpty {
+      func argb(_ i: Int) -> UInt32 {
+        UInt32((colors[i] as? String ?? "").dropFirst(), radix: 16) ?? 0
+      }
+      func hex(_ v: UInt32) -> String { String(format: "#%08x", v) }
+      if let i = at.firstIndex(where: { offset <= $0 }), i > 0 {
+        let t = (offset - at[i - 1]) / (at[i] - at[i - 1])
+        let a = argb(i - 1), b = argb(i)
+        var mixed: UInt32 = 0
+        for shift: UInt32 in [24, 16, 8, 0] {
+          let x = Double((a >> shift) & 0xff), y = Double((b >> shift) & 0xff)
+          mixed |= (UInt32((x + (y - x) * t).rounded()) & 0xff) << shift
+        }
+        linked["color"] = hex(mixed)
+      } else {
+        linked["color"] = hex(argb(offset <= at[0] ? 0 : at.count - 1))
+      }
     }
     var moved = node["transform"] as? [String: Any] ?? [:]
     var turned = false
@@ -7570,6 +7635,13 @@ private class LazyListView: UIScrollView {
   var startOffset: CGFloat = 0
   var totalExtent: CGFloat = 0
 
+  /// Set for rows that say no height of their own: each is framed at the
+  /// height it fits to, one under another, and the heights - where any
+  /// differs from `rowExtents`, the tree's guess - are sent here.
+  var onMeasured: (([CGFloat]) -> Void)?
+  private var measuredExtra: CGFloat = 0
+  private var sentHeights: [CGFloat]?
+
   /// The offset to scroll to once laid out; nil after that. With
   /// `restoreTravels` it is scrolled to, not jumped to.
   var restoreOffset: CGFloat?
@@ -7685,6 +7757,10 @@ private class LazyListView: UIScrollView {
     if width != framedWidth {
       framedWidth = width
       frameRows(width: width)
+      if onMeasured != nil {
+        let measured = CGSize(width: width, height: height + measuredExtra)
+        if contentSize != measured { contentSize = measured }
+      }
     }
 
     guard bounds.height > 0 else { return }
@@ -7711,6 +7787,30 @@ private class LazyListView: UIScrollView {
   private func frameRows(width: CGFloat) {
     var top = startOffset
     let inner = max(0, width - padding.left - padding.right)
+    if let onMeasured {
+      var heights: [CGFloat] = []
+      for row in rows {
+        let fitted = row.systemLayoutSizeFitting(
+          CGSize(width: inner, height: UIView.layoutFittingCompressedSize.height),
+          withHorizontalFittingPriority: .required,
+          verticalFittingPriority: .fittingSizeLevel
+        ).height
+        let height = ceil(fitted)
+        row.frame = CGRect(x: padding.left, y: top + padding.top, width: inner, height: height)
+        top += height
+        heights.append(height)
+      }
+      measuredExtra = heights.reduce(0, +) - rowExtents.reduce(0, +)
+      let differs = heights.enumerated().contains { i, h in
+        i >= rowExtents.count || abs(rowExtents[i] - h) > 0.5
+      }
+      if differs, !heights.isEmpty, heights != sentHeights {
+        sentHeights = heights
+        DispatchQueue.main.async { onMeasured(heights) }
+      }
+      return
+    }
+    measuredExtra = 0
     for (offset, row) in rows.enumerated() {
       let height = rowExtents.isEmpty
         ? itemExtent

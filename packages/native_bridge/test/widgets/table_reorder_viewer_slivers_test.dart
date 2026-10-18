@@ -705,7 +705,7 @@ void main() {
         expect(scrolls(app, 'Bar'), isTrue);
       });
 
-      test('a tall one keeps its toolbar and lets the rest go', () {
+      test('a tall one collapses over the content as it scrolls', () async {
         final app = AppTester.widget(
           _app(
             const CustomScrollView(
@@ -723,13 +723,36 @@ void main() {
         );
 
         expect(scrolls(app, 'Bar'), isFalse);
-        expect(scrolls(app, 'Tall title'), isTrue);
-        // The toolbar's height is held; the rest of the 160 scrolls.
+        expect(scrolls(app, 'Tall title'), isFalse);
+        expect(scrolls(app, 'Row'), isTrue);
+        // The content starts below the bar at its full height.
         final scroll = app.ofType('Scroll').single;
         expect(
-          _nodes(scroll).any((node) => node.props['height'] == 104),
+          _nodes(scroll).any((node) => node.props['height'] == 160),
           isTrue,
         );
+        bool tall(double height) => app.nodes.any(
+          (node) =>
+              node.props['height'] == height &&
+              !_nodes(scroll).contains(node),
+        );
+        expect(tall(160), isTrue);
+
+        await app.emit(scroll.props['scrollEventId'] as String, {
+          'offset': 50.0,
+          'maxExtent': 600.0,
+          'viewport': 600.0,
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(tall(110), isTrue);
+        // And it follows the scroller each frame, down to the toolbar.
+        final link = app.nodes
+            .map((node) => node.props['scrollLink'])
+            .whereType<Map>()
+            .firstWhere((link) => link.containsKey('height'));
+        final heights = (link['height'] as List).cast<double>();
+        expect(heights.first, 160);
+        expect(heights.last, 56);
       });
 
       test('a header pinned straight after a pinned bar is held too', () {

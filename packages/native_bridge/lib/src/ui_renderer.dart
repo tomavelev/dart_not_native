@@ -2247,7 +2247,29 @@ class UIBuilder {
     void Function(double offset, double? maxExtent, double? viewport)?
     onScroll,
     String? linkSource,
+    bool measured = false,
   }) {
+    // Rows that say no height of their own are measured by the renderer.
+    String? measureEventId;
+    if (measured) {
+      assert(itemExtent == null && itemExtentBuilder == null);
+      final bindings = EventBindings.required;
+      final rows = bindings.retain(
+        'lazyMeasured:$id',
+        MeasuredRows.new,
+      );
+      itemExtentBuilder = rows.extentOf;
+      measureEventId = bindings.allocate(key: '$id.measure');
+      bindings.on(measureEventId, (data) {
+        final start = (data['start'] as num?)?.toInt();
+        final heights = data['heights'];
+        if (start == null || heights is! List) return;
+        final taken = rows.take(start, [
+          for (final h in heights) (h as num?)?.toDouble() ?? -1,
+        ]);
+        if (taken) bindings.invalidate();
+      });
+    }
     assert(
       (itemExtent == null) != (itemExtentBuilder == null),
       'Give a lazy list one row height (itemExtent) or a height per row '
@@ -2319,6 +2341,9 @@ class UIBuilder {
         if (refresh != null) 'refreshing': refreshing,
         if (scrolled != null) 'scrollEventId': scrolled,
         if (linkSource != null) 'scrollLinkSource': linkSource,
+        // The rows lay out at their own heights, and the renderer sends
+        // `{start, heights}` for those that differ from `extents`.
+        if (measureEventId != null) 'measureEventId': measureEventId,
         // As on a scroll node: jump to this offset when the version is new.
         if (scrollOffset != null) 'scrollOffset': scrollOffset,
         if (scrollOffset != null) 'scrollVersion': scrollVersion ?? 0,

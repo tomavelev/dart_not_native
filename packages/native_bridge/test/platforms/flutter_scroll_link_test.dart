@@ -23,6 +23,7 @@ void main() {
           'at': [0.0, 64.0],
           'height': [120.0, 56.0],
           'opacity': [0.2, 1.0],
+          'color': ['#ff000000', '#ff0000ff'],
         },
       },
       children: [UIBuilder.text('title')],
@@ -71,6 +72,14 @@ void main() {
     await gesture.moveBy(const Offset(0, -200));
     await tester.pump();
     expect(height(), 56);
+    final painted = tester
+        .widgetList<Container>(find.ancestor(
+          of: find.text('title'),
+          matching: find.byType(Container),
+        ))
+        .map((c) => c.color ?? (c.decoration as BoxDecoration?)?.color)
+        .whereType<Color>();
+    expect(painted, contains(const Color(0xFF0000FF)));
     await gesture.up();
   });
 }
