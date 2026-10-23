@@ -2967,6 +2967,14 @@ class FlutterUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
   static Curve _curve(Map<String, dynamic> p) {
     final curve = p['curve'];
+    // A shape no cubic draws - a bounce, an elastic - through its samples.
+    if (curve is String && curve.startsWith('samples(')) {
+      final values = [
+        for (final part in curve.substring(8, curve.length - 1).split(','))
+          double.tryParse(part.trim()) ?? 0,
+      ];
+      if (values.length >= 2) return _SampledCurve(values);
+    }
     if (curve is String && curve.startsWith('cubic(')) {
       final n = curve
           .substring(6, curve.length - 1)
@@ -3224,6 +3232,7 @@ class _NodeTextFieldState extends State<_NodeTextField> {
       enabled: p['enabled'] != false,
       obscureText: p['obscureText'] == true,
       maxLines: p['obscureText'] == true ? 1 : maxLines,
+      cursorColor: FlutterUIRenderer._color(p['cursorColor']),
       textInputAction: advances ? TextInputAction.next : TextInputAction.done,
       keyboardType: switch (p['keyboardType']) {
         'number' => TextInputType.number,
@@ -7012,4 +7021,19 @@ class _FloatingBoxState extends State<_FloatingBox> {
     transform: Matrix4.translationValues(0, -_hidden, 0),
     child: widget.child,
   );
+}
+
+/// A curve drawn through the values a `samples(...)` curve gives at even
+/// steps of time - in a straight line between them, past 1 and below 0 where
+/// they go there.
+class _SampledCurve extends Curve {
+  const _SampledCurve(this.values);
+  final List<double> values;
+
+  @override
+  double transformInternal(double t) {
+    final at = t * (values.length - 1);
+    final i = at.floor().clamp(0, values.length - 2);
+    return values[i] + (values[i + 1] - values[i]) * (at - i);
+  }
 }

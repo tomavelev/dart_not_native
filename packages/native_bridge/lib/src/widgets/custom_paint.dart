@@ -977,7 +977,8 @@ typedef _FontTables = ({
 ///
 /// Child spans are measured with their own font sizes and then drawn as one
 /// run in the root span's style: the `text` command has one style. [maxLines]
-/// limits the measured height; [ellipsis] and [textScaler] are accepted and
+/// limits the measured height, and with [ellipsis] the last line shown ends in
+/// it; [textScaler] is accepted and
 /// ignored.
 class TextPainter {
   TextPainter({
@@ -994,7 +995,8 @@ class TextPainter {
   TextDirection? textDirection;
   int? maxLines;
 
-  /// Accepted and ignored.
+  /// What the last line shows ends in when [maxLines] cuts the text short -
+  /// as much of that line as fits in the width beside it.
   String? ellipsis;
 
   /// Accepted and ignored.
@@ -1017,8 +1019,10 @@ class TextPainter {
 
   Size get size => Size(_width, _height);
 
-  /// Always false: nothing here knows where the real glyphs end.
-  bool get didExceedMaxLines => false;
+  /// Whether the text had more lines than [maxLines] lets it show, by the
+  /// measure.
+  bool get didExceedMaxLines => _exceeded;
+  bool _exceeded = false;
 
   double get minIntrinsicWidth => _width;
   double get maxIntrinsicWidth => _width;
@@ -1264,6 +1268,21 @@ class TextPainter {
     ];
 
     final limit = maxLines;
+    _exceeded = limit != null && limit > 0 && _lines.length > limit;
+    // Cut short: the last line kept ends in the ellipsis, as much of it as
+    // fits in the width with it.
+    final mark = ellipsis;
+    if (_exceeded && mark != null && limit != null) {
+      double widthOf(String text) => text.runes.fold(
+        0.0,
+        (sum, rune) => sum + _advance(rune, rootSize, family: root?.style?.fontFamily),
+      );
+      var kept = _lines[limit - 1];
+      while (kept.isNotEmpty && widthOf(kept) + widthOf(mark) > maxWidth) {
+        kept = String.fromCharCodes(kept.runes.toList()..removeLast());
+      }
+      _lines = [..._lines.take(limit - 1), '${kept.trimRight()}$mark'];
+    }
     final lines = limit != null && limit > 0 && lineHeights.length > limit
         ? lineHeights.sublist(0, limit)
         : lineHeights;

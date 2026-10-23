@@ -272,6 +272,43 @@ fades out over the last toolbar's height, and its title shrinks from
 moves each frame (`scrollLink`). Seen on an iOS simulator, an Android
 emulator and in Chrome.
 
+### A bounce and an elastic are themselves
+
+`Curves.bounceIn`, `bounceOut`, `bounceInOut`, `elasticIn`, `elasticOut`
+and `elasticInOut` were the nearest of the five named paces; each now moves
+as Flutter's does, overshoot and all, with `ElasticInCurve`,
+`ElasticOutCurve` and `ElasticInOutCurve` taking their `period`. A curve no
+cubic draws travels as its shape - `samples(...)`, its value at 64 even
+steps - which the web draws as a CSS `linear()` easing, Android through an
+interpolator, the Flutter host as a curve, and iOS by turning each straight
+animation UIKit makes into keyframes along the samples (numbers, points,
+sizes, rects and transforms). Seen on an iOS simulator, an Android emulator
+and in Chrome: a box that bounces to its width and one that overshoots its
+scale.
+
+### Parameters that were taken and dropped
+
+A `Center` with a `widthFactor` or `heightFactor` is as long as its child
+along that axis, as an `Align` already was. A `DataColumn`'s `columnWidth`
+sizes it: a `FixedColumnWidth` is that many pixels, a `FlexColumnWidth` a
+share against the others' measured widths. A text field's `cursorColor`
+colours its caret - CSS `caret-color`, the field's tint on iOS, the cursor
+drawable on Android from Android 10, Flutter's own in the host - and a
+`TextFormField` hands it on; seen on an iOS simulator and an Android
+emulator. `TextPainter` ends the last line `maxLines`
+leaves in its `ellipsis`, and `didExceedMaxLines` says whether it cut. The
+rest of what the widget layer takes and does not carry is the platform's
+own on purpose - a ripple's colours, a menu's elevation, a dialog's insets -
+and says so where it is declared.
+
+### iOS: a scaffold body that is its own height
+
+A body that is plainly its own height in Flutter - a field, a text, a
+button or a row, through any padding - is drawn at that height on iOS, where
+it was stretched to the bottom of the screen: a field as a page's body was
+as tall as the page. A body that fills, or might, is pinned between the bars
+as before.
+
 ### A floating app bar, one that snaps, and one that stretches
 
 A `SliverAppBar(floating: true)` first among the slivers floats over the

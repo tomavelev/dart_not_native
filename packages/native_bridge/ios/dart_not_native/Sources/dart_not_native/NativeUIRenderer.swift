@@ -2088,6 +2088,10 @@ class NativeUIRenderer {
       return false
     }
     field.isEnabled = !(newNode["enabled"] as? Bool == false)
+    // The caret and the selection in the colour the node says.
+    if newNode["cursorColor"] != nil {
+      field.tintColor = color(newNode["cursorColor"], fallback: themePrimary)
+    }
     // Only when one of them changed: the glyphs at the ends are views, and
     // there is no call to remake them on every keystroke.
     let fieldKeys = [
@@ -2381,6 +2385,25 @@ class NativeUIRenderer {
    */
   /// Whether [node] lays its children out in the space it is given, rather
   /// than sizing itself to them.
+  /// Whether a scaffold body is plainly its own height - through padding, a
+  /// text, a field, a button, a picture, a row or a control, or a box around
+  /// one that does not ask for the height.
+  private func bodyHugs(_ node: [String: Any]) -> Bool {
+    switch node["type"] as? String {
+    case "Padding", "SafeArea":
+      return firstChild(node).map(bodyHugs) ?? true
+    case "Text", "TextField", "Button", "Image", "Icon", "Row", "HStack", "Wrap",
+      "Checkbox", "Toggle", "Radio", "Slider", "Dropdown", "SizedBox":
+      return true
+    case "Box":
+      let expand = node["expand"] as? String
+      if expand == "height" || expand == "both" || node["height"] != nil { return false }
+      return firstChild(node).map(bodyHugs) ?? false
+    default:
+      return false
+    }
+  }
+
   private func fillsViewport(_ node: [String: Any]) -> Bool {
     switch node["type"] as? String {
     case "Center": return true
@@ -2500,8 +2523,11 @@ class NativeUIRenderer {
           body.translatesAutoresizingMaskIntoConstraints = false
           holder.addSubview(body)
           let fill = body.bottomAnchor.constraint(equalTo: holder.bottomAnchor)
-          // Just under the app bar's own height, so the bar wins a tie.
-          fill.priority = UILayoutPriority(739)
+          // Just under the app bar's own height, so the bar wins a tie - and
+          // not at all for a body that is its own height in Flutter, whose
+          // scaffold body is loose: a field in some padding is one line tall,
+          // not the screen.
+          fill.priority = bodyHugs(child) ? UILayoutPriority(1) : UILayoutPriority(739)
           NSLayoutConstraint.activate([
             body.topAnchor.constraint(equalTo: holder.topAnchor),
             body.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
@@ -4213,6 +4239,10 @@ class NativeUIRenderer {
     field.placeholder = node["hint"] as? String ?? node["placeholder"] as? String
     field.text = node["initialValue"] as? String ?? ""
     field.isEnabled = !(node["enabled"] as? Bool == false)
+    // The caret and the selection in the colour the node says.
+    if node["cursorColor"] != nil {
+      field.tintColor = color(node["cursorColor"], fallback: themePrimary)
+    }
     field.isSecureTextEntry = node["obscureText"] as? Bool ?? false
     field.borderStyle = .roundedRect
     // What the return key says. UIKit has no traversal of its own, so what it
@@ -4806,6 +4836,18 @@ class NativeUIRenderer {
     _ node: [String: Any], duration: TimeInterval, options: UIView.AnimationOptions = [],
     animations: @escaping () -> Void, completion: ((Bool) -> Void)? = nil
   ) {
+    // A shape no cubic draws - a bounce, an elastic: UIKit moves it in a
+    // straight line, and each animation that made is then made to go
+    // through the samples instead.
+    if let samples = sampledValues(node["curve"]) {
+      UIView.animate(
+        withDuration: duration, delay: 0, options: options.union(.curveLinear),
+        animations: animations, completion: completion)
+      if let root = rootContainer?.layer {
+        reshape(root, duration: duration, samples: samples)
+      }
+      return
+    }
     if let (one, two) = cubicPoints(node["curve"]) {
       let animator = UIViewPropertyAnimator(
         duration: duration,
@@ -4819,6 +4861,111 @@ class NativeUIRenderer {
     UIView.animate(
       withDuration: duration, delay: 0, options: options.union(curve(node)),
       animations: animations, completion: completion)
+  }
+
+  /// The values of a `samples(...)` curve, or nil for another.
+  private func sampledValues(_ curve: Any?) -> [Double]? {
+    guard let text = curve as? String, text.hasPrefix("samples("), text.hasSuffix(")")
+    else { return nil }
+    let values = text.dropFirst(8).dropLast().split(separator: ",").compactMap {
+      Double($0.trimmingCharacters(in: .whitespaces))
+    }
+    return values.count >= 2 ? values : nil
+  }
+
+  /// Makes each straight animation of [duration] under [layer] - what a
+  /// UIKit animation just added - go through [samples]: keyframes of the
+  /// values it passes on the way, with the same delegate, so it ends as it
+  /// would have. UIKit's own are additive, from the change back to nothing,
+  /// and keep so.
+  private func reshape(_ layer: CALayer, duration: TimeInterval, samples: [Double]) {
+    for key in layer.animationKeys() ?? [] {
+      guard let basic = layer.animation(forKey: key) as? CABasicAnimation,
+        abs(basic.duration - duration) < 0.001,
+        let keyPath = basic.keyPath,
+        let from = basic.fromValue
+      else { continue }
+      let to = basic.toValue ?? (basic.isAdditive ? Self.zero(like: from) : nil)
+      guard let to,
+        let values = Self.along(from: from, to: to, samples: samples)
+      else { continue }
+      let keyframes = CAKeyframeAnimation(keyPath: keyPath)
+      keyframes.values = values
+      keyframes.keyTimes = (0..<samples.count).map {
+        NSNumber(value: Double($0) / Double(samples.count - 1))
+      }
+      keyframes.calculationMode = .linear
+      keyframes.duration = basic.duration
+      keyframes.beginTime = basic.beginTime
+      keyframes.isAdditive = basic.isAdditive
+      keyframes.fillMode = basic.fillMode
+      keyframes.isRemovedOnCompletion = basic.isRemovedOnCompletion
+      keyframes.delegate = basic.delegate
+      layer.add(keyframes, forKey: key)
+    }
+    for sublayer in layer.sublayers ?? [] {
+      reshape(sublayer, duration: duration, samples: samples)
+    }
+  }
+
+  /// The value that is nothing, of [value]'s kind.
+  private static func zero(like value: Any) -> Any? {
+    if value is NSNumber { return NSNumber(value: 0) }
+    guard let value = value as? NSValue else { return nil }
+    switch String(cString: value.objCType) {
+    case String(cString: NSValue(cgPoint: .zero).objCType): return NSValue(cgPoint: .zero)
+    case String(cString: NSValue(cgSize: .zero).objCType): return NSValue(cgSize: .zero)
+    case String(cString: NSValue(cgRect: .zero).objCType): return NSValue(cgRect: .zero)
+    case String(cString: NSValue(caTransform3D: CATransform3DIdentity).objCType):
+      return NSValue(caTransform3D: CATransform3DIdentity)
+    default: return nil
+    }
+  }
+
+  /// The values from [from] to [to] at each of [samples] - numbers, points,
+  /// sizes and rects; nil for a kind that is not mixed so (a transform).
+  private static func along(from: Any, to: Any, samples: [Double]) -> [Any]? {
+    func mix(_ a: CGFloat, _ b: CGFloat, _ t: Double) -> CGFloat { a + (b - a) * CGFloat(t) }
+    if let a = from as? NSNumber, let b = to as? NSNumber {
+      return samples.map { NSNumber(value: Double(mix(CGFloat(a.doubleValue), CGFloat(b.doubleValue), $0))) }
+    }
+    guard let a = from as? NSValue, let b = to as? NSValue,
+      String(cString: a.objCType) == String(cString: b.objCType)
+    else { return nil }
+    switch String(cString: a.objCType) {
+    case String(cString: NSValue(cgPoint: .zero).objCType):
+      let p = a.cgPointValue, q = b.cgPointValue
+      return samples.map { NSValue(cgPoint: CGPoint(x: mix(p.x, q.x, $0), y: mix(p.y, q.y, $0))) }
+    case String(cString: NSValue(cgSize: .zero).objCType):
+      let p = a.cgSizeValue, q = b.cgSizeValue
+      return samples.map {
+        NSValue(cgSize: CGSize(width: mix(p.width, q.width, $0), height: mix(p.height, q.height, $0)))
+      }
+    case String(cString: NSValue(cgRect: .zero).objCType):
+      let p = a.cgRectValue, q = b.cgRectValue
+      return samples.map {
+        NSValue(cgRect: CGRect(
+          x: mix(p.minX, q.minX, $0), y: mix(p.minY, q.minY, $0),
+          width: mix(p.width, q.width, $0), height: mix(p.height, q.height, $0)))
+      }
+    case String(cString: NSValue(caTransform3D: CATransform3DIdentity).objCType):
+      // Entry by entry: right for a scale and a move, near for a small turn.
+      let p = a.caTransform3DValue, q = b.caTransform3DValue
+      return samples.map { t in
+        var m = p
+        m.m11 = mix(p.m11, q.m11, t); m.m12 = mix(p.m12, q.m12, t)
+        m.m13 = mix(p.m13, q.m13, t); m.m14 = mix(p.m14, q.m14, t)
+        m.m21 = mix(p.m21, q.m21, t); m.m22 = mix(p.m22, q.m22, t)
+        m.m23 = mix(p.m23, q.m23, t); m.m24 = mix(p.m24, q.m24, t)
+        m.m31 = mix(p.m31, q.m31, t); m.m32 = mix(p.m32, q.m32, t)
+        m.m33 = mix(p.m33, q.m33, t); m.m34 = mix(p.m34, q.m34, t)
+        m.m41 = mix(p.m41, q.m41, t); m.m42 = mix(p.m42, q.m42, t)
+        m.m43 = mix(p.m43, q.m43, t); m.m44 = mix(p.m44, q.m44, t)
+        return NSValue(caTransform3D: m)
+      }
+    default:
+      return nil
+    }
   }
 
   /// The control points a curve travels along, cubic or named; nil for a

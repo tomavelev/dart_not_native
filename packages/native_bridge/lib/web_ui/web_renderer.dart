@@ -3577,6 +3577,11 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
 
   /// A protocol curve name as a CSS timing function.
   String _timing(Map<String, dynamic> p) {
+    // A shape no cubic draws - a bounce, an elastic - through its samples.
+    final curve = p['curve'];
+    if (curve is String && curve.startsWith('samples(')) {
+      return 'linear(${curve.substring(8, curve.length - 1).split(',').join(', ')})';
+    }
     final cubic = _cubicOf(p['curve']);
     if (cubic != null) return 'cubic-bezier(${cubic.join(', ')})';
     switch (p['curve']) {
@@ -3591,6 +3596,23 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
       default:
         return 'ease-in-out';
     }
+  }
+
+  /// The values of a `samples(...)` curve, or null for another.
+  static List<double>? _samplesOf(Object? curve) {
+    if (curve is! String || !curve.startsWith('samples(')) return null;
+    final values = [
+      for (final part in curve.substring(8, curve.length - 1).split(','))
+        double.tryParse(part.trim()) ?? 0,
+    ];
+    return values.length < 2 ? null : values;
+  }
+
+  /// A sampled curve's value at [t], in a straight line between samples.
+  static double _alongSamples(List<double> samples, double t) {
+    final at = t.clamp(0.0, 1.0) * (samples.length - 1);
+    final i = at.floor().clamp(0, samples.length - 2);
+    return samples[i] + (samples[i + 1] - samples[i]) * (at - i);
   }
 
   /// The four control numbers of a `cubic(a,b,c,d)` curve, or null for a
@@ -3789,6 +3811,8 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     }
 
     final input = parts.input;
+    final caret = p['cursorColor'];
+    _set(input, 'caret-color', caret is String ? cssColor(caret) : null);
     if (input.tagName.toLowerCase() != 'textarea') {
       // On every pass, not only the first: a show-password button changes
       // this while the caret is in the field.
@@ -5356,12 +5380,17 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     final from = (horizontal ? viewport.scrollLeft : viewport.scrollTop)
         .toDouble();
     final points = _cubicOf(curve) ?? _namedCubic(curve);
+    final samples = _samplesOf(curve);
     double? start;
     void step(num now) {
       if (_scrollTravel[viewport] != travel || !viewport.isConnected) return;
       start ??= now.toDouble();
       final t = ((now - start!) / ms).clamp(0.0, 1.0).toDouble();
-      final eased = points == null ? t : _bezier(points, t);
+      final eased = samples != null
+          ? _alongSamples(samples, t)
+          : points == null
+          ? t
+          : _bezier(points, t);
       final at = from + (to - from) * eased;
       if (horizontal) {
         viewport.scrollLeft = at;

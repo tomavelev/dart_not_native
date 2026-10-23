@@ -18,9 +18,9 @@ part of '../../widgets.dart';
 /// `cubic-bezier`, an Android `PathInterpolator`, UIKit's cubic timing.
 /// Every curve Flutter names is here, and each that is a cubic in Flutter
 /// travels as that cubic, with Flutter's numbers - `Curves.fastOutSlowIn`,
-/// `Curves.easeOutBack` with its overshoot. The rest - a bounce, a spring -
-/// travel as the nearest of the five, which keeps the motion honest about
-/// where it goes, if not about the way there.
+/// `Curves.easeOutBack` with its overshoot. A bounce and an elastic travel
+/// as their own shape, sampled (`samples(...)`), which every renderer draws
+/// through.
 class Curve {
   const Curve(this.name);
 
@@ -178,14 +178,167 @@ abstract final class Curves {
   static const Cubic easeInOutCirc = Cubic(0.785, 0.135, 0.15, 0.86);
   static const Cubic easeInOutBack = Cubic(0.68, -0.55, 0.265, 1.55);
 
-  // A bounce or a spring is not one of the five; each lands where it would
-  // have, along the pace nearest its overall shape.
-  static const Curve bounceIn = easeIn;
-  static const Curve bounceOut = easeOut;
-  static const Curve bounceInOut = easeInOut;
-  static const Curve elasticIn = easeIn;
-  static const Curve elasticOut = easeOut;
-  static const Curve elasticInOut = easeInOut;
+  // A bounce and an elastic are no cubic: each travels as its own shape,
+  // sampled (see [_SampledCurve]).
+  static const Curve bounceIn = _BounceInCurve();
+  static const Curve bounceOut = _BounceOutCurve();
+  static const Curve bounceInOut = _BounceInOutCurve();
+  static const Curve elasticIn = ElasticInCurve();
+  static const Curve elasticOut = ElasticOutCurve();
+  static const Curve elasticInOut = ElasticInOutCurve();
+}
+
+/// A curve no cubic can draw - a bounce, an elastic - sent to a renderer as
+/// its shape: its value at [_samples] even steps of time, as
+/// `samples(v0,v1,...)`, which each renderer draws through - a CSS
+/// `linear()` easing, an Android interpolator, keyframes on iOS - overshoot
+/// and all.
+abstract class _SampledCurve extends Curve {
+  const _SampledCurve() : super('');
+
+  static const _samples = 64;
+
+  /// The curve's own value at [t], 0 to 1.
+  double _at(double t);
+
+  /// Each curve's name, worked out once.
+  static final Map<_SampledCurve, String> _names = {};
+
+  @override
+  String get name => _names[this] ??= () {
+    String tidy(double v) =>
+        ((v * 10000).roundToDouble() / 10000).toString();
+    return 'samples(${[
+      for (var i = 0; i <= _samples; i++) tidy(_at(i / _samples)),
+    ].join(',')})';
+  }();
+
+  @override
+  double transform(double t) {
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    return _at(t);
+  }
+
+  @override
+  Curve get flipped => _FlippedCurve(this);
+
+  @override
+  bool operator ==(Object other) => other.runtimeType == runtimeType;
+  @override
+  int get hashCode => runtimeType.hashCode;
+}
+
+class _FlippedCurve extends _SampledCurve {
+  const _FlippedCurve(this.curve);
+  final _SampledCurve curve;
+  @override
+  double _at(double t) => 1 - curve._at(1 - t);
+  @override
+  Curve get flipped => curve;
+  @override
+  bool operator ==(Object other) =>
+      other is _FlippedCurve && other.curve == curve;
+  @override
+  int get hashCode => curve.hashCode * 31;
+}
+
+/// Flutter's bounce: four arcs of a falling ball.
+double _bounce(double t) {
+  if (t < 1 / 2.75) return 7.5625 * t * t;
+  if (t < 2 / 2.75) {
+    t -= 1.5 / 2.75;
+    return 7.5625 * t * t + 0.75;
+  }
+  if (t < 2.5 / 2.75) {
+    t -= 2.25 / 2.75;
+    return 7.5625 * t * t + 0.9375;
+  }
+  t -= 2.625 / 2.75;
+  return 7.5625 * t * t + 0.984375;
+}
+
+class _BounceInCurve extends _SampledCurve {
+  const _BounceInCurve();
+  @override
+  double _at(double t) => 1 - _bounce(1 - t);
+}
+
+class _BounceOutCurve extends _SampledCurve {
+  const _BounceOutCurve();
+  @override
+  double _at(double t) => _bounce(t);
+}
+
+class _BounceInOutCurve extends _SampledCurve {
+  const _BounceInOutCurve();
+  @override
+  double _at(double t) => t < 0.5
+      ? (1 - _bounce(1 - t * 2)) * 0.5
+      : _bounce(t * 2 - 1) * 0.5 + 0.5;
+}
+
+/// An elastic that grows, overshooting below 0 first - Flutter's, with its
+/// [period].
+class ElasticInCurve extends _SampledCurve {
+  const ElasticInCurve([this.period = 0.4]);
+  final double period;
+  @override
+  double _at(double t) {
+    final s = period / 4;
+    final u = t - 1;
+    return -math.pow(2, 10 * u) * math.sin((u - s) * (math.pi * 2) / period);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ElasticInCurve && other.period == period;
+  @override
+  int get hashCode => Object.hash(ElasticInCurve, period);
+}
+
+/// An elastic that overshoots 1 and settles - Flutter's, with its [period].
+class ElasticOutCurve extends _SampledCurve {
+  const ElasticOutCurve([this.period = 0.4]);
+  final double period;
+  @override
+  double _at(double t) {
+    final s = period / 4;
+    return math.pow(2, -10 * t) * math.sin((t - s) * (math.pi * 2) / period) +
+        1;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ElasticOutCurve && other.period == period;
+  @override
+  int get hashCode => Object.hash(ElasticOutCurve, period);
+}
+
+/// Both: in, then out - Flutter's, with its [period].
+class ElasticInOutCurve extends _SampledCurve {
+  const ElasticInOutCurve([this.period = 0.4]);
+  final double period;
+  @override
+  double _at(double t) {
+    final s = period / 4;
+    final u = 2 * t - 1;
+    if (u < 0) {
+      return -0.5 *
+          math.pow(2, 10 * u) *
+          math.sin((u - s) * (math.pi * 2) / period);
+    }
+    return math.pow(2, -10 * u) *
+            math.sin((u - s) * (math.pi * 2) / period) *
+            0.5 +
+        1;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ElasticInOutCurve && other.period == period;
+  @override
+  int get hashCode => Object.hash(ElasticInOutCurve, period);
 }
 
 /// Where an animation is in its run.

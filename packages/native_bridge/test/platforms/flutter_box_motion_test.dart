@@ -4,6 +4,7 @@ library;
 
 import 'package:dart_not_native/core.dart';
 import 'package:dart_not_native/platforms/flutter_renderer.dart';
+import 'package:dart_not_native/widgets.dart' as w;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -45,6 +46,41 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(find.text('child')).dx - from, 100);
+  });
+
+  testWidgets('a bounce falls back on its way', (tester) async {
+    WidgetNode wide(double width) => WidgetNode(
+      type: 'Box',
+      props: {
+        'width': width,
+        'height': 20.0,
+        'color': '#e91e63',
+        'animateMs': 1000,
+        'curve': w.Curves.bounceOut.name,
+      },
+      children: [UIBuilder.text('bounced')],
+    );
+    await show(tester, UIBuilder.center(child: wide(0)));
+    await show(tester, UIBuilder.center(child: wide(300)));
+    double width() => tester
+        .getSize(
+          find
+              .ancestor(of: find.text('bounced'), matching: find.byType(Container))
+              .first,
+        )
+        .width;
+    final seen = <double>[];
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      seen.add(width());
+    }
+    var falls = 0;
+    for (var i = 1; i < seen.length; i++) {
+      if (seen[i] < seen[i - 1] - 0.5) falls++;
+    }
+    expect(falls, greaterThan(2), reason: '$seen');
+    await tester.pumpAndSettle();
+    expect(width(), 300);
   });
 
   testWidgets('without a time it lands at once', (tester) async {

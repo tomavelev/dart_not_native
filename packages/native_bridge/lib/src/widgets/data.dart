@@ -356,8 +356,13 @@ class DataColumn {
   /// heading is tapped.
   final void Function(int columnIndex, bool ascending)? onSort;
 
-  /// Accepted and not carried: the columns share the table's width.
+  /// How wide the column is: a [FixedColumnWidth] is that many pixels, a
+  /// [FlexColumnWidth] a share against the others' measured widths, and
+  /// anything else - the default - its widest cell.
   final Object? columnWidth;
+
+  /// Accepted and not carried: a heading sits at its column's start, or its
+  /// end for a [numeric] column.
   final MainAxisAlignment? headingRowAlignment;
 }
 
@@ -527,13 +532,26 @@ class DataTable extends StatelessWidget {
       widths.add(widest);
     }
     final measured = widths.whereType<double>();
-    if (measured.isEmpty) return [for (final _ in columns) 1];
-    final average = measured.reduce((a, b) => a + b) / measured.length;
     final gap = columnSpacing ?? 24;
-    // Flex is whole numbers; a pixel is fine enough.
+    final average = measured.isEmpty
+        ? 100.0
+        : measured.reduce((a, b) => a + b) / measured.length + gap;
+    // Flex is whole numbers; a pixel is fine enough. A column that says how
+    // it is sized: a share of its flex against the measured ones' average.
     return [
-      for (final width in widths) math.max(1, ((width ?? average) + gap).round()),
+      for (final (index, width) in widths.indexed)
+        switch (columns[index].columnWidth) {
+          FlexColumnWidth(:final value) => math.max(1, (value * average).round()),
+          _ when measured.isEmpty => 1,
+          _ => math.max(1, ((width ?? average - gap) + gap).round()),
+        },
     ];
+  }
+
+  /// The width a column that states one in pixels is (`FixedColumnWidth`).
+  double? _fixedWidth(int index) {
+    final width = index < columns.length ? columns[index].columnWidth : null;
+    return width is TableColumnWidth ? width._fixed : null;
   }
 
   TextStyle get _headingStyle => const TextStyle(
@@ -562,13 +580,22 @@ class DataTable extends StatelessWidget {
         children: [
           if (_selectable) SizedBox(width: 48, child: leading),
           for (final (index, cell) in cells.indexed)
-            Expanded(
-              flex: index < shares.length ? shares[index] : 1,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: gap, vertical: 8),
-                child: cell,
+            if (_fixedWidth(index) case final fixed?)
+              SizedBox(
+                width: fixed + gap * 2,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: gap, vertical: 8),
+                  child: cell,
+                ),
+              )
+            else
+              Expanded(
+                flex: index < shares.length ? shares[index] : 1,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: gap, vertical: 8),
+                  child: cell,
+                ),
               ),
-            ),
         ],
       ),
     );
@@ -1422,9 +1449,12 @@ class InteractiveViewer extends StatefulWidget {
   final void Function(Object details)? onInteractionUpdate;
   final void Function(Object details)? onInteractionEnd;
 
-  /// Accepted and not carried.
+  /// Accepted and not carried: the content is kept within the viewer, and
+  /// laid out in its room.
   final EdgeInsets boundaryMargin;
   final bool constrained;
+
+  /// Whether two fingers zoom; with false they pan as one does.
   final bool scaleEnabled;
 
   @override

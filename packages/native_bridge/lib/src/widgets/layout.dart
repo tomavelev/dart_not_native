@@ -287,14 +287,26 @@ class Center extends Widget {
     this.child,
   });
 
-  /// Accepted and not carried: the node centres in the room it is given.
+  /// Along an axis with a factor, as tall or as wide as its child rather
+  /// than all the room there is - as an [Align]'s does; the factor itself is
+  /// not multiplied in.
   final double? widthFactor;
   final double? heightFactor;
   final Widget? child;
   @override
-  WidgetNode _render(_Owner owner) => UIBuilder.center(
-    child: _renderChild(owner, child ?? const SizedBox.shrink()),
-  );
+  WidgetNode _render(_Owner owner) {
+    if (widthFactor != null || heightFactor != null) {
+      return Align(
+        key: key,
+        widthFactor: widthFactor,
+        heightFactor: heightFactor,
+        child: child,
+      )._render(owner);
+    }
+    return UIBuilder.center(
+      child: _renderChild(owner, child ?? const SizedBox.shrink()),
+    );
+  }
 }
 
 /// Places [child] inside the room it is given: Flutter's `Align`.
@@ -312,8 +324,8 @@ class Align extends Widget {
   });
   final AlignmentGeometry alignment;
 
-  /// Accepted and not carried; a factor on an axis only stops the box from
-  /// filling it.
+  /// A factor on an axis stops the box from filling it: it is as long as its
+  /// child there. The factor itself is not multiplied in.
   final double? widthFactor;
   final double? heightFactor;
   final Widget? child;

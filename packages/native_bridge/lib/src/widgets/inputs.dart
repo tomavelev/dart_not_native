@@ -629,9 +629,12 @@ class TextField extends Widget {
   final bool autocorrect;
   final bool enableSuggestions;
 
-  /// Accepted and not carried: the caret and the selection handles are the
-  /// platform field's own.
+  /// Accepted and not carried: the caret's shape and the selection handles
+  /// are the platform field's own.
   final bool? enableInteractiveSelection;
+
+  /// The caret's colour (and, on iOS, the selection's); on Android from
+  /// Android 10.
   final Color? cursorColor;
   final double cursorWidth;
   final double? cursorHeight;
@@ -795,6 +798,7 @@ class TextField extends Widget {
       type: 'TextField',
       props: {
         ..._look(owner),
+        if (cursorColor != null) 'cursorColor': cursorColor!._hex,
         'hint': decoration?.hintText ?? '',
         'eventId': eventId,
         if (id != null) 'id': id,
@@ -1161,6 +1165,8 @@ class TextFormField extends FormField<String> {
 
   /// Accepted and not carried, as on [TextField].
   final bool? enableInteractiveSelection;
+
+  /// The caret's colour, as on [TextField].
   final Color? cursorColor;
   final double cursorWidth;
   final double? cursorHeight;
@@ -1253,6 +1259,7 @@ class _TextFormFieldState extends FormFieldState<String> {
       maxLines: field.maxLines,
       minLines: field.minLines,
       maxLength: field.maxLength,
+      cursorColor: field.cursorColor,
       enabled: widget.enabled,
       onTap: field.onTap,
       onEditingComplete: field.onEditingComplete,

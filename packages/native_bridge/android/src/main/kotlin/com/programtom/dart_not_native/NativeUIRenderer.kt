@@ -2510,6 +2510,7 @@ class NativeUIRenderer(
 
         val field = findEditText(view) ?: return false
         field.isEnabled = newNode["enabled"] != false
+        if (oldNode["cursorColor"] != newNode["cursorColor"]) tintCursor(field, newNode)
         // Only when one of them changed: this runs on every keystroke of a
         // bound field, and the value is the one prop that changes then.
         if (listOf("helper", "prefixIcon", "suffixIcon", "maxLength", "textAlign")
@@ -4434,12 +4435,14 @@ class NativeUIRenderer(
         // reason: left alone they are the Material theme's purple beside a
         // label in the app's primary.
         layout.boxStrokeColor = color(null, themePrimary)
+        // The node's own caret colour where it says one (`cursorColor`).
+        val caret = parseColorOrNull(node["cursorColor"]) ?: color(null, themePrimary)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            field.textCursorDrawable?.mutate()?.setTint(color(null, themePrimary))
+            field.textCursorDrawable?.mutate()?.setTint(caret)
         }
         // Material 3's layout colours the caret itself, over whatever the
         // editor was given.
-        layout.cursorColor = ColorStateList.valueOf(color(null, themePrimary))
+        layout.cursorColor = ColorStateList.valueOf(caret)
         // The layout draws the error under the box itself, so the error is not
         // a sibling view here and a validation message no longer changes this
         // field's view tree.
@@ -4519,6 +4522,7 @@ class NativeUIRenderer(
             if (hint != null) this.hint = hint
             setText(node["initialValue"] as? String ?: "")
             isEnabled = node["enabled"] != false
+            tintCursor(this, node)
             val maxLines = (node["maxLines"] as? Number)?.toInt() ?: 1
             setLines(maxLines)
             inputType = fieldInputType(node, maxLines)
@@ -4577,6 +4581,23 @@ class NativeUIRenderer(
             }
         }
         return field
+    }
+
+    /** The caret in the colour the node says (`cursorColor`), where the platform lets it be tinted. */
+    private fun tintCursor(field: EditText, node: Map<*, *>) {
+        val color = parseColorOrNull(node["cursorColor"]) ?: return
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            // A bar of the colour, two dp wide, as Material's caret is: a field
+            // with no drawable of its own draws a line in its text's colour.
+            field.textCursorDrawable = android.graphics.drawable.GradientDrawable().apply {
+                setColor(color)
+                setSize(dp(2), 0)
+            }
+        }
+        // Material 3's layout colours the caret over the editor's own.
+        var at: android.view.ViewParent? = field.parent
+        while (at != null && at !is TextInputLayout) at = at.parent
+        (at as? TextInputLayout)?.cursorColor = ColorStateList.valueOf(color)
     }
 
     /** Which keyboard a field raises, and what it does to what is typed. */
@@ -5179,10 +5200,21 @@ class NativeUIRenderer(
     }
 
     /** A protocol curve name as an Android interpolator. */
-    private fun interpolator(node: Map<*, *>): Interpolator =
-        cubicOf(node["curve"])?.let { (a, b, c, d) ->
+    private fun interpolator(node: Map<*, *>): Interpolator {
+        // A shape no cubic draws - a bounce, an elastic - through its samples.
+        sampledOf(node["curve"])?.let { return SampledInterpolator(it) }
+        return cubicOf(node["curve"])?.let { (a, b, c, d) ->
             android.view.animation.PathInterpolator(a, b, c, d)
         } ?: namedInterpolator(node)
+    }
+
+    /** The values of a `samples(...)` curve - a bounce, an elastic - or null for another. */
+    private fun sampledOf(curve: Any?): FloatArray? {
+        val text = curve as? String ?: return null
+        if (!text.startsWith("samples(") || !text.endsWith(")")) return null
+        val values = text.substring(8, text.length - 1).split(",").mapNotNull { it.trim().toFloatOrNull() }
+        return if (values.size >= 2) values.toFloatArray() else null
+    }
 
     /** The four control numbers of a `cubic(a,b,c,d)` curve, or null for a named one. */
     private fun cubicOf(curve: Any?): List<Float>? {
@@ -8572,5 +8604,18 @@ private class ArcRectPath(private val begin: android.graphics.RectF, private val
             2 -> rect.left to rect.bottom
             else -> rect.right to rect.bottom
         }
+    }
+}
+
+/**
+ * Through the values a `samples(...)` curve gives at even steps of time, in a
+ * straight line between them - past 1 and below 0 where they go, which an
+ * animator carries on to.
+ */
+private class SampledInterpolator(private val values: FloatArray) : Interpolator {
+    override fun getInterpolation(input: Float): Float {
+        val at = input.coerceIn(0f, 1f) * (values.size - 1)
+        val i = at.toInt().coerceIn(0, values.size - 2)
+        return values[i] + (values[i + 1] - values[i]) * (at - i)
     }
 }

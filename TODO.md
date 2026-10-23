@@ -2119,7 +2119,10 @@ notice.
    renders (a picture arriving) is not moved to~~ - it is since 2026-10-16,
    seen on all three. ~~All curves collapse to
    the five every renderer has~~ - since 2026-10-14 each of Flutter's cubics
-   travels as that cubic; the bounces and springs are the nearest of the five.
+   travels as that cubic; ~~the bounces and springs are the nearest of the five~~ -
+   since 2026-10-18 a bounce and an elastic travel as their own shape,
+   sampled, through a CSS `linear()` easing, an Android interpolator, iOS
+   keyframes and a curve in the Flutter host - seen on all three.
 5. **A `ScrollController` hears scrolling a step behind.** A scroller - a
    windowed list included, since 2026-10-11 - reports its offset when it
    comes to rest and at most every 100 ms on the way, so `offset` and
@@ -2594,8 +2597,8 @@ All of the above was an emulator. §6.5 item 8 is the phone.
 Worth stating, so the list above is read in proportion:
 
 - The protocol, the router, forms, i18n, overlays, lazy lists, storage
-  contracts, the plugin system and the design system are covered by 2789 tests
-  (1709 in the package, 395 for the example apps and goldens, 642 in the browser,
+  contracts, the plugin system and the design system are covered by 2795 tests
+  (1715 in the package, 395 for the example apps and goldens, 642 in the browser,
   43 in the bloc package,
   counted 2026-10-18), plus 21 integration tests that run on a real Android and
   a real iOS - two of them the Flutter-hosted app, nineteen the native
