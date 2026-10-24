@@ -772,12 +772,13 @@ body:has(.dnn-modal) { overflow: hidden; }
 /* Above the scaffold's bottom bar and its floating button, not over them, as
  * Material has it. The snackbar is drawn beside the scaffold rather than in
  * it, so the bar's height is read from the overlay they share, where the
- * renderer publishes it too; the button's is its 56px and the 24px under it. */
-.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar) > .dnn-snackbar {
+ * renderer publishes it too; the button's is its 56px and the 24px under it.
+ * Not a fixed bar, which the button keeps clear of instead (below). */
+.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar) > .dnn-snackbar:not(.dnn-snackbar--fixed) {
   bottom: calc(8px + var(--dnn-bottombar-height, 0px));
 }
-.dnn-overlay:has(> .dnn-scaffold > .dnn-fab) > .dnn-snackbar { bottom: 88px; }
-.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar):has(> .dnn-scaffold > .dnn-fab) > .dnn-snackbar {
+.dnn-overlay:has(> .dnn-scaffold > .dnn-fab) > .dnn-snackbar:not(.dnn-snackbar--fixed) { bottom: 88px; }
+.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar):has(> .dnn-scaffold > .dnn-fab) > .dnn-snackbar:not(.dnn-snackbar--fixed) {
   bottom: calc(88px + var(--dnn-bottombar-height, 0px));
 }
 /* A bar fixed to the bottom: edge to edge, on the bottom bar when there is one. */
@@ -790,6 +791,15 @@ body:has(.dnn-modal) { overflow: hidden; }
 }
 .dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar) > .dnn-snackbar.dnn-snackbar--fixed {
   bottom: var(--dnn-bottombar-height, 0px);
+}
+/* ...which raises the floating button until it is 16px above the bar, as
+ * Flutter's scaffold does, and leaves one already that high where it is. */
+.dnn-fab { transition: bottom 0.25s; }
+.dnn-overlay:has(> .dnn-snackbar--fixed) > .dnn-scaffold > .dnn-fab {
+  bottom: max(24px, calc(16px + var(--dnn-snackbar-height, 48px)));
+}
+.dnn-overlay:has(> .dnn-snackbar--fixed):has(> .dnn-scaffold > .dnn-bottombar) > .dnn-scaffold > .dnn-fab {
+  bottom: calc(max(24px, calc(16px + var(--dnn-snackbar-height, 48px))) + var(--dnn-bottombar-height, 0px));
 }
 .dnn-snackbar__message { flex: 1; }
 .dnn-snackbar__action {

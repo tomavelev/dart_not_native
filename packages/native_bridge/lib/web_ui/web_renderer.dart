@@ -1460,16 +1460,24 @@ class WebUIRenderer implements NativeUIRenderer, HasFrameProbe {
     return null;
   }
 
-  /// Says how tall the scaffold's bottom bar is where a snackbar can read it.
+  /// Says how tall the scaffold's bottom bar is where a snackbar can read it,
+  /// and how tall the snackbar is where the floating button can: a fixed one
+  /// raises the button above itself, as Flutter's scaffold does.
   ///
-  /// The resize observer publishes the same number, but only when the bar's
+  /// The resize observer publishes the bar's number, but only when the bar's
   /// size changes - and a snackbar usually arrives over a bar that has been
   /// the size it is for some time, in an overlay element made a moment ago.
   void _clearSnackbarOfBottomBar() {
     final snackbar = rootElement.querySelector('.dnn-overlay > .dnn-snackbar');
     final overlay = snackbar?.parentElement;
-    final bar = overlay?.querySelector(':scope > .dnn-scaffold > .dnn-bottombar');
-    if (overlay == null || bar == null) return;
+    if (snackbar == null || overlay == null) return;
+    _style(
+      overlay,
+      '--dnn-snackbar-height',
+      '${snackbar.getBoundingClientRect().height}px',
+    );
+    final bar = overlay.querySelector(':scope > .dnn-scaffold > .dnn-bottombar');
+    if (bar == null) return;
     _style(
       overlay,
       '--dnn-bottombar-height',

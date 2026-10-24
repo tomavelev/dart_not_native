@@ -2057,8 +2057,9 @@ scrolling rail that Android gained on the emulator were checked on an iPhone
   emulator). A jump or a travel now ends a fling first, on both - checked on
   both.
 - **The snackbar.** A floating one sits above the floating button and the
-  tab bar; a fixed one sits on the tab bar, over the floating button - as on
-  Android, where `clearsFab = !fixed` is the same choice (§6.4 item 8).
+  tab bar; a fixed one sat on the tab bar, over the floating button, as it
+  did on Android and the web. Since the same day a fixed one raises the
+  button 16 above itself, as Flutter's scaffold does (§6.4 item 8).
 - **The rail** of twelve destinations scrolls on a phone held upright, the
   last can be chosen, and the rail stays where it was scrolled to.
 
@@ -2580,8 +2581,12 @@ real apps on an Android emulator" has each. What is left:
    the middle of it.
 
 8. **Two things the 2026-10-24 iOS pass showed, on every native renderer.**
-   A *fixed* snackbar is drawn over the floating button, where Flutter lifts
-   the button above it (a floating one already clears it). And after a jump
+   ~~A *fixed* snackbar is drawn over the floating button~~ - since
+   2026-10-24 it raises the button until it is 16 above the bar, as
+   Flutter's scaffold does, and lets it down when it goes; seen on an iOS
+   simulator, an Android emulator and in Chrome, with a bottom bar and
+   without. On the web a fixed snackbar beside a floating button had been
+   placed as a floating one. And after a jump
    during a fling, the scroll reports the fling raised before the jump
    reached the renderer arrive after Dart has moved to the jump's offset, so
    `offset` and listeners read the old positions for up to 100 ms before the

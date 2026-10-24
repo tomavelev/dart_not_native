@@ -354,6 +354,18 @@ comes and goes. Seen on an iOS simulator.
 [--bold <file>]` writes from the font files, with a `register<Family>()` to
 call in `main`.
 
+### A fixed snackbar raises the floating button
+
+A fixed snackbar was drawn over the scaffold's floating button. It now
+raises the button until it is 16 above the bar, as Flutter's scaffold does
+(a button already that high stays where it is), and the button comes back
+down when the bar goes - on iOS by the button's bottom constraint, on
+Android by its margin, on the web by the stylesheet, from the bar's height
+the renderer publishes. On the web a fixed snackbar beside a floating button
+had been placed where a floating one goes; it is at the bottom now. Seen on
+an iOS simulator, an Android emulator and in Chrome, with a bottom bar and
+without.
+
 ### A jump ends a fling
 
 `ScrollController.jumpTo` and `animateTo` during a fling were carried on past

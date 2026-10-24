@@ -3060,11 +3060,27 @@ internal class SnackbarHost(context: Context) :
 
     override fun onDetachedFromWindow() {
         viewTreeObserver.removeOnPreDrawListener(this)
+        showing.remove(this)
+        // Let down - once the render that took this away has put in whatever
+        // replaces it, which may hold the same button up.
+        raised?.let { fab ->
+            raised = null
+            fab.post { if (showing.none { it.raises(fab) }) moveFab(fab, 0) }
+        }
         super.onDetachedFromWindow()
     }
 
+    /** The floating button this bar has raised above itself, if it has. */
+    private var raised: View? = null
+
+    /** Whether this is a fixed bar over the scaffold [fab] is in. */
+    private fun raises(fab: View): Boolean =
+        isAttachedToWindow && !clearsFab &&
+            (parent as? ViewGroup)?.let { scaffoldIn(it, 0) }?.fabView === fab
+
     override fun onPreDraw(): Boolean {
         val bar = getChildAt(0) ?: return true
+        showing.add(this)
         val scaffold = (parent as? ViewGroup)?.let { scaffoldIn(it, 0) }
         var ceiling = Int.MAX_VALUE
         for (below in listOf(scaffold?.bottomView, if (clearsFab) scaffold?.fabView else null)) {
@@ -3076,7 +3092,57 @@ internal class SnackbarHost(context: Context) :
         val lift =
             if (ceiling == Int.MAX_VALUE) 0 else max(0, at[1] + bar.bottom + gap - ceiling)
         if (bar.translationY != -lift.toFloat()) bar.translationY = -lift.toFloat()
+        // A fixed bar raises the floating button above itself instead, as
+        // Flutter's scaffold does: until it is the margin above the bar,
+        // from where it stands with no bar; one already that high stays.
+        val fab = scaffold?.fabView
+        if (!clearsFab && fab != null && fab.isShown && fab.height > 0) {
+            val barTop = at[1] + bar.top - lift
+            fab.getLocationInWindow(at)
+            val rest = at[1] + fab.height + risen(fab)
+            moveFab(fab, max(0, rest + fabMargin(fab) - barTop))
+            raised = fab
+        }
         return true
+    }
+
+    companion object {
+        /** The hosts on screen, so a button is not let down by one that goes
+         *  while another - the same snackbar, drawn again - holds it up. */
+        private val showing = LinkedHashSet<SnackbarHost>()
+
+        /** Flutter's `kFloatingActionButtonMargin`, which is also the
+         *  button's own margin above its floor. */
+        private fun fabMargin(fab: View) = (16 * fab.resources.displayMetrics.density).toInt()
+
+        /** How far [fab] is raised above its own margin now. */
+        private fun risen(fab: View): Int =
+            ((fab.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0) - fabMargin(fab)
+
+        /** Where [fab] is being moved to, so a move under way is not restarted. */
+        private val moving = java.util.WeakHashMap<View, Pair<Int, ValueAnimator>>()
+
+        /** Moves [fab] to [rise] above its margin, over the time the bar takes to come in. */
+        private fun moveFab(fab: View, rise: Int) {
+            val params = fab.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+            val target = fabMargin(fab) + rise
+            val under = moving[fab]
+            if (under?.first == target || (under == null && params.bottomMargin == target)) return
+            under?.second?.cancel()
+            moving[fab] = target to ValueAnimator.ofInt(params.bottomMargin, target).apply {
+                duration = 250
+                addUpdateListener {
+                    params.bottomMargin = it.animatedValue as Int
+                    fab.layoutParams = params
+                }
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        if (moving[fab]?.second === animation) moving.remove(fab)
+                    }
+                })
+                start()
+            }
+        }
     }
 
     /** The scaffold on screen under [group]: the first one, a few levels down. */

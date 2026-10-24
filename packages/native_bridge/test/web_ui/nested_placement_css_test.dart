@@ -22,19 +22,42 @@ void main() {
     // Fixed to the window's bottom edge on its own, which is where both are.
     expect(dnn('.dnn-snackbar'), contains('bottom: 16px'));
     expect(
-      dnn('.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar) > .dnn-snackbar'),
+      dnn(
+        '.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar) > '
+        '.dnn-snackbar:not(.dnn-snackbar--fixed)',
+      ),
       contains('bottom: calc(8px + var(--dnn-bottombar-height, 0px))'),
     );
     expect(
-      dnn('.dnn-overlay:has(> .dnn-scaffold > .dnn-fab) > .dnn-snackbar'),
+      dnn(
+        '.dnn-overlay:has(> .dnn-scaffold > .dnn-fab) > '
+        '.dnn-snackbar:not(.dnn-snackbar--fixed)',
+      ),
       contains('bottom: 88px'),
     );
     expect(
       dnn(
         '.dnn-overlay:has(> .dnn-scaffold > .dnn-bottombar)'
-        ':has(> .dnn-scaffold > .dnn-fab) > .dnn-snackbar',
+        ':has(> .dnn-scaffold > .dnn-fab) > '
+        '.dnn-snackbar:not(.dnn-snackbar--fixed)',
       ),
       contains('bottom: calc(88px + var(--dnn-bottombar-height, 0px))'),
+    );
+  });
+
+  test('a fixed snackbar raises the floating button 16px above itself', () {
+    expect(
+      dnn(
+        '.dnn-overlay:has(> .dnn-snackbar--fixed) > .dnn-scaffold > .dnn-fab',
+      ),
+      contains('bottom: max(24px, calc(16px + var(--dnn-snackbar-height, 48px)))'),
+    );
+    expect(
+      dnn(
+        '.dnn-overlay:has(> .dnn-snackbar--fixed)'
+        ':has(> .dnn-scaffold > .dnn-bottombar) > .dnn-scaffold > .dnn-fab',
+      ),
+      contains('+ var(--dnn-bottombar-height, 0px)'),
     );
   });
 

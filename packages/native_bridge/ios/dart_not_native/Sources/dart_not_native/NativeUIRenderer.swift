@@ -2569,6 +2569,9 @@ class NativeUIRenderer {
     // What a snackbar has to stay above - see SnackbarHost.
     scaffoldBottomBar = bottomBar
     scaffoldFab = fab
+    if fab == nil { scaffoldFabFloor = nil }
+    // A snackbar already showing keeps clear of, or raises, the new ones.
+    snackbarHost?.setNeedsLayout()
 
     if let fab {
       fab.translatesAutoresizingMaskIntoConstraints = false
@@ -2576,9 +2579,12 @@ class NativeUIRenderer {
       // Above the bottom bar when there is one, and the home indicator when
       // there is not. An extended button is a pill as wide as its label.
       let fabFloor = bottomBar?.topAnchor ?? container.safeAreaLayoutGuide.bottomAnchor
+      let onFloor = fab.bottomAnchor.constraint(equalTo: fabFloor, constant: -16)
+      // A fixed snackbar raises the button above itself through this.
+      scaffoldFabFloor = onFloor
       NSLayoutConstraint.activate([
         fab.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-        fab.bottomAnchor.constraint(equalTo: fabFloor, constant: -16),
+        onFloor,
         fabExtended
           ? fab.widthAnchor.constraint(greaterThanOrEqualToConstant: 56)
           : fab.widthAnchor.constraint(equalToConstant: 56),
@@ -5452,6 +5458,13 @@ class NativeUIRenderer {
       (sitsOnBar ? [self?.scaffoldBottomBar] : [self?.scaffoldBottomBar, self?.scaffoldFab])
         .compactMap { $0 }
     }
+    // Flutter's scaffold moves its floating button up instead.
+    if sitsOnBar {
+      host.raises = { [weak self] in
+        guard let fab = self?.scaffoldFab, let floor = self?.scaffoldFabFloor else { return nil }
+        return (fab, floor)
+      }
+    }
     snackbarHost = host
 
     let bar = UIView()
@@ -7286,6 +7299,7 @@ class NativeUIRenderer {
   /// snackbar layer that keeps clear of them.
   private weak var scaffoldBottomBar: UIView?
   private weak var scaffoldFab: UIView?
+  private weak var scaffoldFabFloor: NSLayoutConstraint?
   private weak var snackbarHost: SnackbarHost?
 
   // MARK: - Helpers
@@ -7552,6 +7566,22 @@ private class SnackbarHost: PassthroughView {
   /// How far above them the bar stops.
   var gap: CGFloat = 8
 
+  /// The floating button a fixed bar raises above itself, as Flutter's
+  /// scaffold does, and the constraint that holds it 16 above its floor.
+  var raises: (() -> (UIView, NSLayoutConstraint)?)?
+
+  /// How far a floating button stays above a fixed bar - Flutter's
+  /// `kFloatingActionButtonMargin`.
+  private static let fabMargin: CGFloat = 16
+
+  /// The hosts on screen, so a button is not let down by one that goes while
+  /// another - the same snackbar, drawn again - still holds it up.
+  private static let showing = NSHashTable<SnackbarHost>.weakObjects()
+
+  /// The button this host has raised, and the constraint it raised it by.
+  private weak var raised: NSLayoutConstraint?
+  private weak var raisedFab: UIView?
+
   override func layoutSubviews() {
     super.layoutSubviews()
     guard let bar = subviews.first else { return }
@@ -7565,10 +7595,58 @@ private class SnackbarHost: PassthroughView {
     let bottom = bar.center.y + bar.bounds.height / 2
     let lift = ceiling == CGFloat.greatestFiniteMagnitude ? 0 : max(0, bottom + gap - ceiling)
     bar.transform = lift > 0 ? CGAffineTransform(translationX: 0, y: -lift) : .identity
+    raiseFab(barTop: bottom - lift - bar.bounds.height)
+  }
+
+  /// Raises the floating button until it is [fabMargin] above [barTop], from
+  /// where it stands with no bar; one already that high stays where it is.
+  private func raiseFab(barTop: CGFloat) {
+    guard window != nil, let (fab, floor) = raises?(), fab.window != nil, !fab.isHidden,
+      let parent = fab.superview
+    else { return }
+    let risen = -SnackbarHost.fabMargin - floor.constant
+    let rest = parent.convert(fab.frame, to: self).maxY + risen
+    let rise = max(0, rest + SnackbarHost.fabMargin - barTop)
+    raised = floor
+    raisedFab = fab
+    SnackbarHost.move(fab, by: floor, to: rise)
+  }
+
+  /// Moves [fab], which [floor] holds, to [rise] above its floor, over the
+  /// time the bar takes to come in. The button is held weakly here, never
+  /// read back from the constraint: `firstItem` is unowned, and a render
+  /// that takes the snackbar away may make the scaffold anew and free it.
+  private static func move(_ fab: UIView, by floor: NSLayoutConstraint, to rise: CGFloat) {
+    let constant = -fabMargin - rise
+    guard abs(floor.constant - constant) > 0.5 else { return }
+    // Not inside this layout pass, which is the host's, not the scaffold's.
+    DispatchQueue.main.async { [weak fab] in
+      guard let scaffold = fab?.superview else { return }
+      floor.constant = constant
+      UIView.animate(withDuration: 0.25) { scaffold.layoutIfNeeded() }
+    }
   }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
+    if window != nil {
+      SnackbarHost.showing.add(self)
+    } else {
+      SnackbarHost.showing.remove(self)
+      // Let down - once the render that took it away has put in whatever
+      // replaces it, which may hold the same button up.
+      if let floor = raised, let fab = raisedFab {
+        raised = nil
+        raisedFab = nil
+        DispatchQueue.main.async { [weak fab] in
+          guard let fab else { return }
+          let held = SnackbarHost.showing.allObjects.contains {
+            $0.window != nil && $0.raises?()?.1 === floor
+          }
+          if !held { SnackbarHost.move(fab, by: floor, to: 0) }
+        }
+      }
+    }
     // Once more when everything beside it has been laid out too.
     DispatchQueue.main.async { [weak self] in self?.setNeedsLayout() }
   }
