@@ -1884,6 +1884,7 @@ class NativeUIRenderer(
             val travelMs = (newNode["scrollMs"] as? Number)?.toLong() ?: 0L
             val curve = (newNode["scrollCurve"] as? String)?.let { interpolator(mapOf("curve" to it)) }
             scroll.post {
+                stopFling(scroll)
                 if (travel && travelMs > 0) {
                     // Over the time the app asked, along its curve.
                     android.animation.ValueAnimator.ofInt(scroll.scrollY, target).apply {

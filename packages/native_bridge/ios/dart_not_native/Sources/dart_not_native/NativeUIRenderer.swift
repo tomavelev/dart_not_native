@@ -8022,6 +8022,9 @@ private class LazyListView: UIScrollView {
     if let restore = restoreOffset {
       restoreOffset = nil
       let target = CGPoint(x: 0, y: min(restore, max(0, height - bounds.height)))
+      // A fling still going would carry the list on past where it was sent;
+      // in Flutter a jump or a travel ends it.
+      if isDecelerating { setContentOffset(contentOffset, animated: false) }
       if restoreTravels && restoreSeconds > 0 {
         restoreTravels = false
         DnnScrollTravel.go(self, to: target, seconds: restoreSeconds, points: restorePoints)

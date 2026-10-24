@@ -259,7 +259,7 @@ should), but has never run there · ❌ missing, or a stub
 | The twelve node types added 2026-10-03: `Box`, `Stack`, `Positioned`, `Scroll`, `Icon`, `Canvas`, `Dropdown`, `DatePicker`, `TimePicker`, `BottomBar`, `BottomNavigation`, `FlutterSlot` | ✅ | 🟡 | ✅ | Android: on a Pixel 8 emulator (API 35, debug builds), by hand, through three migrated apps walked screen by screen - boxes, stacks, scrollers, icons and dropdowns throughout; `Canvas` as a timer-driven game, the other game boards and a donut chart; bottom navigation, and its rail in landscape; a long-press drag onto a drop target; an AdMob test banner through the `FlutterSlot` hole at its 320×50dp. **`DatePicker` and `TimePicker` were not exercised: no app opened one.** Not on a phone. In the device lane since 2026-10-09 (a free-form tree and a screen under each picker), green on an Android 17 emulator on 2026-10-10 along with the six agent-device flows. iOS: **on an iPhone 18 Pro simulator (iOS 27.0, 2026-10-09) the device lane draws all twelve; the controls gallery was walked by hand, which found and fixed five layout bugs (§6.1), and a dropdown and both pickers were opened and returned a choice. A `FlutterSlot` has drawn only its fallback, and no migrated app has run**. Web: browser tests per family (`box_test`, `stack_scroll_test`, `canvas_test`, `choosing_test`, `app_chrome_test`); a `FlutterSlot` draws its fallback there. The Flutter renderer has widget tests for all of them |
 | Right-to-left (`RootProps.textDirection`) | ✅ | 🟡 | ✅ | Web and the Flutter host are tested (`text_direction_test`, `flutter_text_direction_test`). Android: looked at on the emulator under an Arabic locale (2026-10-03) - app bar, bottom-navigation order, list tiles, tabs, calendar and switch all mirrored; swipe actions were not then, and are mirrored in the Kotlin since 2026-10-10 - seen on an Android 17 emulator that day, where a full drag right fired the trailing action and a full drag left the leading one (§6.3 item 6). The Swift compiles; right-to-left has not been looked at on iOS |
 | Remote image cache, and an image's fallback child | 🟡 | 🟡 | ✅ | Tested on web and Flutter. Android: remote images loaded in list rows on the emulator; what the disk cache does offline or at expiry was not examined, which is why this stays 🟡. Compiled and not examined on iOS |
-| An event answered by the build it was raised against | ✅ | 🟡 | ✅ | Android sends the tree's build number back with each event (found on the emulator, where a list's size report was landing on a row's tap). The Swift to do the same compiles; the stale-callback case has not been tried on iOS. The web and Flutter renderers name the build they are showing too - the Flutter host builds its widgets a frame after a render |
+| An event answered by the build it was raised against | ✅ | ✅ | ✅ | Android sends the tree's build number back with each event (found on the emulator, where a list's size report was landing on a row's tap). iOS does too: on a simulator (2026-10-24) taps raised against the build before Dart's latest were answered by that build's callbacks, on a list whose ids moved every build (§6.1). The web and Flutter renderers name the build they are showing too - the Flutter host builds its widgets a frame after a render |
 | System back | ✅ | 🟡 | ✅ | Native via `system_back` channel; web via browser history. Android Back verified closing an overlay on the Android phone (2026-09-18) |
 | Routing, forms, i18n, design system | ✅ | ✅ | ✅ | Pure Dart, unit tested; on a device they depend on the renderer row |
 | Dialogs, bottom sheets, snackbars | ✅ | ✅ | ✅ | `Overlay`/`Dialog`/`BottomSheet`/`Snackbar` nodes; Back closes the topmost one. Device-verified on iOS (iPad) and Android (2026-09-18): sheet → stacked confirm dialog → delete pops both → undo snackbar restores (1.3) |
@@ -1986,10 +1986,12 @@ when `tool/device_check.sh android` ran on an emulator (Android 17, API 37):
 the five Maestro flows, `app_test.dart` (2) and `native_renderer_test.dart`
 (17), then the six agent-device flows, all green.
 
-What is still a claim about text on iOS: right-to-left, the image cache, a
-`FlutterSlot` with a real Flutter widget behind it (the lane draws only its
-fallback), drag and drop, the scroll reports, and every screen but the
-gallery. In order:
+What is still a claim about text on iOS: drag and drop (idb cannot long-press
+and then drag, so it cannot be driven from here), and every screen but the
+gallery. Right-to-left was looked at on a simulator on 2026-10-16 (§6.3 item
+5), the image cache and a slot inside a scroller on 2026-10-13 (§6.4 item 6),
+a real Flutter widget behind the lane's `FlutterSlot` since 2026-10-18, and
+the scroll reports on 2026-10-24 (below). In order:
 
 1. ~~`flutter build ios --simulator --debug --no-codesign`~~ - done by the
    `native.yml` lane, 2026-10-05, which repeats it whenever the renderers
@@ -2033,13 +2035,32 @@ reading it:
   fails when it is missing - a field inside it just loses focus. The coverage
   test pins this for the motion nodes only.
 
-The build number is in the same state as the rest: **the Swift that sends it
-back with each event compiles and has not been tried against that case** (changelog, "An
-event is answered by the build it was raised against"). Until it has run, the
-stale-callback bug fixed on Android - a list's size report landing on a row's
-tap after the window moved - is not known to be fixed there. The same goes for
-the scroll reports, the snackbar's position and the scrolling rail that
-Android gained on the emulator: written for iOS, compiled, not checked.
+The build number, the scroll reports, the snackbar's position and the
+scrolling rail that Android gained on the emulator were checked on an iPhone
+18 Pro simulator (iOS 27.0) on 2026-10-24, with a throwaway page for each:
+
+- **An event names its build, and is answered by it.** Every event the Swift
+  sent carried the build it was raised against. On a list whose callbacks
+  were numbered anew on every build - a button above it there one build and
+  gone the next - with each build made to take 30 ms, four of ten taps
+  arrived naming the build before Dart's latest, and all ten opened the row
+  tapped; so did fifteen at a rebuild every 40 ms and twenty at one every
+  4 ms (none of which arrived stale). A windowed list's range and scroll
+  reports arrived stale too while it moved, and were answered by their build.
+- **The scroll reports** came as the list moved and when it stopped;
+  `animateTo(0)` travelled there, `jumpTo(1500)` landed, and a second
+  `jumpTo(1500)` after a drag was obeyed again (a new `scrollVersion`). A
+  pushed page and back left the list where the reader was. Pull-to-refresh
+  drew UIKit's spinner and called `onRefresh`, which hid it when done.
+  **Found and fixed:** a jump during a fling was carried on past its target
+  by the fling (1500 → 1493 on iOS; to the list's end, 3676, on an Android
+  emulator). A jump or a travel now ends a fling first, on both - checked on
+  both.
+- **The snackbar.** A floating one sits above the floating button and the
+  tab bar; a fixed one sits on the tab bar, over the floating button - as on
+  Android, where `clearsFab = !fixed` is the same choice (§6.4 item 8).
+- **The rail** of twelve destinations scrolls on a phone held upright, the
+  last can be chosen, and the rail stays where it was scrolled to.
 
 **Done when:** the Swift builds (done), `device_check.sh ios` is green (done,
 2026-10-09), the device lane's tree includes the new node types (done,
@@ -2191,9 +2212,11 @@ notice.
    Since 2026-10-18 Roboto's kerning between printable ASCII characters is
    counted, and a `fontFamily` of the app's own is measured with its own
    widths and kerning once registered (`TextPainter.registerFont`, written by
-   `dart run dart_not_native:font_widths`). Still open: ligatures and
-   Arabic's joined forms are not counted, and other scripts are 0.55 of the
-   font size.
+   `dart run dart_not_native:font_widths`). Since 2026-10-24 Roboto's
+   standard ligatures (`fi`, `fl`, `ffi`, `ffl`) are counted as one glyph
+   each where the letter spacing is none, and an app font's own once
+   registered. Still open: Arabic's joined forms are not counted, and other
+   scripts are 0.55 of the font size.
 8. ~~**`Dismissible` reveals an action rather than sliding the row away**,
    and does nothing for a vertical direction~~ Since 2026-10-11 the row
    follows the finger with `background` (or `secondaryBackground`) behind
@@ -2320,9 +2343,12 @@ notice.
       to. Since 2026-10-18 a run is cut at each turn of an `Interval` or a
       `TweenSequence` made from the controller, a tree a leg, and a
       listener the app adds hears every frame - one that rebuilds makes the
-      run a tree a frame. What this note proposed is still the answer for
-      keyframes without a tree each, and for an interval curved by another
-      curve first. A node carrying a timeline - keyframes of the
+      run a tree a frame. Since 2026-10-24 each leg goes at the pace
+      Flutter draws it at - the run's curve seen through every curve in
+      front of the transition, over the part the leg covers, sent as its
+      samples where no named curve is that - and an interval chained after
+      a curve cuts the run (tested, not looked at on a device). What this
+      note proposed is still the answer for keyframes without a tree each. A node carrying a timeline - keyframes of the
       props a box already animates (`opacity`, `transform`, `color`, size)
       against a duration, a curve and a repeat - that the renderer runs by
       itself, raising `endEventId` as an implicit animation does; the widget
@@ -2552,6 +2578,15 @@ real apps on an Android emulator" has each. What is left:
 7. ~~**A stand-in's size differs.**~~ Since 2026-10-14 what an image shows
    in its place fills the image's box on all three, an icon or a spinner in
    the middle of it.
+
+8. **Two things the 2026-10-24 iOS pass showed, on every native renderer.**
+   A *fixed* snackbar is drawn over the floating button, where Flutter lifts
+   the button above it (a floating one already clears it). And after a jump
+   during a fling, the scroll reports the fling raised before the jump
+   reached the renderer arrive after Dart has moved to the jump's offset, so
+   `offset` and listeners read the old positions for up to 100 ms before the
+   jump's own; a report from a build older than the one that carried the
+   jump could be dropped.
 
 All of the above was an emulator. §6.5 item 8 is the phone.
 

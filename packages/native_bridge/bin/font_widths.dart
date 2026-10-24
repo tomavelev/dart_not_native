@@ -6,7 +6,8 @@
 ///       --out lib/inter_widths.dart
 ///
 /// The file it writes has each character's advance width, regular and bold,
-/// in thousandths of an em, the kerning pairs of printable ASCII, and a
+/// in thousandths of an em, the kerning pairs of printable ASCII, what each
+/// standard ligature saves on its characters set apart, and a
 /// `register<Family>()` that hands them to `TextPainter.registerFont` - call
 /// it once in `main`. Without `--bold` the regular widths stand for both.
 library;
@@ -50,6 +51,8 @@ void register${name[0].toUpperCase()}${name.substring(1)}() =>
       widths: _widths,
       kerning: _kerning,
       boldKerning: _boldKerning,
+      ligatures: _ligatures,
+      boldLigatures: _boldLigatures,
     );
 
 // dart format off
@@ -86,10 +89,29 @@ const List<(int, List<int>, List<int>)> _widths = [
     }
     buffer.writeln('};');
   }
+  for (final (title, font) in [
+    ('_ligatures', regular),
+    ('_boldLigatures', bold),
+  ]) {
+    buffer.writeln('const Map<String, int> $title = {');
+    for (final MapEntry(:key, :value) in font.ligatureSavings().entries) {
+      buffer.writeln("  '${_escaped(key)}': $value,");
+    }
+    buffer.writeln('};');
+  }
   buffer.writeln('// dart format on');
   File(out).writeAsStringSync(buffer.toString());
   stdout.writeln('Wrote $out - call register${name[0].toUpperCase()}${name.substring(1)}() in main.');
 }
+
+/// [text] as the inside of a Dart string literal: letters and digits as
+/// they are, anything else as its code point.
+String _escaped(String text) => [
+  for (final rune in text.runes)
+    RegExp(r'[A-Za-z0-9]').hasMatch(String.fromCharCode(rune))
+        ? String.fromCharCode(rune)
+        : '\\u{${rune.toRadixString(16)}}',
+].join();
 
 String _list(List<int> values) => '[${values.join(', ')}]';
 

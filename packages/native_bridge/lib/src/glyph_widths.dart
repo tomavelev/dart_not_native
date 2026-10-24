@@ -551,4 +551,22 @@ const Map<int, int> kernBold = {
   0x790071: -6, 0x7a0063: -8, 0x7a0064: -8, 0x7a0065: -8, 0x7a0067: -8,
   0x7a006f: -8, 0x7a0071: -8, 0x7b004a: -10, 0x7b0055: -10,
 };
+
+/// What each standard ligature of Roboto saves on its characters set
+/// apart and kerned, in thousandths of an em.
+const Map<String, int> ligaturesRegular = {
+  'ffi': 83,
+  'fi': 36,
+  'ffl': 83,
+  'fl': 22,
+};
+
+/// What each standard ligature of Roboto Bold saves on its characters set
+/// apart and kerned, in thousandths of an em.
+const Map<String, int> ligaturesBold = {
+  'ffi': 53,
+  'fi': 15,
+  'ffl': 53,
+  'fl': 10,
+};
 // dart format on

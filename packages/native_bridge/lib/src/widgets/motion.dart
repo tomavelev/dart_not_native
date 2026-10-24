@@ -229,6 +229,36 @@ abstract class _SampledCurve extends Curve {
   int get hashCode => runtimeType.hashCode;
 }
 
+/// A pace worked out rather than named - a leg of a run seen through the
+/// curves in front of it - sent as its shape, as a [_SampledCurve] is.
+class _TracedCurve extends Curve {
+  factory _TracedCurve(double Function(double) at) => _TracedCurve._([
+    for (var i = 0; i <= _SampledCurve._samples; i++)
+      at(i / _SampledCurve._samples),
+  ]);
+
+  _TracedCurve._(this._values)
+    : super('samples(${[
+        for (final v in _values) ((v * 10000).roundToDouble() / 10000).toString(),
+      ].join(',')})');
+
+  final List<double> _values;
+
+  @override
+  double transform(double t) {
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    final at = t * (_values.length - 1);
+    final i = at.floor();
+    return _values[i] + (_values[i + 1] - _values[i]) * (at - i);
+  }
+
+  @override
+  bool operator ==(Object other) => other is _TracedCurve && other.name == name;
+  @override
+  int get hashCode => name.hashCode;
+}
+
 class _FlippedCurve extends _SampledCurve {
   const _FlippedCurve(this.curve);
   final _SampledCurve curve;
@@ -413,13 +443,81 @@ List<double> _breaksOfCurve(Curve curve) => switch (curve) {
 List<double> _breaksOf(Animatable<Object?> animatable) => switch (animatable) {
   CurveTween(:final curve) => _breaksOfCurve(curve),
   TweenSequence() => animatable._breaks,
+  // What follows turns at points of the way [parent] has gone: the time
+  // [parent] gets there, found along it.
   _ChainedEvaluation(:final parent, :final evaluatable) => [
     ..._breaksOf(parent),
-    if (parent is! CurveTween || parent.curve == Curves.linear)
-      ..._breaksOf(evaluatable),
+    for (final b in _breaksOf(evaluatable))
+      if (_whenAlong(parent, b) case final t when t > 1e-6 && t < 1 - 1e-6) t,
   ],
   _ => const [],
 };
+
+/// Where [animatable] gives [value] first, from 0 to 1 - by bisection, so
+/// for a curve that goes back on itself, one place it does.
+double _whenAlong(Animatable<Object?> animatable, double value) {
+  final along = _alongAnimatable(animatable, 0) == null
+      ? null
+      : (double t) => _alongAnimatable(animatable, t)!;
+  if (along == null) return value;
+  if (along(1) < value || along(0) > value) return -1;
+  var low = 0.0;
+  var high = 1.0;
+  for (var i = 0; i < 30; i++) {
+    final middle = (low + high) / 2;
+    if (along(middle) < value) {
+      low = middle;
+    } else {
+      high = middle;
+    }
+  }
+  return (low + high) / 2;
+}
+
+/// How far along [animatable] is at [t], by the curves it is made of - a
+/// tween's own values go evenly, and so count as [t]; null for one this
+/// cannot follow.
+double? _alongAnimatable(Animatable<Object?> animatable, double t) =>
+    switch (animatable) {
+      CurveTween(:final curve) => curve.transform(t),
+      _ChainedEvaluation(:final parent, :final evaluatable) =>
+        switch (_alongAnimatable(parent, t)) {
+          final p? => _alongAnimatable(evaluatable, p),
+          null => null,
+        },
+      Tween() || TweenSequence() => t,
+      _ => null,
+    };
+
+/// How far along [animation] is when the controller under it is at [value],
+/// by the curves between them; null where something between is not
+/// followed.
+double? _alongAnimation(Animation<Object?> animation, double value) =>
+    switch (animation) {
+      AnimationController() => value,
+      CurvedAnimation(:final parent, :final curve, :final reverseCurve) =>
+        switch (_alongAnimation(parent, value)) {
+          final p? =>
+            (parent.status == AnimationStatus.reverse
+                    ? reverseCurve ?? curve
+                    : curve)
+                .transform(p),
+          null => null,
+        },
+      ReverseAnimation(:final parent) => switch (_alongAnimation(
+        parent,
+        value,
+      )) {
+        final p? => 1 - p,
+        null => null,
+      },
+      _AnimatedEvaluation(:final parent, :final animatable) =>
+        switch (_alongAnimation(parent, value)) {
+          final p? => _alongAnimatable(animatable, p),
+          null => null,
+        },
+      _ => null,
+    };
 
 /// Tells the controller [animation] is, run straight or backwards, to stop
 /// at [breaks] - points from 0 to 1 of its range.
@@ -1451,12 +1549,44 @@ bool _controlled(Animation<Object?> animation) => switch (animation) {
     return (duration: Duration.zero, curve: Curves.linear);
   }
   final curve = _curveIn(animation);
+  // The run is already cut at an interval's ends; each leg goes along the
+  // interval's own curve.
+  final named = (curve is Interval ? curve.curve : curve) ?? run.curve;
   return (
     duration: run.legs.isEmpty ? run.duration : run.legs[run.leg].length,
-    // The run is already cut at an interval's ends; each leg goes along the
-    // interval's own curve.
-    curve: (curve is Interval ? curve.curve : curve) ?? run.curve,
+    curve: _legPace(animation, run, named),
   );
+}
+
+/// The pace [animation] moves at over the leg of [run] under way: [named]
+/// where that is it, else the leg's own shape - a run's curve seen through
+/// a [CurvedAnimation]'s, an [Interval] behind another curve, a run that
+/// covers part of a curve - traced from what the curves give.
+Curve _legPace(Animation<Object?> animation, _ControllerRun run, Curve named) {
+  if (run.duration == Duration.zero) return named;
+  var start = Duration.zero;
+  for (var i = 0; i < run.leg && i < run.legs.length; i++) {
+    start += run.legs[i].length;
+  }
+  final length = run.legs.isEmpty ? run.duration : run.legs[run.leg].length;
+  final total = run.duration.inMicroseconds;
+  final t0 = start.inMicroseconds / total;
+  final t1 = (start + length).inMicroseconds / total;
+  double? along(double s) => _alongAnimation(
+    animation,
+    run.from + (run.to - run.from) * run.curve.transform(t0 + (t1 - t0) * s),
+  );
+  final first = along(0), last = along(1);
+  if (first == null || last == null || (last - first).abs() < 1e-9) {
+    return named;
+  }
+  double pace(double s) => (along(s)! - first) / (last - first);
+  for (var i = 1; i < 8; i++) {
+    if ((pace(i / 8) - named.transform(i / 8)).abs() > 0.01) {
+      return _TracedCurve(pace);
+    }
+  }
+  return named;
 }
 
 /// Fades [child] whenever [opacity] changes - Flutter's `AnimatedOpacity`.

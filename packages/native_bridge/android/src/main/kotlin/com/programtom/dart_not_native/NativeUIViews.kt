@@ -2402,6 +2402,7 @@ internal class ScrollMemory(private val view: ViewGroup, private val horizontal:
     private fun place(position: Int) {
         travel?.cancel()
         travel = null
+        stopFling(view)
         if (smooth && travelMs > 0) {
             // Over the time the app asked, along its curve; reported on the
             // way like a drag, which is what it looks like.
@@ -2597,6 +2598,21 @@ internal class MeasuredRowsLayout(context: Context) : FrameLayout(context) {
 }
 
 /** The vertical scroller behind a `Scroll`. Nested, so it works under pull-to-refresh. */
+/**
+ * Ends a fling [view] is still going on, which would otherwise carry it on
+ * past where it is about to be sent: in Flutter a jump or a travel ends one.
+ * None of the platform's scroll views can be told to stop but by a finger,
+ * so it is given one that touches down and is taken away.
+ */
+internal fun stopFling(view: View) {
+    val now = SystemClock.uptimeMillis()
+    for (action in intArrayOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_CANCEL)) {
+        val event = MotionEvent.obtain(now, now, action, 0f, 0f, 0)
+        view.onTouchEvent(event)
+        event.recycle()
+    }
+}
+
 internal class VerticalScroller(context: Context) : NestedScrollView(context) {
     val memory = ScrollMemory(this, horizontal = false)
     private val drag = SteadyDrag(this)

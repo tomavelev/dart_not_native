@@ -2588,6 +2588,9 @@ final class DnnScrollView: UIScrollView, DnnSingleChildHost {
       // Reversed, an offset counts from the far end - as it does on the
       // other renderers, and as `onReport` says it.
       let held = min(max(0, offset), maxOffset)
+      // A fling still going would carry the view on past where it was sent;
+      // in Flutter a jump or a travel ends it.
+      if isDecelerating { setContentOffset(contentOffset, animated: false) }
       setOffset(
         reverse ? maxOffset - held : held, animated: animated, seconds: seconds, points: points)
     } else {

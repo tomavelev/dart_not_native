@@ -234,6 +234,38 @@ void main() {
       expect(widthOf('HH'), widthOf('H') * 2);
     });
 
+    test('joins fi, fl, ffi and ffl as Roboto does, longest first', () {
+      // A joined fi is 36 thousandths of an em narrower, an ffi 83.
+      expect(widthOf('fi'), closeTo(widthOf('f') + widthOf('i') - 3.6, 0.01));
+      expect(widthOf('fl'), closeTo(widthOf('f') + widthOf('l') - 2.2, 0.01));
+      expect(
+        widthOf('office'),
+        closeTo(widthOf('o') + widthOf('ffi') + widthOf('ce'), 0.01),
+      );
+      expect(widthOf('ffi'), closeTo(2 * widthOf('f') + widthOf('i') - 8.3, 0.01));
+      // f before an i in another style is not joined to it.
+      final split = TextPainter(
+        text: const TextSpan(
+          style: TextStyle(fontSize: 100),
+          children: [
+            TextSpan(text: 'f'),
+            TextSpan(text: 'i', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+      )..layout();
+      expect(split.width, greaterThan(widthOf('fi')));
+    });
+
+    test('letter spacing keeps a ligature apart, as on Android', () {
+      double spaced(String text) => (TextPainter(
+        text: TextSpan(
+          text: text,
+          style: const TextStyle(fontSize: 100, letterSpacing: 1),
+        ),
+      )..layout()).width;
+      expect(spaced('fi'), closeTo(spaced('f') + spaced('i'), 0.01));
+    });
+
     test('a font of the app\'s own is measured with its widths', () {
       TextPainter.registerFont(
         'Square',
@@ -246,6 +278,22 @@ void main() {
       expect(widthOf('AB', family: 'Square'), closeTo(190, 0.01));
       // What it has no width for is Roboto's.
       expect(widthOf('C', family: 'Square'), widthOf('C'));
+    });
+
+    test('a font of the app\'s own joins its own ligatures', () {
+      TextPainter.registerFont(
+        'Joined',
+        widths: [
+          (0x41, [1000, 1000], [1000, 1000]),
+        ],
+        ligatures: {'AB': 300},
+      );
+      expect(widthOf('AB', family: 'Joined'), closeTo(170, 0.01));
+      // Roboto's fi is not this font's.
+      expect(
+        widthOf('fi', family: 'Joined'),
+        closeTo(widthOf('f') + widthOf('i'), 0.01),
+      );
     });
 
     test('measures Latin text with Roboto\'s own widths', () {

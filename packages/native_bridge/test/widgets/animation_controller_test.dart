@@ -187,11 +187,16 @@ void main() {
 
     key.currentState!.controller.forward();
     // To a quarter of the way, where the sequence turns: the first fade is
-    // half done along its own curve, over that leg.
+    // half done along its own curve, over that leg - the first half of
+    // easeOut, which is not easeOut's shape, and so goes as its samples.
     await Future<void>.delayed(const Duration(milliseconds: 10));
     expect(fades()[0].opacity, closeTo(Curves.easeOut.transform(0.5), 1e-9));
     expect(fades()[0].ms, 50);
-    expect(fades()[0].curve, Curves.easeOut.name);
+    _expectPace(
+      fades()[0].curve!,
+      (s) =>
+          Curves.easeOut.transform(s / 2) / Curves.easeOut.transform(0.5),
+    );
     expect(fades()[1].opacity, 0);
     expect(scale(), closeTo(1.5, 1e-9));
 
@@ -294,9 +299,100 @@ void main() {
     await wait(10);
     final node = app.ofType('AnimatedOpacity').single;
     expect(node.props['durationMs'], 50);
-    expect(node.props['curve'], Curves.easeIn.name);
+    // The first half of easeIn, as Flutter draws it - not easeIn squeezed in.
+    _expectPace(
+      node.props['curve'] as String,
+      (s) => Curves.easeIn.transform(s / 2) / Curves.easeIn.transform(0.5),
+    );
     expect(node.props['opacity'], closeTo(Curves.easeIn.transform(0.5), 1e-9));
   });
+
+  test('a run forward along an interval after easeIn goes at easeIn\'s pace',
+      () async {
+    final controller = AnimationController(
+      vsync: const _NoTicks(),
+      duration: const Duration(milliseconds: 200),
+    );
+    final app = AppTester.widget(
+      MaterialApp(
+        home: Builder(
+          builder: (_) => FadeTransition(
+            opacity: CurvedAnimation(
+              parent: CurvedAnimation(parent: controller, curve: Curves.easeIn),
+              curve: const Interval(0.5, 1),
+            ),
+            child: const Text('late'),
+          ),
+        ),
+      ),
+    );
+    controller.forward();
+    final half = (app.ofType('AnimatedOpacity').single.props['durationMs']
+            as int) /
+        200;
+    // Past the cut, the rest of easeIn, from half way to the end.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    final node = app.ofType('AnimatedOpacity').single;
+    expect(node.props['opacity'], 1);
+    _expectPace(
+      node.props['curve'] as String,
+      (s) => (Curves.easeIn.transform(half + (1 - half) * s) - 0.5) / 0.5,
+      within: 0.02,
+    );
+  });
+
+  test('an interval chained after a curve is cut where that curve gets there',
+      () async {
+    final controller = AnimationController(
+      vsync: const _NoTicks(),
+      duration: const Duration(milliseconds: 200),
+    );
+    final app = AppTester.widget(
+      MaterialApp(
+        home: Builder(
+          builder: (_) => FadeTransition(
+            opacity: controller.drive(
+              CurveTween(curve: const Interval(0.5, 1))
+                  .chain(CurveTween(curve: Curves.easeIn)),
+            ),
+            child: const Text('late'),
+          ),
+        ),
+      ),
+    );
+    controller.forward();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    final node = app.ofType('AnimatedOpacity').single;
+    expect(node.props['opacity'], 0);
+    var low = 0.0, high = 1.0;
+    for (var i = 0; i < 30; i++) {
+      final middle = (low + high) / 2;
+      if (Curves.easeIn.transform(middle) < 0.5) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    expect(node.props['durationMs'], closeTo(200 * low, 2));
+  });
+}
+
+/// That [curve] is `samples(...)` going as [pace] does.
+void _expectPace(
+  String curve,
+  double Function(double) pace, {
+  double within = 0.01,
+}) {
+  expect(curve, startsWith('samples('));
+  final values = curve
+      .substring(8, curve.length - 1)
+      .split(',')
+      .map(double.parse)
+      .toList();
+  for (var i = 0; i < values.length; i++) {
+    final s = i / (values.length - 1);
+    expect(values[i], closeTo(pace(s), within), reason: 'at $s');
+  }
 }
 
 class _Staggered extends StatefulWidget {

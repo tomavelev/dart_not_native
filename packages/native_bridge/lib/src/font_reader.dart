@@ -4,8 +4,9 @@ library;
 import 'dart:typed_data';
 
 /// The parts of a TrueType or OpenType file a width is read from: each
-/// character's advance (`cmap` and `hmtx`) and the kerning pairs of its
-/// `kern` feature (`GPOS`). For the tools that write `TextPainter`'s tables.
+/// character's advance (`cmap` and `hmtx`), the kerning pairs of its `kern`
+/// feature (`GPOS`) and the standard ligatures of its `liga` feature
+/// (`GSUB`). For the tools that write `TextPainter`'s tables.
 class FontReader {
   FontReader(Uint8List bytes) : _data = ByteData.sublistView(bytes) {
     final tables = _data.getUint16(4);
@@ -33,9 +34,95 @@ class FontReader {
   int width(int rune) {
     final glyph = _glyphs[rune];
     if (glyph == null || glyph == 0) return -1;
+    return _glyphWidth(glyph);
+  }
+
+  /// How wide [glyph] is, in thousandths of an em.
+  int _glyphWidth(int glyph) {
     final index = glyph < _metrics ? glyph : _metrics - 1;
     final advance = _data.getUint16(_tables['hmtx']! + index * 4);
     return (advance * 1000 / _unitsPerEm).round();
+  }
+
+  /// The characters the font's `liga` feature draws as one glyph - `fi`,
+  /// `ffl` - each with that glyph's width in thousandths of an em. A
+  /// ligature of glyphs no character maps to is left out.
+  List<(List<int>, int)> ligatures() {
+    final gsub = _tables['GSUB'];
+    if (gsub == null) return const [];
+    final runeOf = <int, int>{};
+    for (final MapEntry(key: rune, value: glyph) in _glyphs.entries) {
+      if (glyph != 0) runeOf.putIfAbsent(glyph, () => rune);
+    }
+    final out = <(List<int>, int)>[];
+    final seen = <String>{};
+    for (final subtable in _subtables(gsub, 'liga', single: 4, extension: 7)) {
+      final firsts = _coverageGlyphs(subtable + _data.getUint16(subtable + 2));
+      for (var i = 0; i < firsts.length; i++) {
+        final set = subtable + _data.getUint16(subtable + 6 + i * 2);
+        for (var j = 0; j < _data.getUint16(set); j++) {
+          final ligature = set + _data.getUint16(set + 2 + j * 2);
+          final count = _data.getUint16(ligature + 2);
+          final glyphs = [
+            firsts[i],
+            for (var k = 1; k < count; k++)
+              _data.getUint16(ligature + 4 + (k - 1) * 2),
+          ];
+          final runes = [for (final g in glyphs) runeOf[g]];
+          if (runes.contains(null)) continue;
+          // The first lookup to take a sequence is the one a shaper uses.
+          if (!seen.add(runes.join(','))) continue;
+          out.add((
+            [for (final r in runes) r!],
+            _glyphWidth(_data.getUint16(ligature)),
+          ));
+        }
+      }
+    }
+    return out;
+  }
+
+  /// How much narrower each ligature is than its characters set one by one
+  /// with the kerning between them that `TextPainter` counts (printable
+  /// ASCII), by the characters, in thousandths of an em. A ligature that
+  /// saves nothing is left out.
+  Map<String, int> ligatureSavings() => {
+    for (final (runes, joined) in ligatures())
+      if (_apart(runes) - joined case final saving when saving != 0)
+        String.fromCharCodes(runes): saving,
+  };
+
+  /// How wide [runes] are set one by one, kerned as `TextPainter` kerns.
+  int _apart(List<int> runes) {
+    bool printable(int c) => c >= 0x20 && c < 0x7F;
+    var width = 0;
+    for (var i = 0; i < runes.length; i++) {
+      width += this.width(runes[i]);
+      if (i > 0 && printable(runes[i - 1]) && printable(runes[i])) {
+        width += kern(runes[i - 1], runes[i]);
+      }
+    }
+    return width;
+  }
+
+  /// The glyphs a coverage table lists, in its order.
+  List<int> _coverageGlyphs(int coverage) {
+    final format = _data.getUint16(coverage);
+    final count = _data.getUint16(coverage + 2);
+    if (format == 1) {
+      return [
+        for (var i = 0; i < count; i++) _data.getUint16(coverage + 4 + i * 2),
+      ];
+    }
+    return [
+      for (var i = 0; i < count; i++)
+        for (
+          var g = _data.getUint16(coverage + 4 + i * 6);
+          g <= _data.getUint16(coverage + 6 + i * 6);
+          g++
+        )
+          g,
+    ];
   }
 
   /// How far [right] is moved towards [left] when it follows it, in
@@ -57,16 +144,27 @@ class FontReader {
   List<int> _readKern() {
     final gpos = _tables['GPOS'];
     if (gpos == null) return const [];
-    final features = gpos + _data.getUint16(gpos + 6);
-    final lookups = gpos + _data.getUint16(gpos + 8);
+    return _subtables(gpos, 'kern', single: 2, extension: 9);
+  }
+
+  /// The subtables of type [single] in the lookups of [table]'s feature
+  /// [tag], in lookup order - those behind an [extension] lookup included.
+  List<int> _subtables(
+    int table,
+    String tag, {
+    required int single,
+    required int extension,
+  }) {
+    final features = table + _data.getUint16(table + 6);
+    final lookups = table + _data.getUint16(table + 8);
     final indices = <int>{};
     final featureCount = _data.getUint16(features);
     for (var i = 0; i < featureCount; i++) {
       final at = features + 2 + i * 6;
-      final tag = String.fromCharCodes([
+      final name = String.fromCharCodes([
         for (var k = 0; k < 4; k++) _data.getUint8(at + k),
       ]);
-      if (tag != 'kern') continue;
+      if (name != tag) continue;
       final feature = features + _data.getUint16(at + 4);
       final count = _data.getUint16(feature + 2);
       for (var j = 0; j < count; j++) {
@@ -81,12 +179,12 @@ class FontReader {
       for (var j = 0; j < count; j++) {
         var subtable = lookup + _data.getUint16(lookup + 6 + j * 2);
         var subtype = type;
-        if (type == 9) {
+        if (type == extension) {
           // An extension: the real subtable is further on.
           subtype = _data.getUint16(subtable + 2);
           subtable += _data.getUint32(subtable + 4);
         }
-        if (subtype == 2) out.add(subtable);
+        if (subtype == single) out.add(subtable);
       }
     }
     return out;

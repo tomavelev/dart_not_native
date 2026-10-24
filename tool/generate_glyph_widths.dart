@@ -10,8 +10,9 @@
 /// advance widths is the width Android draws it at; iOS and a browser come
 /// out within a few per cent. Two weights are taken - regular, and bold for
 /// anything from 600 up. The widths are read from each file's `hmtx` table
-/// through its Unicode `cmap`, in thousandths of an em. An Arabic letter is
-/// measured in its isolated form: joined, most are narrower.
+/// through its Unicode `cmap`, in thousandths of an em, along with Roboto's
+/// kerning and what each of its standard ligatures (`fi`, `ffl`) saves. An
+/// Arabic letter is measured in its isolated form: joined, most are narrower.
 library;
 
 import 'dart:io';
@@ -113,6 +114,7 @@ const List<(int, List<int>, List<int>)> glyphWidthRuns = [
   }
   buffer.writeln('];');
   buffer.write(_kerning(light, heavy));
+  buffer.write(_ligatures(light, heavy));
   buffer.writeln('// dart format on');
   final out = File('packages/native_bridge/lib/src/glyph_widths.dart');
   out.writeAsStringSync(buffer.toString());
@@ -153,6 +155,37 @@ String _kerning(FontReader light, FontReader heavy) {
   }
   return out.toString();
 }
+
+/// How much narrower than their characters [light] and [heavy] draw their
+/// standard ligatures, as two const maps from the characters to thousandths
+/// of an em.
+String _ligatures(FontReader light, FontReader heavy) {
+  final out = StringBuffer();
+  for (final (name, font) in [
+    ('ligaturesRegular', light),
+    ('ligaturesBold', heavy),
+  ]) {
+    out
+      ..writeln()
+      ..writeln('/// What each standard ligature of Roboto${name == 'ligaturesBold' ? ' Bold' : ''} saves on its characters set')
+      ..writeln('/// apart and kerned, in thousandths of an em.')
+      ..writeln('const Map<String, int> $name = {');
+    for (final MapEntry(:key, :value) in font.ligatureSavings().entries) {
+      out.writeln("  '${_escaped(key)}': $value,");
+    }
+    out.writeln('};');
+  }
+  return out.toString();
+}
+
+/// [text] as the inside of a Dart string literal: letters and digits as
+/// they are, anything else as its code point.
+String _escaped(String text) => [
+  for (final rune in text.runes)
+    RegExp(r'[A-Za-z0-9]').hasMatch(String.fromCharCode(rune))
+        ? String.fromCharCode(rune)
+        : '\\u{${rune.toRadixString(16)}}',
+].join();
 
 /// [widths] as a list literal, as many to a line as fit in 80 columns.
 String _list(List<int> widths) {

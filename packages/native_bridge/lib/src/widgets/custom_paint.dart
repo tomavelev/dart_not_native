@@ -945,6 +945,8 @@ typedef _FontTables = ({
   List<(int, List<int>, List<int>)> widths,
   Map<int, int> kerning,
   Map<int, int> boldKerning,
+  Map<String, int> ligatures,
+  Map<String, int> boldLigatures,
 });
 
 /// Measures and draws text on a [Canvas] - Flutter's `TextPainter`.
@@ -959,9 +961,11 @@ typedef _FontTables = ({
 /// per cent of it. A CJK character or a Hangul syllable is a whole em, as it
 /// is in every CJK font, an emoji 1.245 em, as in Noto Color Emoji, and
 /// anything else an estimate of 0.55 em. Roboto's kerning is counted between
-/// two printable ASCII characters. Ligatures and an Arabic letter's joined
-/// forms are not - it is measured standing alone, which most are wider than
-/// joined. An app's own `fontFamily` is measured with its own widths once
+/// two printable ASCII characters, and its standard ligatures - `fi`, `fl`,
+/// `ffi`, `ffl`, a few per cent of an em narrower joined - where the letter
+/// spacing is none, which is when Android joins them. An Arabic letter's
+/// joined forms are not - it is measured standing alone, which most are
+/// wider than joined. An app's own `fontFamily` is measured with its own widths once
 /// [registerFont] has them, and as Roboto until then. A line is 1.2 × the font size
 /// tall (or the style's own `height` multiple). Lines break at `\n` and, past
 /// `maxWidth`, at the last space that fits. The default font size is 14.
@@ -1035,20 +1039,64 @@ class TextPainter {
 
   /// Measures text set in [family] with the widths of a font of the app's
   /// own - regular and bold runs of code points, as in `glyph_widths.dart` -
-  /// and its kerning pairs (`left << 16 | right` to thousandths of an em).
-  /// `dart run dart_not_native:font_widths` writes all three from the
-  /// font's files, and a call to this with them.
+  /// its kerning pairs (`left << 16 | right` to thousandths of an em) and
+  /// what each of its standard ligatures saves on its characters set apart
+  /// (the characters to thousandths of an em). `dart run
+  /// dart_not_native:font_widths` writes them all from the font's files,
+  /// and a call to this with them.
   static void registerFont(
     String family, {
     required List<(int, List<int>, List<int>)> widths,
     Map<int, int> kerning = const {},
     Map<int, int> boldKerning = const {},
+    Map<String, int> ligatures = const {},
+    Map<String, int> boldLigatures = const {},
   }) {
     _fonts[family] = (
       widths: widths,
       kerning: kerning,
       boldKerning: boldKerning,
+      ligatures: ligatures,
+      boldLigatures: boldLigatures,
     );
+  }
+
+  /// How much narrower than its characters a ligature of the font is drawn,
+  /// by the characters, in thousandths of an em.
+  static Map<String, int> _ligatures({required bool bold, String? family}) {
+    final own = family == null ? null : _fonts[family];
+    return own == null
+        ? (bold ? ligaturesBold : ligaturesRegular)
+        : (bold ? own.boldLigatures : own.ligatures);
+  }
+
+  /// What the characters a ligature joins save, at the index of the last of
+  /// them: read from the start, the longest ligature at each place first, as
+  /// a shaper does. Only characters of one style, with no letter spacing,
+  /// are joined.
+  static Map<int, double> _joined(List<(int, _Measure)> characters) {
+    final out = <int, double>{};
+    var i = 0;
+    while (i < characters.length) {
+      final measure = characters[i].$2;
+      final (:size, :bold, :spacing, :family, height: _) = measure;
+      final table = spacing == 0
+          ? _ligatures(bold: bold, family: family)
+          : const <String, int>{};
+      var taken = 1;
+      for (var length = 4; length >= 2 && table.isNotEmpty; length--) {
+        if (i + length > characters.length) continue;
+        final run = characters.sublist(i, i + length);
+        if (run.any((c) => c.$2 != measure)) continue;
+        final saving = table[String.fromCharCodes([for (final c in run) c.$1])];
+        if (saving == null) continue;
+        out[i + length - 1] = saving * size / 1000;
+        taken = length;
+        break;
+      }
+      i += taken;
+    }
+    return out;
   }
 
   /// How far [right] moves when it follows [left] at [fontSize].
@@ -1176,6 +1224,8 @@ class TextPainter {
       );
     }
 
+    final joined = _joined(characters);
+
     // One pass, breaking as it goes. `lineWidths` are as wrapped;
     // `longestUnwrapped` is what the text would take with all the room in
     // the world, which is what the painter's own width follows.
@@ -1223,8 +1273,13 @@ class TextPainter {
       final kern = i > 0 && characters[i - 1].$2 == measure
           ? _kern(characters[i - 1].$1, rune, size, bold: bold, family: family)
           : 0.0;
+      // Narrower where it ends a ligature, drawn as one glyph with the
+      // characters before it.
       final advance =
-          _advance(rune, size, bold: bold, family: family) + spacing + kern;
+          _advance(rune, size, bold: bold, family: family) +
+          spacing +
+          kern -
+          (joined[i] ?? 0);
       unwrapped += advance;
       if (hasInk && lineWidth + advance > maxWidth) {
         final cut = widthAtSpace;

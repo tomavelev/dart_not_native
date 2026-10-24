@@ -354,6 +354,34 @@ comes and goes. Seen on an iOS simulator.
 [--bold <file>]` writes from the font files, with a `register<Family>()` to
 call in `main`.
 
+### A jump ends a fling
+
+`ScrollController.jumpTo` and `animateTo` during a fling were carried on past
+where they were sent by the fling still going - on iOS a few points, on
+Android to the end of the list. A jump or a travel now ends a fling first, as
+in Flutter, on both. Seen on an iOS simulator and an Android emulator.
+
+### Checked on iOS
+
+On an iOS simulator, with what Android gained on the emulator in mind: an
+event names the build it was raised against and is answered by it - taps
+raised against the build before Dart's latest, on a list whose ids moved
+every build, opened the row tapped; scroll reports come as a scroller moves
+and when it stops, a jump is obeyed again after a drag, and a list comes
+back where it was from under a pushed page; pull-to-refresh draws the
+spinner and waits for `onRefresh`; a floating snackbar clears the floating
+button and the tab bar; a rail too long for the screen scrolls.
+
+### Ligatures are measured
+
+`TextPainter` counts Roboto's standard ligatures - `fi`, `fl`, `ffi`, `ffl`,
+read from the font's `GSUB` `liga` feature - as the one glyph each is drawn
+as, a few per cent of an em narrower than its letters ("office" at 100
+points is 8.3 narrower), the longest at each place first as a shaper takes
+them. Only letters of one style with no letter spacing are joined, as
+Android joins them. `registerFont` takes an app font's own (`ligatures:`,
+`boldLigatures:`), which `font_widths` now writes.
+
 ### The device lane
 
 `integration_test/native_renderer_test.dart` lays a real Flutter widget
@@ -398,6 +426,20 @@ controller's run where that curve gets to the interval's ends. An implicit
 animation given an `Interval` - `AnimatedOpacity(curve: Interval(0.5, 1))` -
 holds what it shows until the interval starts, and then moves over its share
 of the duration along the interval's own curve.
+
+### Each leg of a run goes at its own pace
+
+A leg of a controller's run went along the one curve its animation names,
+which is its pace only when the leg covers that whole curve. It now goes at
+the pace Flutter draws it at: the run's own curve, then each
+`CurvedAnimation` and `CurveTween` in front of the transition, over just the
+part of them the leg covers - the rest of an `easeIn` after an `Interval`
+behind it begins, the first half of a curve a run to the middle covers, an
+interval cut by a `TweenSequence` beside it. Where that is not a named curve
+it travels as its shape, `samples(...)`, as a bounce does. An `Interval`
+chained after a curve (`CurveTween(curve: Interval(...)).chain(CurveTween(curve:
+Curves.easeIn))`) cuts the run where that curve gets to the interval's ends;
+before, the cut was dropped. Tested; not looked at on a device.
 
 ### A colour follows the scroll offset too
 
